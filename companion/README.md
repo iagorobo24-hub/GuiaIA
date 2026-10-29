@@ -22,6 +22,12 @@ npm test
 
 For launch, the script intentionally requires `GUIAIA_QA_OWNER` and an explicit `--qa-local-only` argument, and connects to port 25598. The stdin protocol accepts only `follow`, `stop`, `status`, `quit`, with one command per line.
 
+## Single-block gathering experiment (branch-only)
+
+The new `src/gather.js` implements a **single pre-authorized oak-log operation** for a disposable QA world. It requires an explicit QA-only flag, a configured owner visible within 18 blocks, minimum health, a close target, safe feet/head observations, an exact block allowlist, and an inventory delta before reporting success. The target is configured by the QA operator; chat, MCP and LLM output cannot request or select blocks. It will **never** use `/give` or arbitrary world commands.
+
+`npm test` checks refusals, missing owner/health, timeouts, concurrent jobs, cancellation and real inventory-delta evidence with mocks. A dedicated GitHub Actions Minecraft Java 1.21.1 trial `scripts/qa_gather_server.py` attempts one real oak-log pickup on a temporary platform; its outcome must be checked **before** claiming in-game gathering works. This is not an autonomous foraging/pathfinding system and is not connected to the companion CLI.
+
 **A real, isolated in-game follow/stop demonstration has passed:** [GitHub Actions run 40836717049](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40836717049) joined two local QA accounts in a disposable Minecraft 1.21.1 server, accepted a follow goal, measured **6.075 blocks of actual companion movement**, and successfully stopped. This proves a small functional QA prototype, not full gameplay autonomy.
 
 **Production and public distribution remain blocked** pending stable reconnect/recovery, terrain hazard policy, secure owner authentication, inventory verification and integration tests under actual modpacks (including Cobblemon). For design context see [Issue #2](https://github.com/iagorobo24-hub/GuiaIA/issues/2).
