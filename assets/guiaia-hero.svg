@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">GuiaIA — Minecraft, meet your AI teammate</title>
+  <desc id="desc">Original vector artwork showing a glowing AI companion above a voxel landscape at dusk. GuiaIA is an open source project in development.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111d35"/>
+      <stop offset=".53" stop-color="#142e41"/>
+      <stop offset="1" stop-color="#0e1e29"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9afce1"/>
+      <stop offset="1" stop-color="#54d2f9"/>
+    </linearGradient>
+    <linearGradient id="grass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#64e3ae"/>
+      <stop offset="1" stop-color="#19866d"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#30badb"/>
+      <stop offset="1" stop-color="#197e9f"/>
+    </linearGradient>
+    <filter id="blur" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+    <clipPath id="bounds"><rect width="1200" height="360" rx="18"/></clipPath>
+  </defs>
+  <g clip-path="url(#bounds)">
+    <rect width="1200" height="360" fill="url(#sky)"/>
+    <path d="M0 300 130 236 257 290 410 222 573 305 694 263 821 307 1004 223 1200 289V360H0Z" fill="#122b34" opacity=".85"/>
+    <path d="M0 332 148 292 275 340 421 281 536 338 709 294 865 338 1037 273 1200 324V360H0Z" fill="#0b2229" opacity=".9"/>
+    <g stroke="#85ffe0" stroke-opacity=".12" stroke-width="1">
+      <path d="M0 320H1200M0 342H1200M775 0V360M950 0V360M1125 0V360"/>
+      <path d="M650 0 890 360M860 0 1100 360M1070 0 1190 180" />
+    </g>
+    <g fill="#9afce1">
+      <circle cx="81" cy="48" r="1.4" opacity=".5"/><circle cx="475" cy="60" r="1.8" opacity=".4"/>
+      <circle cx="606" cy="103" r="1.2" opacity=".55"/><circle cx="671" cy="45" r="2" opacity=".5"/>
+      <circle cx="1094" cy="56" r="2" opacity=".7"/><circle cx="1180" cy="151" r="1.4" opacity=".5"/>
+      <path d="M753 69v12M747 75h12" stroke="#9afce1" stroke-width="1.7" opacity=".65"/>
+      <path d="M1140 105v12M1134 111h12" stroke="#9afce1" stroke-width="1.7" opacity=".8"/>
+    </g>
+    <circle cx="969" cy="156" r="107" fill="#45dcbf" opacity=".17" filter="url(#blur)"/>
+    <circle cx="969" cy="156" r="115" fill="none" stroke="#62edd2" stroke-opacity=".19" stroke-width="1.5" stroke-dasharray="5 11"/>
+    <circle cx="969" cy="156" r="91" fill="none" stroke="#6be7e4" stroke-opacity=".28" stroke-width="1.5"/>
+    <path d="M877 156h-25M1061 156h25M969 64V39M969 248v22" stroke="#76fbe3" stroke-opacity=".45" stroke-width="2"/>
+    <g transform="translate(969 151)">
+      <path d="M0-66 59-32 59 34 0 68-59 34-59-32Z" fill="#102d3c" stroke="#7af5d8" stroke-width="3"/>
+      <path d="M0-66 59-32 0 2-59-32Z" fill="#275e66" stroke="#8cffe2" stroke-width="2"/>
+      <path d="M-59-32 0 2V68L-59 34Z" fill="#17495b"/>
+      <path d="M59-32 0 2V68L59 34Z" fill="#1a6474"/>
+      <path d="M-22 9H-4V22H-22ZM8 9H26V22H8Z" fill="#b3ffe8"/>
+      <path d="M-15 42H18" stroke="#8dffe0" stroke-width="3" stroke-linecap="round"/>
+      <path d="M0-83V-66M-8-83H8" stroke="#96ffdf" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="0" cy="-88" r="6" fill="#7df9d8"/>
+    </g>
+    <g transform="translate(740 270)">
+      <path d="M0 0 64-30 129 0 64 31Z" fill="url(#grass)"/>
+      <path d="M0 0 64 31V83L0 50Z" fill="#255c47"/>
+      <path d="M129 0 64 31V83L129 50Z" fill="#1c473a"/>
+      <path d="M13 8 64 33 112 10" fill="none" stroke="#93ffc9" stroke-opacity=".5" stroke-width="2"/>
+    </g>
+    <g transform="translate(1000 275)">
+      <path d="M0 0 63-29 127 0 63 30Z" fill="url(#blue)"/>
+      <path d="M0 0 63 30V80L0 50Z" fill="#144c62"/>
+      <path d="M127 0 63 30V80L127 50Z" fill="#0c394c"/>
+      <path d="M15 9 63 32 110 9" fill="none" stroke="#92eaff" stroke-opacity=".55" stroke-width="2"/>
+    </g>
+    <g font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif">
+      <rect x="72" y="47" width="146" height="27" rx="13" fill="#3c997f" fill-opacity=".2" stroke="#76f7c1" stroke-opacity=".6"/>
+      <text x="145" y="65" fill="#a7f8ce" text-anchor="middle" font-size="12" letter-spacing="2" font-weight="700">OPEN SOURCE</text>
+      <text x="71" y="153" fill="#f7fcff" font-size="84" font-weight="850" letter-spacing="-4">Guia<tspan fill="url(#glow)">IA</tspan></text>
+      <path d="M76 177h445" stroke="url(#glow)" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+      <text x="75" y="223" fill="#e5f9f4" font-size="28" font-weight="650" letter-spacing="-.5">Your world. An AI by your side.</text>
+      <text x="76" y="259" fill="#aacbd2" font-size="17">Play together. Explore smarter. Build what’s next.</text>
+      <text x="77" y="320" fill="#83d7bc" font-size="13" letter-spacing="2" font-weight="650">MINECRAFT JAVA  /  MCP  /  FABRIC</text>
+    </g>
+  </g>
+</svg>
