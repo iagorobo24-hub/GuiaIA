@@ -124,7 +124,7 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
             seen.update(result)
             return True
 
-        until(observed, 100, process=process, note="real chunk block and mob observations")
+        until(observed, 42, process=process, note="real chunk block and mob observations")
         # Output must not contain player names, raw coordinates or all world entities.
         raw = json.loads(snapshot_file.read_text(encoding="utf-8"))
         assert not any(k in raw for k in ("player_name", "player_uuid", "coordinates", "rcon", "chat"))
@@ -146,7 +146,10 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
             "test_world": "disposable_flat_qa",
         }
     except Exception as exc:
-        raise RuntimeError(str(exc) + "\n" + recent_log(log_file)) from exc
+        raw_snapshot = (snapshot_file.read_text(encoding="utf-8", errors="replace")[:1800]
+                        if snapshot_file.is_file() else "(snapshot missing)")
+        raise RuntimeError(str(exc) + "\nLAST_QA_SNAPSHOT=" + raw_snapshot
+                           + "\n" + recent_log(log_file)) from exc
     finally:
         shutdown(process, log)
 
