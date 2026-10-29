@@ -167,5 +167,26 @@ function createQaSessionActionGateway(bot,authority){
       createSessionAuthorizedQaDeposit(bot,sessionProof,signedCapability,authority)
   })
 }
+// The strict QA surface is the integration entrypoint for new action adapters.
+// The legacy createQaSessionActionGateway remains available to historical
+// disposable QA tests and is NOT sufficient for a future trusted runtime.
+function createQaStrictSessionActionGateway(bot,authority){
+  if(authority?.sandboxOnly!==true ||
+     authority.identityMode!=='trusted_server_bridge_lab' ||
+     authority.requireLivePresence!==true ||
+     authority.requireRemoteCheckpoint!==true ||
+     typeof authority.livePresence!=='function' ||
+     typeof authority.currentRegistryCheckpoint!=='function' ||
+     typeof authority.remoteCheckpointMatch!=='function' ||
+     typeof authority.isRevoked!=='function' ||
+     typeof authority.activeConnection!=='function' ||
+     typeof authority.serverBridgePublicKeyPem!=='string' ||
+     typeof authority.operatorPublicKeyPem!=='string' ||
+     typeof authority.ledgerDirectory!=='string'){
+    throw Error('Mandatory signed Fabric presence and independent checkpoint authority required')
+  }
+  // Both checks remain mandatory even if the caller mutates its object later.
+  return createQaSessionActionGateway(bot,Object.freeze({...authority}))
+}
 module.exports={verifySessionBundle,verifySessionDepositGrant,createSessionAuthorizedQaDeposit,
-  createQaSessionActionGateway}
+  createQaSessionActionGateway,createQaStrictSessionActionGateway}

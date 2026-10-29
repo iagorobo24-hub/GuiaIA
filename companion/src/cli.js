@@ -14,6 +14,7 @@ if (typeof ownerName !== 'string' || !/^[a-zA-Z0-9_]{3,16}$/.test(ownerName)) {
 const mineflayer = require('mineflayer')
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
 const { createController } = require('./controller')
+const { executeQaRuntimeCommand } = require('./qa_runtime_commands')
 const bot = mineflayer.createBot({
   host: '127.0.0.1', port: 25598, username: 'GuiaIA_QA',
   auth: 'offline', version: '1.21.1', hideErrors: true
@@ -37,11 +38,8 @@ process.stdin.setEncoding('utf8')
 process.stdin.on('data', input => {
   if (input.length > 128) { emit({ ok: false, reason: 'input_too_long' }); return }
   for (const command of input.split(/\r?\n/).filter(Boolean)) {
-    if (command === 'quit') { controller?.stop('operator_quit'); bot.quit(); return }
-    if (!controller) { emit({ ok: false, reason: 'not_spawned' }); continue }
-    if (command === 'follow') emit(controller.follow())
-    else if (command === 'stop') emit(controller.stop())
-    else if (command === 'status') emit(controller.status())
-    else emit({ ok: false, reason: 'unknown_local_command' })
+    const result=executeQaRuntimeCommand(command,controller,bot)
+    if(command !== 'quit')emit(result)
+    else return
   }
 })

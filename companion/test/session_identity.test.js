@@ -236,3 +236,70 @@ test('no generic command path: gateway cannot expose follow, mining or arbitrary
   assert.equal(gateway.follow,undefined)
   assert.equal(Object.isFrozen(gateway),true)
 })
+
+test('strict QA gateway refuses every missing live session or independent witness control',t=>{
+  const {createQaStrictSessionActionGateway}=require('../src/session_identity')
+  const f=environment(t)
+  const full={...f.authority,
+    requireLivePresence:true,requireRemoteCheckpoint:true,
+    livePresence:async()=>({connected:true,worldId:f.authority.worldId,
+      connectionId:f.issue().bridge.payload.connectionId,issuedAt:Date.now()}),
+    currentRegistryCheckpoint:()=>({sequence:1}),
+    remoteCheckpointMatch:async()=>true}
+  for(const missing of ['requireLivePresence','requireRemoteCheckpoint',
+    'livePresence','currentRegistryCheckpoint','remoteCheckpointMatch',
+    'isRevoked','activeConnection','serverBridgePublicKeyPem','operatorPublicKeyPem',
+    'ledgerDirectory']){
+    const broken={...full}
+    delete broken[missing]
+    assert.throws(()=>createQaStrictSessionActionGateway(f.bot,broken),
+      /Mandatory signed Fabric presence/)
+  }
+  assert.deepEqual(Object.keys(createQaStrictSessionActionGateway(f.bot,full)),
+    ['createDeposit'])
+})
+test('strict QA gateway demands both live server and witness before any chest transfer',async t=>{
+  const {createQaStrictSessionActionGateway}=require('../src/session_identity')
+  const f=environment(t),tokens=f.issue()
+  const events=[]
+  const authority={...f.authority,requireLivePresence:true,requireRemoteCheckpoint:true,
+    livePresence:async id=>{
+      events.push('live')
+      return {worldId:f.authority.worldId,connectionId:id,
+        connected:true,issuedAt:Date.now()}
+    },
+    currentRegistryCheckpoint:()=>{
+      events.push('checkpoint')
+      return Object.freeze({sequence:2})
+    },
+    remoteCheckpointMatch:async local=>{
+      events.push('remote')
+      assert.equal(local.sequence,2)
+      return true
+    }
+  }
+  const gateway=createQaStrictSessionActionGateway(f.bot,authority)
+  // Mutation of the caller's control flags must not downgrade the gate.
+  authority.requireLivePresence=false
+  authority.requireRemoteCheckpoint=false
+  const result=await gateway.createDeposit({
+    bridge:tokens.bridge,owner:tokens.owner},tokens.grant).depositOne()
+  assert.equal(result.ok,true)
+  assert.deepEqual(events,['live','checkpoint','remote'])
+  assert.equal(f.operations,1)
+})
+test('strict QA gate denies remote mismatch with no inventory or nonce mutation',async t=>{
+  const {createQaStrictSessionActionGateway}=require('../src/session_identity')
+  const f=environment(t),tokens=f.issue()
+  const authority={...f.authority,requireLivePresence:true,requireRemoteCheckpoint:true,
+    livePresence:async id=>({worldId:f.authority.worldId,connectionId:id,
+      connected:true,issuedAt:Date.now()}),
+    currentRegistryCheckpoint:()=>({sequence:1}),
+    remoteCheckpointMatch:async()=>false}
+  await assert.rejects(createQaStrictSessionActionGateway(f.bot,authority)
+    .createDeposit({bridge:tokens.bridge,owner:tokens.owner},tokens.grant)
+    .depositOne(),/Independent checkpoint verification unavailable/)
+  assert.equal(f.operations,0)
+  assert.equal(f.player,1)
+  assert.equal(fs.existsSync(f.authority.ledgerDirectory),false)
+})

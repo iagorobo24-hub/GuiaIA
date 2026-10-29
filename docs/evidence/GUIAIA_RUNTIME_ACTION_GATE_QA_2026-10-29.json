@@ -1,0 +1,39 @@
+{
+  "branch": "feature/principal-enrollment-qa",
+  "checks": [
+    "untrusted stdin follow explicitly denied",
+    "status stop quit remain available",
+    "runnable CLI dependency closure audited",
+    "unsigned movement cannot be issued through cli.js",
+    "strict gateway requires Fabric live presence and independent witness",
+    "caller cannot disable both checks after strict gateway construction",
+    "remote mismatch denies deposit without spending nonce or changing inventory"
+  ],
+  "date": "2026-10-29",
+  "node_tests": {
+    "cancelled": 0,
+    "fail": 0,
+    "pass": 163,
+    "skipped": 0,
+    "tests": 163
+  },
+  "not_verified": [
+    "full CLI subprocess simulated-Mineflayer test (tool call blocked)",
+    "new changes against real Minecraft Fabric server",
+    "independent off-host checkpoint storage",
+    "friends actual identity and Cobblemon behavior",
+    "GitHub CI for unpushed local commit"
+  ],
+  "parent_commit": "46ce03c",
+  "production": false,
+  "qa_only": true,
+  "result": "pass_local_node_qa",
+  "sha256": {
+    "companion/src/cli.js": "e18f924f97a8029880dc6699e24d4d8dd5cd18cbd15a1d45eb584af0bbe1e174",
+    "companion/src/qa_runtime_commands.js": "f62944290c081874c13d07edbc0f197050627a7d6d1a42c497ee7b77aa465d6d",
+    "companion/src/session_identity.js": "68b8a157f2c3e227c33e8998d0410c74c1300a5c209840da668c1f91a856a19a",
+    "companion/test/qa_runtime_commands.test.js": "0e7d3350a51ecce376af194a94f5162079e42fadff6288fd58d81a0b263a73b1",
+    "companion/test/qa_runtime_surface.test.js": "3d73f4dddbc3b37a790f7a97f46a4e5188c53043af3ab8e3189a5bfa3bfdbaa4",
+    "companion/test/session_identity.test.js": "5b835871957a92b8e5103d05e609aea63e11639920d611ecfeb0ad557b98ed8d"
+  }
+}

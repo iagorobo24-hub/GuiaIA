@@ -5,8 +5,8 @@
 ## What works in this initial prototype
 
 - Real Minecraft Java bot connection/respawn, via a separately installable Node.js process.
-- Local-operator-only `follow`, `stop` and `status` input commands; no AI model can issue commands yet.
-- Only follows an owner entity *visible within 18 blocks*, with adequate health; continuous safety check aborts if the owner is lost/out of range.
+- Runtime stdin is limited to status, stop and quit; a bare follow command is **denied** until authenticated, separately approved session-based movement is implemented. No AI model can issue commands.
+- The low-level test-only follow controller follows an owner entity visible within 18 blocks and stops if safety deteriorates; this behavior is **not exposed through the runnable CLI**.
 - Following uses pathfinding with digging, tower-building, door-opening, free motion, parkour and sprinting disabled.
 - The normal companion CLI has no RCON, chat command execution, mining, item collection, building, attacks or filesystem/world saves. **A separate QA-only function now verifies exactly one real oak-log pickup**, without enabling any CLI or public Minecraft world mutation.
 
@@ -20,7 +20,7 @@ npm ci --ignore-scripts
 npm test
 ```
 
-For launch, the script intentionally requires `GUIAIA_QA_OWNER` and an explicit `--qa-local-only` argument, and connects to port 25598. The stdin protocol accepts only `follow`, `stop`, `status`, `quit`, with one command per line.
+For launch, the script requires GUIAIA_QA_OWNER and an explicit --qa-local-only argument, and connects to port 25598. The stdin protocol permits status, stop and quit; follow returns signed_session_authorization_required without moving. The low-level follow controller remains usable only by explicit disposable test harnesses. See the QA runtime action-surface report in docs.
 
 ## Single-block gathering experiment (branch-only)
 
