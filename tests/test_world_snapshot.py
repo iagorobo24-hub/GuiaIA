@@ -57,6 +57,43 @@ class WorldSnapshotTests(unittest.TestCase):
         self.assertTrue(result["read_only"])
         self.assertEqual(result["source"], "fabric_loaded_chunks")
 
+    def test_status_and_performance_retain_fabric_provenance(self):
+        self.write(sample())
+        observer = SnapshotObserver(str(self.file))
+        self.assertEqual(observer.status()["source"], "fabric_loaded_chunks")
+        metrics = observer.performance()
+        self.assertTrue(metrics["metrics_live"])
+        self.assertEqual(metrics["mspt_avg"], 49.5)
+        self.assertIsNone(metrics["entities_loaded"])
+        self.assertEqual(metrics["sampled_entities"], 3)
+
+    def test_stale_metrics_are_not_presented_as_live(self):
+        raw = sample()
+        raw["sample_epoch_ms"] -= 200000
+        self.write(raw)
+        with self.assertRaises(WorldSnapshotError):
+            SnapshotObserver(str(self.file)).performance()
+
+    def test_mcp_protocol_round_trip_for_fabric_snapshot(self):
+        from io import StringIO
+        from guiaia.mcp import MCP, serve
+        self.write(sample())
+        server = MCP(SnapshotObserver(str(self.file)))
+        requests = [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-11-25"}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+             "params": {"name": "guia_world_observe", "arguments": {}}},
+        ]
+        result = StringIO()
+        serve(server, StringIO("\n".join(map(json.dumps, requests)) + "\n"), result)
+        messages = [json.loads(x) for x in result.getvalue().splitlines()]
+        self.assertEqual([x["id"] for x in messages], [1, 2])
+        data = messages[1]["result"]["structuredContent"]
+        self.assertEqual(data["entity_counts"], {"minecraft:sheep": 3})
+        self.assertNotIn("player_uuid", data)
+
     def test_plain_metrics_not_fabric(self):
         self.write({"players_online": 0, "game_ticks": 100})
         with self.assertRaises(WorldSnapshotError):
@@ -105,6 +142,13 @@ class WorldSnapshotTests(unittest.TestCase):
         self.file.symlink_to(actual)
         with self.assertRaises(WorldSnapshotError):
             parse_world_snapshot(self.file)
+
+    def test_snapshot_observer_rejects_symlink(self):
+        actual = Path(self.directory.name) / "actual.json"
+        actual.write_text(json.dumps(sample()))
+        self.file.symlink_to(actual)
+        with self.assertRaises(ValueError):
+            SnapshotObserver(str(self.file))
 
     def test_rcon_has_no_world_view(self):
         with tempfile.TemporaryDirectory() as directory:

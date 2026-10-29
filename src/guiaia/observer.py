@@ -10,8 +10,8 @@ from .rcon import RconReadOnly
 class SnapshotObserver:
     """Read whitelisted, non-identifying world metrics from an operator-selected JSON file."""
     def __init__(self, path: str):
-        self.path = Path(path).expanduser().resolve()
-        if not self.path.is_file():
+        self.path = Path(path).expanduser().absolute()
+        if self.path.is_symlink() or not self.path.is_file():
             raise ValueError("Snapshot file does not exist")
 
     def _metrics(self) -> dict:
@@ -39,7 +39,26 @@ class SnapshotObserver:
         from .world_snapshot import parse_world_snapshot
         return parse_world_snapshot(self.path)
 
+    def _fabric(self) -> dict | None:
+        size = self.path.stat().st_size
+        if size > 16384:
+            raise ValueError("Snapshot exceeds size budget")
+        data = json.loads(self.path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("source") == "fabric_loaded_chunks":
+            if size > 8192:
+                raise ValueError("Fabric snapshot exceeds size budget")
+            return self.world()  # applies schema, freshness, privacy and count checks
+        return None
+
     def status(self) -> dict:
+        fabric = self._fabric()
+        if fabric is not None:
+            return {"source": "fabric_loaded_chunks", "read_only": True,
+                    "players_online": fabric["players_online"],
+                    "max_players": None, "game_ticks": fabric["game_ticks"],
+                    "nearby_entities_available": fabric["chunks_loaded"] == 1,
+                    "vision_available": False, "sample_age_ms": fabric["sample_age_ms"],
+                    "scope": fabric["scope"]}
         m = self._metrics()
         return {"source": "operator_snapshot", "read_only": True,
                 "players_online": m.get("players_online"),
@@ -48,6 +67,14 @@ class SnapshotObserver:
                 "nearby_entities_available": False, "vision_available": False}
 
     def performance(self) -> dict:
+        fabric = self._fabric()
+        if fabric is not None:
+            return {"source": "fabric_loaded_chunks", "read_only": True,
+                    "mspt_avg": fabric["mspt_avg"], "tps": None,
+                    "entities_loaded": None, "metrics_live": True,
+                    "sampled_entities": fabric["entities_loaded"],
+                    "sample_age_ms": fabric["sample_age_ms"],
+                    "note": "Entity count covers only a small loaded chunk area, not the full server"}
         m = self._metrics()
         return {"source": "operator_snapshot", "read_only": True,
                 "mspt_avg": m.get("mspt_avg"), "tps": m.get("tps"),

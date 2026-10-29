@@ -59,7 +59,8 @@ def parse_world_snapshot(path: str | Path, *, now_ms: int | None = None) -> dict
     chunks = _number(raw.get("chunks_loaded"), 0, 1, "chunks_loaded")
     blocks = _number(raw.get("blocks_sampled"), 0, 16, "blocks_sampled")
     entities = _number(raw.get("entities_loaded"), 0, 64, "entities_loaded")
-    if any(type(x) is not int for x in (chunks, blocks, entities, tick, stamp)):
+    players = _number(raw.get("players_online"), 0, 1000, "players_online")
+    if any(type(x) is not int for x in (chunks, blocks, entities, players, tick, stamp)):
         raise WorldSnapshotError("World counters must be integers")
     if raw.get("entities_capped") not in (True, False):
         raise WorldSnapshotError("Invalid entity cap flag")
@@ -92,6 +93,7 @@ def parse_world_snapshot(path: str | Path, *, now_ms: int | None = None) -> dict
         "read_only": True,
         "dimension": "minecraft:overworld",
         "game_ticks": tick,
+        "players_online": players,
         "chunks_loaded": chunks,
         "blocks_sampled": blocks,
         "entities_loaded": entities,
