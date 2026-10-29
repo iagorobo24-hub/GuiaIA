@@ -48,7 +48,13 @@ async function main(){
     for(const [step,item] of items.entries()){
       const action=createQaChestDeposit(bot,{sandboxOnly:true,ownerName:'OwnerQA',
         chest,item:item.name,count:item.count})
+      let depositEvidence
+      const originalDeposit=action.depositOne
+      action.depositOne=async()=>{depositEvidence=await originalDeposit();return depositEvidence}
       const outcome=await journal.runNext(action)
+      if(!outcome.ok) {
+        console.error('QA deposit step diagnostic='+JSON.stringify(depositEvidence||{}))
+      }
       if(!outcome.ok) throw Error('QA deposit failed at step '+step+
         ' reason='+outcome.reason+' phase='+outcome.state?.phase)
     }

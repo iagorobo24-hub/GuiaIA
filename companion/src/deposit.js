@@ -112,10 +112,18 @@ function createQaChestDeposit(bot, plan) {
       const chestBefore=chestCount(window,item)
       const playerWindowBefore=chestPlayerCount(window,item)
       if(chestBefore===null || playerWindowBefore===null ||
-          playerWindowBefore!==inventoryBefore) return response(false,'unverified_pre_transfer')
+          playerWindowBefore!==inventoryBefore) {
+        return response(false,'unverified_pre_transfer',{
+          inventoryBefore,playerWindowBefore,chestBefore,
+          windowSlots:window.slots?.length, inventoryStart:window.inventoryStart,
+          inventoryEnd:window.inventoryEnd
+        })
+      }
       transferAttempted=true
       try { await window.deposit(registryItem.id,null,count) }
-      catch { return response(false,'transfer_failed') }
+      catch (error) { return response(false,'transfer_failed',{
+        transferError:String(error?.message||'unknown').slice(0,145)
+      }) }
       const deadline=Date.now()+5500
       while(!cancelled && !safe() && Date.now()<deadline){
         const chestAfter=chestCount(window,item)
@@ -128,7 +136,11 @@ function createQaChestDeposit(bot, plan) {
         }
         await new Promise(resolve=>setTimeout(resolve,150))
       }
-      return response(false,cancelled?'cancelled':'unverified_inventory_transfer')
+      return response(false,cancelled?'cancelled':'unverified_inventory_transfer',{
+        observedPlayer:chestPlayerCount(window,item),
+        observedChest:chestCount(window,item),
+        inventoryBefore,chestBefore
+      })
     } finally {
       try{window?.close()}catch{}
       window=null;active=false
