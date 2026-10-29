@@ -7,12 +7,16 @@ on:
       - 'fabric-observer/**'
       - 'scripts/qa_fabric_server.py'
       - 'scripts/qa_observer_stress.py'
+      - 'scripts/qa_companion_server.py'
+      - 'companion/**'
       - '.github/workflows/fabric.yml'
   pull_request:
     paths:
       - 'fabric-observer/**'
       - 'scripts/qa_fabric_server.py'
       - 'scripts/qa_observer_stress.py'
+      - 'scripts/qa_companion_server.py'
+      - 'companion/**'
       - '.github/workflows/fabric.yml'
 
 permissions:
@@ -70,6 +74,19 @@ jobs:
             --launcher "$RUNNER_TEMP/guiaia-qa/launcher.jar" \
             --fabric-api "$RUNNER_TEMP/guiaia-qa/fabric-api.jar" \
             --mod "$mod"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: companion/package-lock.json
+      - name: Install pinned local QA companion dependencies
+        working-directory: companion
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify real QA bot login / follow / stop
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: python3 scripts/qa_companion_server.py --launcher "$RUNNER_TEMP/guiaia-qa/launcher.jar"
       - name: Archive mod for inspection (not a public release)
         uses: actions/upload-artifact@v4
         with:
