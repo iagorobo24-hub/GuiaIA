@@ -41,6 +41,23 @@ async function main(){
       await pause(250)
     }
     if(!ready) throw new Error('QA owner or oak log never observed')
+    // Keep the QA owner visibly nearby but out of pickup range. If both bots
+    // stand on the same worldspawn, either one can randomly collect the drop,
+    // producing a false-negative for the worker's verified inventory receipt.
+    await owner.lookAt(new Vec3(owner.entity.position.x, owner.entity.position.y + 1.6,
+                                owner.entity.position.z + 7), true)
+    owner.setControlState('forward', true)
+    let ownerDropDistance = 0
+    for (let i=0; i<15; i++) {
+      await pause(140)
+      ownerDropDistance = Math.hypot(owner.entity.position.x - 3.5,
+                                      owner.entity.position.z - 2.5)
+      if (ownerDropDistance >= 3.2) break
+    }
+    owner.setControlState('forward', false)
+    if (ownerDropDistance < 2.6 || ownerDropDistance > 12) {
+      throw new Error('QA owner could still compete for the planted item drop')
+    }
     const before=inventoryCount(worker,'oak_log')
     const moves=new Movements(worker)
     moves.canDig=false
@@ -71,6 +88,7 @@ async function main(){
       block_after:worker.blockAt(target)?.name,
       inventory_before:before, inventory_after:after,
       inventory_delta:after-before, verified:true,
+      owner_outside_item_pickup_radius:true,
       source:'real_mineflayer_inventory_and_world',
       sandbox_only:true, production:false
     }))
