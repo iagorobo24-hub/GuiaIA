@@ -77,7 +77,7 @@ function verifySessionBundle(bundle,authority){
   }
   // MUST come from a live authenticated SERVER BRIDGE, not bot.players,
   // nickname, user-supplied JSON or a previous snapshot.
-  const active=authority.activeConnection()
+  const active=authority.activeConnection(bridge.connectionId)
   if(!active || active.worldId!==authority.worldId ||
      active.connectionId!==bridge.connectionId ||
      active.username!==bridge.username ||

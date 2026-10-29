@@ -7,6 +7,8 @@ on:
       - 'fabric-observer/**'
       - 'companion/test/qa_real_bridge_clients.js'
       - 'companion/test/qa_verify_real_bridge.js'
+      - 'companion/src/fabric_bridge_reader.js'
+      - 'companion/test/fabric_bridge_reader.test.js'
       - 'scripts/qa_fabric_identity_bridge.py'
       - '.github/workflows/fabric_bridge.yml'
   workflow_dispatch:
@@ -38,6 +40,9 @@ jobs:
       - name: Install pinned synthetic player clients
         working-directory: companion
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Reject stale, forged and disconnected bridge evidence
+        working-directory: companion
+        run: node --test test/fabric_bridge_reader.test.js
       - name: Fetch pinned official Fabric and API JARs
         shell: bash
         run: |

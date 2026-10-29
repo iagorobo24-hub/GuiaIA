@@ -2,6 +2,7 @@
 const fs=require('node:fs')
 const crypto=require('node:crypto')
 const assert=require('node:assert/strict')
+const {verifyBridgeLog,createPinnedQaServerBridgeAuthority}=require('../src/fabric_bridge_reader')
 const [file,keyFile]=process.argv.slice(2)
 if(!file||!keyFile)throw Error('Explicit disposable QA evidence and pinned public key required')
 const key=crypto.createPublicKey(fs.readFileSync(keyFile,'utf8'))
@@ -51,6 +52,14 @@ for(const e of all){
   else active.delete(e.payload.connectionId)
 }
 assert.equal(active.size,0)
+const pinned=createPinnedQaServerBridgeAuthority(file,fs.readFileSync(keyFile,'utf8'),'qa:real-fabric:25593')
+const state=verifyBridgeLog(file,fs.readFileSync(keyFile,'utf8'),'qa:real-fabric:25593')
+assert.equal(state.events,4)
+assert.equal(state.active.size,0)
+for(const entry of all.filter(x=>x.event==='join')){
+  assert.equal(pinned.activeConnection(entry.payload.connectionId),null)
+  assert.equal(pinned.joinProof(entry.payload.connectionId),null)
+}
 const started=fs.readFileSync(file)
 const result={
   result:'pass',real_fabric_server_events:true,
