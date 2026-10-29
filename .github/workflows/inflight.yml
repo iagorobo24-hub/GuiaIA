@@ -1,0 +1,50 @@
+name: Chest in-flight crash QA (isolated)
+
+on:
+  push:
+    branches: ['feature/**']
+    paths:
+      - 'companion/src/recovery.js'
+      - 'companion/src/deposit.js'
+      - 'companion/test/qa_inflight_deposit_crash.js'
+      - 'companion/test/qa_restart_snapshot_server.js'
+      - 'scripts/qa_chest_inflight_server.py'
+      - '.github/workflows/inflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crash-replay-denial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: companion/package-lock.json
+      - name: Install pinned QA dependencies
+        working-directory: companion
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify recovery invariants
+        working-directory: companion
+        run: node --test test/recovery.test.js test/deposit.test.js
+      - name: Retrieve official Fabric 1.21.1 server
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://meta.fabricmc.net/v2/versions/loader/1.21.1/0.19.5/1.1.2/server/jar' \
+            -o "$RUNNER_TEMP/chest-inflight-launcher.jar"
+          test -s "$RUNNER_TEMP/chest-inflight-launcher.jar"
+      - name: Prove no replay after the client dies between transfer and receipt
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/qa_chest_inflight_server.py --launcher "$RUNNER_TEMP/chest-inflight-launcher.jar"

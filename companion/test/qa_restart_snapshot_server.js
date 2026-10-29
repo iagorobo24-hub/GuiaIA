@@ -72,9 +72,13 @@ async function main(){
     if(proof.status!==expect || proof.canAutoReplay!==false) {
       throw Error('Reconciliation gate refused: '+JSON.stringify(proof))
     }
-    if(process.env.GUIAIA_QA_REQUIRE_TRANSFER_COUNTS==='true' &&
-       (player.oak_log!==0||container.oak_log!==1)) {
-      throw Error('World did not persist the accepted in-flight transfer')
+    // When the client dies before its journal receipt, the server might
+    // have applied the click or might still hold the original item. Both
+    // outcomes require manual review; no automated replays are permitted.
+    if(process.env.GUIAIA_QA_REQUIRE_ITEM_CONSERVATION==='true' &&
+       (player.oak_log+container.oak_log!==1 ||
+        player.birch_log+container.birch_log!==0)) {
+      throw Error('Real server player/chest conservation mismatch: '+JSON.stringify({player,container}))
     }
     if(expect==='completed_inventory_verified' &&
        (!proof.ok || player.oak_log!==0||player.birch_log!==0 ||

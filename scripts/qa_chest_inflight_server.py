@@ -32,7 +32,7 @@ def main():
         env["GUIAIA_QA_DEPOSIT_DIR"]=str(root/"journal")
         env["GUIAIA_QA_EXPECTED_PHASE"]="transferring"
         env["GUIAIA_QA_EXPECTED_STATUS"]="manual_review_required"
-        env["GUIAIA_QA_REQUIRE_TRANSFER_COUNTS"]="true"
+        env["GUIAIA_QA_REQUIRE_ITEM_CONSERVATION"]="true"
         server=None
         handle=None
         client=None
