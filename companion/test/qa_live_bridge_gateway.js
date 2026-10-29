@@ -7,6 +7,7 @@ const mineflayer=require('mineflayer')
 const crypto=require('node:crypto')
 const {Vec3}=require('vec3')
 const {inventoryCount}=require('../src/gather')
+const {finiteDistance,OWNER_MAX_DISTANCE}=require('../src/controller')
 const {openDepositJournal,chestCount}=require('../src/deposit')
 const {verifyBridgeLog,createPinnedQaServerBridgeAuthority}=
   require('../src/fabric_bridge_reader')
@@ -53,6 +54,7 @@ async function main(){
         }
         if(realProof && source.activeConnection(connectionId)?.connected &&
            bot.players?.OwnerQA?.entity &&
+           finiteDistance(bot.entity?.position,bot.players.OwnerQA.entity.position)<=OWNER_MAX_DISTANCE &&
            bot.blockAt(new Vec3(chest.x,chest.y,chest.z))?.name==='chest' &&
            inventoryCount(bot,'oak_log')===1 &&
            inventoryCount(bot,'birch_log')===1) {
@@ -98,8 +100,12 @@ async function main(){
       sandboxOnly:true,ownerName:'OwnerQA',chest,
       items:[{name:'oak_log',count:1}]
     })
-    const result=await journal.runNext(gateway.createDeposit(session,first))
-    if(!result.ok)throw Error('Actual Fabric signer rejected by companion: '+result.reason)
+    const adapter=gateway.createDeposit(session,first)
+    const actualDeposit=adapter.depositOne
+    let depositProof
+    adapter.depositOne=async()=>{depositProof=await actualDeposit();return depositProof}
+    const result=await journal.runNext(adapter)
+    if(!result.ok)throw Error('Real Fabric session deposit failed: '+result.reason+'; operation='+String(depositProof?.reason||'unobserved'))
     // Replay must be denied by persisted operator nonce barrier.
     await (async()=>{
       try {

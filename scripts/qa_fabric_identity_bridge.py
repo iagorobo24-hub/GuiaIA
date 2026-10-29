@@ -129,9 +129,14 @@ def main():
                 cwd=ROOT/"companion",stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,text=True)
             try:
-                until(lambda:"GuiaIA_QA joined the game" in recent_log(restarted),
-                      30,process=server,note="real Fabric QA bot joined")
+                until(lambda:"GuiaIA_QA joined the game" in recent_log(restarted) and
+                             "OwnerQA joined the game" in recent_log(restarted),
+                      30,process=server,note="both real Fabric QA players joined")
                 for command in (
+                    # OwnerQA has playerdata from the preceding test-world
+                    # login and may spawn far from the newly planted chest.
+                    # Only the disposable QA world is teleported here.
+                    "tp OwnerQA 2 64 2",
                     "give GuiaIA_QA minecraft:oak_log 1",
                     "give GuiaIA_QA minecraft:birch_log 1",
                     "say GUIAIA_BRIDGE_TEST_INVENTORY_READY",
