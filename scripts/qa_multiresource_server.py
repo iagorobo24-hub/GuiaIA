@@ -38,6 +38,7 @@ def main():
                 "setworldspawn 2 64 2",
                 "setblock 3 64 2 minecraft:oak_log",
                 "setblock 9 64 2 minecraft:birch_log",
+                "setblock 7 64 3 minecraft:chest",
                 "say GUIAIA_MULTI_RESOURCE_QA_READY",
             ):
                 send(server,command)

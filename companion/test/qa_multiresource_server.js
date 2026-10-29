@@ -7,6 +7,7 @@ const {Vec3}=require('vec3')
 const {pathfinder,Movements,goals}=require('mineflayer-pathfinder')
 const {createQaGather,inventoryCount}=require('../src/gather')
 const {openMission}=require('../src/mission')
+const {createQaChestDeposit,openDepositJournal,chestCount}=require('../src/deposit')
 
 const dir=process.env.GUIAIA_QA_MISSION_DIR
 if(!dir || !dir.startsWith('/tmp/guiaia-mission-qa-')) {
@@ -160,6 +161,54 @@ async function main(){
         world_mutations:2,production:false,sandbox_only:true
       }))
     }finally{restored.close()}
+    // END-TO-END LAB: these are exactly the real items harvested above.
+    // No /give or artificial inventory injection in this server.
+    const chestPos={x:7,y:64,z:3}
+    const chestBlock=worker.blockAt(new Vec3(chestPos.x,chestPos.y,chestPos.z))
+    if(chestBlock?.name!=='chest')throw Error('Approved QA chest missing after harvest')
+    const depositDir=dir+'/deposit-ledger'
+    const storage=openDepositJournal(depositDir,{
+      sandboxOnly:true,ownerName:'OwnerQA',chest:chestPos,
+      items:[{name:'oak_log',count:1},{name:'birch_log',count:1}]
+    })
+    try{
+      for(const name of ['oak_log','birch_log']){
+        const adapter=createQaChestDeposit(worker,{
+          sandboxOnly:true,ownerName:'OwnerQA',chest:chestPos,item:name,count:1
+        })
+        let proof
+        const actual=adapter.depositOne
+        adapter.depositOne=async()=>{proof=await actual();return proof}
+        const receipt=await storage.runNext(adapter)
+        if(!receipt.ok)throw Error('Harvest-to-chest transfer failed: '+
+          receipt.reason+'; '+JSON.stringify(proof||{}).slice(0,280))
+      }
+      if(inventoryCount(worker,'oak_log')!==0 ||
+         inventoryCount(worker,'birch_log')!==0)throw Error('Harvested inventory not emptied')
+      const window=await worker.openContainer(chestBlock)
+      let oak, birch
+      try{
+        oak=chestCount(window,'oak_log')
+        birch=chestCount(window,'birch_log')
+      }finally{window.close()}
+      if(oak!==1||birch!==1)throw Error('Real chest does not contain both mined items')
+      storage.close()
+      const reopened=openDepositJournal(depositDir)
+      try{
+        if(reopened.view().phase!=='completed' || reopened.view().receipts.length!==2 ||
+           (await reopened.runNext({})).reason!=='not_ready') {
+          throw Error('Harvest-to-chest replay or durable receipts invalid')
+        }
+      }finally{reopened.close()}
+      console.log('GUIAIA_GATHER_TO_CHEST_QA_EVIDENCE='+JSON.stringify({
+        result:'pass',real_minecraft_server:true,gathered:{oak_log:1,birch_log:1},
+        bot_after_deposit:{oak_log:0,birch_log:0},
+        chest_after_reopen:{oak_log:oak,birch_log:birch},
+        mining_receipts:2,deposit_receipts:2,
+        durable_deposit_reopen:true,replay_denied:true,
+        no_synthetic_item_injection:true,production:false
+      }))
+    }finally{storage.close()}
   }finally{
     clearTimeout(watchdog)
     if(journal)journal.close()
