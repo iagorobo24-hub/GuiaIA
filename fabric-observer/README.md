@@ -37,3 +37,13 @@ The snapshot is local. Keep directories private and never forward the raw file e
 - Java compilation must pass isolated GitHub CI before suggesting binary testing.
 - **Not yet demonstrated** in a running Minecraft QA world. No real end-to-end Fabric-to-MCP world observation is claimed until that occurs.
 - Any future wider observation must require explicit per-world access control, query quotas and server-thread budgets.
+
+## Real Fabric JOIN/DISCONNECT evidence (separate opt-in QA entrypoint)
+
+The same experimental Fabric JAR also contains the independently disabled GuiaIdentityBridge. It **never authenticates an offline username**. It records the actual Minecraft server networking handler's JOIN and DISCONNECT events, creates a fresh random UUIDv4 connection ID and challenge per login, and signs each event with Ed25519 using a locally supplied private PKCS#8 key. All evidence is local, bounded and permission-restricted. No player chat, admin commands or network port is exposed.
+
+This bridge will only enable in a disposable directory under /tmp/guiaia-fabric-bridge-qa- with the exact QA configuration and a private key file with permission 0600. It is disabled for actual valued or production worlds by construction. The private key must **never** be committed, shared with an assistant or stored inside the bot. Verify the event records using an independently pinned public key, not a key learned from the event record itself.
+
+[Real Fabric 1.21.1 QA proof](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40881777326) demonstrated two same-name offline connections with distinct signed IDs and challenges, valid disconnects, tampering denial, disabled-by-default behavior and stale-log clearing on restart. See [the bridge security report](../docs/COMPANION_REAL_FABRIC_CONNECTION_BRIDGE_QA_2026-10-29.md).
+
+**Important:** the passive event file is not a trustworthy live-connection service under failure, and owner enrolment/ownership proof is not implemented. Do not deploy the bridge to Teselia or use it to authorize gameplay until the genuine session and owner-verification barrier is complete.
