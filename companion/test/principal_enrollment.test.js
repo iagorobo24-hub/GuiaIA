@@ -478,3 +478,160 @@ test('stale or tampered externally trusted checkpoint cannot silently lower revo
   }),/Externally pinned/)
   assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
 })
+
+test('independent signed witness catches coherent local rollback before a granted chest action',async t=>{
+  const {EventEmitter}=require('node:events')
+  const {createQaCheckpointWitness}=require('../src/qa_checkpoint_witness')
+  const {createPinnedQaRemoteCheckpointClient}=require('../src/remote_checkpoint')
+  const {createQaSessionActionGateway}=require('../src/session_identity')
+  const x=setup(t)
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'guiaia-remote-anchor-qa-'))
+  fs.rmdirSync(root)
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}))
+  const witnessKeys=keys()
+  const witness=createQaCheckpointWitness({
+    directory:root,worldId:'qa:registry-witness',
+    operatorPublicKeyPem:x.context.operatorPublicKeyPem,
+    witnessPrivateKey:witnessKeys.privateKey
+  })
+  const url=await witness.start()
+  t.after(()=>witness.close())
+  // Separate QA world for operator checkpoint tickets.
+  const worldId='qa:registry-witness'
+  const registryContext={...x.context,worldId}
+  const registry=openQaPrincipalRegistry(x.directory,registryContext)
+  const client=createPinnedQaRemoteCheckpointClient({
+    url,worldId,operatorPublicKeyPem:x.context.operatorPublicKeyPem,
+    witnessPublicKeyPem:witnessKeys.publicKey.export({format:'pem',type:'spki'})
+  })
+  const operatorFingerprint=client.operatorFingerprint
+  const advance=(before,after)=>{
+    const now=Date.now()
+    const payload={aud:'guiaia:checkpoint-advance:v1',worldId,operatorFingerprint,
+      previousSequence:before?before.sequence:-1,
+      previousSha256:before?before.registrySha256:null,
+      sequence:after.sequence,registrySha256:after.registrySha256,
+      nonce:crypto.randomUUID(),issuedAt:now-1000,expiresAt:now+30000}
+    return {payload,signature:crypto.sign(null,Buffer.from(JSON.stringify(payload)),
+      x.operator.privateKey).toString('base64url')}
+  }
+  const initial=registry.exportCheckpoint()
+  await client.publish(advance(null,initial))
+  const enroll=(()=>{
+    const now=Date.now()
+    const payload={aud:'guiaia:principal-enrollment:v1',worldId,
+      principalId:'friend_one',nonce:crypto.randomUUID(),issuedAt:now-1000,
+      expiresAt:now+30000,publicKeyDer:x.publicKeyDer}
+    return {payload,signature:crypto.sign(null,Buffer.from(JSON.stringify(payload)),
+      x.operator.privateKey).toString('base64url')}
+  })()
+  registry.applySignedChange(enroll,x.consent(enroll))
+  const enrolled=registry.exportCheckpoint()
+  await client.publish(advance(initial,enrolled))
+  const f=path.join(x.directory,'principals.json')
+  const anchor=path.join(x.root,'checkpoint','anchor.json')
+  const oldFiles=[fs.readFileSync(f),fs.readFileSync(anchor)]
+  const revocation=(()=>{
+    const now=Date.now()
+    const payload={aud:'guiaia:principal-revocation:v1',worldId,
+      principalId:'friend_one',nonce:crypto.randomUUID(),
+      issuedAt:now-1000,expiresAt:now+30000}
+    return {payload,signature:crypto.sign(null,Buffer.from(JSON.stringify(payload)),
+      x.operator.privateKey).toString('base64url')}
+  })()
+  registry.applySignedChange(revocation)
+  const revoked=registry.exportCheckpoint()
+  await client.publish(advance(enrolled,revoked))
+  registry.close()
+  fs.writeFileSync(f,oldFiles[0])
+  fs.writeFileSync(anchor,oldFiles[1])
+  // A naive no-pin reopening considers the revoked principal alive again.
+  const compromised=openQaPrincipalRegistry(x.directory,registryContext)
+  assert.equal(compromised.isRevoked('friend_one'),false)
+  const server=keys(),conn=crypto.randomUUID(),
+    challenge=crypto.randomBytes(24).toString('hex')
+  const now=Date.now()
+  const sign=(payload,key)=>({payload,signature:crypto.sign(null,
+    Buffer.from(JSON.stringify(payload)),key).toString('base64url')})
+  const proof={bridge:sign({aud:'guiaia:server-connection:v1',worldId,
+    connectionId:conn,username:'OwnerQA',challenge,issuedAt:now-1000,
+    expiresAt:now+44000},server.privateKey),
+    owner:sign({aud:'guiaia:principal-proof:v1',worldId,connectionId:conn,
+      principalId:'friend_one',challenge,issuedAt:now-1000,
+      expiresAt:now+44000},x.principal.privateKey)}
+  const permit=sign({aud:'guiaia:session-deposit:v1',worldId,
+    botName:'GuiaIA_QA',ownerName:'OwnerQA',principalId:'friend_one',
+    connectionId:conn,challenge,chest:{x:4,y:64,z:3},
+    item:'birch_log',count:1,nonce:crypto.randomUUID(),
+    issuedAt:now-1000,expiresAt:now+44000},x.operator.privateKey)
+  let touches=0
+  const bot=new EventEmitter()
+  Object.assign(bot,{username:'GuiaIA_QA',
+    inventory:{items:()=>[]},
+    blockAt:()=>{touches++;throw Error('Unauthorized world access')},
+    openContainer:()=>{touches++;throw Error('Unauthorized chest opening')},
+  })
+  const ledgerDirectory=path.join(x.root,'spent')
+  const authority={sandboxOnly:true,identityMode:'trusted_server_bridge_lab',
+    worldId,botName:'GuiaIA_QA',
+    serverBridgePublicKeyPem:server.publicKey.export({type:'spki',format:'pem'}),
+    operatorPublicKeyPem:x.context.operatorPublicKeyPem,
+    trustedPrincipals:compromised.trustedPrincipals(),
+    isRevoked:id=>compromised.isRevoked(id),
+    activeConnection:()=>({worldId,connectionId:conn,connected:true,username:'OwnerQA'}),
+    ledgerDirectory,requireRemoteCheckpoint:true,
+    currentRegistryCheckpoint:()=>compromised.exportCheckpoint(),
+    remoteCheckpointMatch:head=>client.verifyLocal(head)
+  }
+  const gateway=createQaSessionActionGateway(bot,authority)
+  await assert.rejects(gateway.createDeposit(proof,permit).depositOne(),
+    /Remote checkpoint disagreement/)
+  assert.equal(touches,0)
+  assert.equal(fs.existsSync(ledgerDirectory),false)
+  compromised.close()
+})
+
+test('remote witness unavailability denies dispatch, not only session creation',async t=>{
+  const {EventEmitter}=require('node:events')
+  const {createQaSessionActionGateway}=require('../src/session_identity')
+  const x=setup(t),registry=x.open()
+  const s=x.ticket();registry.applySignedChange(s,x.consent(s))
+  const bridge=keys(),connectionId=crypto.randomUUID()
+  const challenge=crypto.randomBytes(24).toString('hex'),now=Date.now()
+  const sign=(payload,key)=>({payload,signature:crypto.sign(null,
+    Buffer.from(JSON.stringify(payload)),key).toString('base64url')})
+  const session={bridge:sign({aud:'guiaia:server-connection:v1',
+    worldId:x.worldId,connectionId,username:'OwnerQA',challenge,
+    issuedAt:now-1000,expiresAt:now+44000},bridge.privateKey),
+    owner:sign({aud:'guiaia:principal-proof:v1',
+      worldId:x.worldId,connectionId,principalId:'friend_one',challenge,
+      issuedAt:now-1000,expiresAt:now+44000},x.principal.privateKey)}
+  const grant=sign({aud:'guiaia:session-deposit:v1',
+    worldId:x.worldId,botName:'GuiaIA_QA',ownerName:'OwnerQA',
+    principalId:'friend_one',connectionId,challenge,
+    chest:{x:4,y:64,z:3},item:'birch_log',count:1,
+    nonce:crypto.randomUUID(),issuedAt:now-1000,expiresAt:now+44000},
+    x.operator.privateKey)
+  let touches=0
+  const bot=new EventEmitter()
+  Object.assign(bot,{username:'GuiaIA_QA',inventory:{items:()=>[]},
+    blockAt:()=>{touches++;throw Error('Unauthorised block read')},
+    openContainer:()=>{touches++;throw Error('Unauthorised chest open')}})
+  const directory=path.join(x.root,'spent')
+  const authority={sandboxOnly:true,identityMode:'trusted_server_bridge_lab',
+    worldId:x.worldId,botName:'GuiaIA_QA',
+    serverBridgePublicKeyPem:bridge.publicKey.export({format:'pem',type:'spki'}),
+    trustedPrincipals:registry.trustedPrincipals(),
+    operatorPublicKeyPem:x.context.operatorPublicKeyPem,
+    isRevoked:id=>registry.isRevoked(id),
+    activeConnection:()=>({worldId:x.worldId,connectionId,username:'OwnerQA',connected:true}),
+    ledgerDirectory:directory,requireRemoteCheckpoint:true,
+    currentRegistryCheckpoint:()=>registry.exportCheckpoint(),
+    remoteCheckpointMatch:async()=>{throw Error('Remote checkpoint witness unavailable')}
+  }
+  const action=createQaSessionActionGateway(bot,authority).createDeposit(session,grant)
+  await assert.rejects(action.depositOne(),/Remote checkpoint witness unavailable/)
+  assert.equal(touches,0)
+  assert.equal(fs.existsSync(directory),false)
+  registry.close()
+})

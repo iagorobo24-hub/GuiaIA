@@ -141,6 +141,19 @@ function createSessionAuthorizedQaDeposit(bot,bundle,capability,authority){
       verifySessionBundle(bundle,trust)
       verifySessionDepositGrant(capability,current,trust)
     }
+    if(trust.requireRemoteCheckpoint===true){
+      if(typeof trust.remoteCheckpointMatch!=='function' ||
+         typeof trust.currentRegistryCheckpoint!=='function')
+        throw Error('Independent checkpoint authority unavailable')
+      // Never trust a cached local watermark. The separately pinned witness
+      // must answer afresh before the one-use grant is consumed.
+      const local=trust.currentRegistryCheckpoint()
+      if(await trust.remoteCheckpointMatch(local)!==true)
+        throw Error('Independent checkpoint verification unavailable')
+      // Re-check revocation after network latency, before any world action.
+      verifySessionBundle(bundle,trust)
+      verifySessionDepositGrant(capability,current,trust)
+    }
     reserveGrantOnce(trust.ledgerDirectory,grant.nonce)
     return base()
   }

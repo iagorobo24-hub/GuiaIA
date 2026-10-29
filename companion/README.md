@@ -90,3 +90,16 @@ filesystem; opening with externallyPinnedCheckpoint enforces that exact
 value, including when both local files were rolled back together. The library
 does not manage an external trusted store; unpinned dual-file rollback remains
 possible. See docs/PRINCIPAL_ROLLBACK_CHECKPOINT_QA_2026-10-29.md.
+
+## Independent checkpoint witness protocol (QA only)
+
+The new opt-in requireRemoteCheckpoint action guard obtains a fresh signed
+high-water mark from a separate local witness process before reserving a
+single-use grant. The witness accepts only Ed25519 operator-signed bootstrap
+and compare-and-swap monotonic advances; client and witness sign/check all
+scope, key, nonce and revision fields. Test coverage includes a killed witness,
+persistent restart, forged updates, coherent local registry rollback and
+pre-world-mutation denial. **This is still a localhost proof, not a remotely
+protected immutable authority.** It shares the user's disk and can itself be
+rolled back by someone who controls that disk. See
+docs/PRINCIPAL_INDEPENDENT_WITNESS_QA_2026-10-29.md.

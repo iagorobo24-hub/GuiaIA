@@ -1,0 +1,47 @@
+{
+  "branch": "feature/principal-enrollment-qa",
+  "checks": [
+    "operator-signed monotonic CAS",
+    "Ed25519 witness-signed nonces",
+    "pinned witness key",
+    "restart persistence",
+    "reject old registry at deposit dispatch",
+    "deny when witness unavailable",
+    "separate child-process SIGKILL and restart",
+    "reject forged, reordered, parallel and stale operator updates",
+    "demonstrated rollback of witness own writable storage"
+  ],
+  "date": "2026-10-29",
+  "focused_tests": {
+    "cancelled": 0,
+    "fail": 0,
+    "pass": 37,
+    "skipped": 0,
+    "tests": 37
+  },
+  "full_node_tests": {
+    "cancelled": 0,
+    "fail": 0,
+    "pass": 153,
+    "skipped": 0,
+    "tests": 153
+  },
+  "parent_commit": "bbb703a",
+  "production": false,
+  "qa_process_on_penguin": true,
+  "result": "pass_local_qa",
+  "source_sha256": {
+    "companion/src/qa_checkpoint_witness.js": "a12dfcc3058dbfbc5902bb5e048d3d6a6e2fba84ef7aafc320a35c7428acc6e9",
+    "companion/src/remote_checkpoint.js": "f50d840bab1265630b12cbe4005370ca03043df0aea23457328aa18b02ff7c92",
+    "companion/src/session_identity.js": "5feb4f24158fd21b57704bcdaea425a62b78ca90a6071a7e4054e2055dad44fc",
+    "companion/test/principal_enrollment.test.js": "a8900641254dd79dd095dc426fd24e8d485d8c3d3ab2245bb180b1542a20618d",
+    "companion/test/qa_checkpoint_witness_process.js": "da89b357fd0a162616cd59e30635583e330fc8367cdc77cd1b02776caaf27650",
+    "companion/test/remote_checkpoint.test.js": "0f8befb689a241c1cbe0eaa34352115cdc06d557b154e3d9e7f5bf42fc0e8e52"
+  },
+  "unverified": [
+    "real Fabric test of new remote witness path",
+    "GitHub CI on local branch",
+    "truly off-host immutable high-water-mark",
+    "actual player identity"
+  ]
+}
