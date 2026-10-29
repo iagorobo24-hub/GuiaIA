@@ -103,3 +103,21 @@ pre-world-mutation denial. **This is still a localhost proof, not a remotely
 protected immutable authority.** It shares the user's disk and can itself be
 rolled back by someone who controls that disk. See
 docs/PRINCIPAL_INDEPENDENT_WITNESS_QA_2026-10-29.md.
+
+
+## Signed short-lived follow in isolated QA
+
+The low-level follow controller can now be wrapped by
+src/qa_authorized_follow.js. This experiment requires an operator-signed
+Ed25519 **follow-specific** capability (max 10 seconds), a separately
+signed owner/session proof bound to a real Fabric connection, fresh
+Fabric JVM presence, and a separately pinned revocation checkpoint.
+The permission nonce is durably spent before starting pathfinding.
+
+While moving, the wrapper rechecks the live session, principal revocation,
+the witness and health/distance safety. A bounded watchdog cancels follow
+even if the live query never returns. No arbitrary block or inventory
+operations are exposed. The runnable stdin CLI **still denies follow**;
+the wrapper is for the disposable QA harness only. A production feature
+must have authenticated real players and a protected off-host witness.
+See docs/GUIAIA_SIGNED_FOLLOW_QA_2026-10-29.md.

@@ -12,6 +12,8 @@ const BRIDGE_FIELDS=['aud','worldId','connectionId','username','challenge','issu
 const OWNER_FIELDS=['aud','worldId','connectionId','principalId','challenge','issuedAt','expiresAt']
 const GRANT_FIELDS=['aud','worldId','botName','ownerName','principalId','connectionId',
   'challenge','chest','item','count','nonce','issuedAt','expiresAt']
+const FOLLOW_FIELDS=['aud','worldId','botName','ownerName','principalId',
+  'connectionId','challenge','nonce','issuedAt','expiresAt']
 const EXACT_SESSION = ['bridge','owner']
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const name=/^[A-Za-z0-9_]{3,16}$/
@@ -97,6 +99,18 @@ function verifySessionDepositGrant(token,session,authority){
      !Number.isInteger(p.count) || p.count<1 || p.count>2 ||
      !uuid.test(p.nonce||'') || !validWindow(p,Date.now(),120000)) {
     throw Error('Session-scoped deposit capability invalid')
+  }
+  verifySigned(token,authority.operatorPublicKeyPem)
+  return p
+}
+function verifySessionFollowGrant(token,session,authority){
+  const p=token?.payload
+  if(!exact(p,FOLLOW_FIELDS) || p.aud!=='guiaia:session-follow:v1' ||
+     p.worldId!==session.worldId || p.principalId!==session.principalId ||
+     p.connectionId!==session.connectionId || p.challenge!==session.challenge ||
+     p.ownerName!==session.username || p.botName!==authority.botName ||
+     !uuid.test(p.nonce||'') || !validWindow(p,Date.now(),10000)){
+    throw Error('Invalid bounded session follow capability')
   }
   verifySigned(token,authority.operatorPublicKeyPem)
   return p
@@ -188,5 +202,6 @@ function createQaStrictSessionActionGateway(bot,authority){
   // Both checks remain mandatory even if the caller mutates its object later.
   return createQaSessionActionGateway(bot,Object.freeze({...authority}))
 }
-module.exports={verifySessionBundle,verifySessionDepositGrant,createSessionAuthorizedQaDeposit,
-  createQaSessionActionGateway,createQaStrictSessionActionGateway}
+module.exports={verifySessionBundle,verifySessionDepositGrant,verifySessionFollowGrant,
+  createSessionAuthorizedQaDeposit,createQaSessionActionGateway,
+  createQaStrictSessionActionGateway}

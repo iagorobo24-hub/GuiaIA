@@ -11,6 +11,8 @@ on:
       - 'companion/src/principal_enrollment.js'
       - 'companion/src/principal_checkpoint.js'
       - 'companion/src/session_identity.js'
+      - 'companion/src/qa_authorized_follow.js'
+      - 'companion/test/qa_authorized_follow.test.js'
       - 'companion/src/qa_checkpoint_witness.js'
       - 'companion/src/remote_checkpoint.js'
       - 'companion/test/remote_checkpoint.test.js'
