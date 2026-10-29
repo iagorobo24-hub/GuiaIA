@@ -405,7 +405,9 @@ test('second approval timeout prevents durable dispatch after the first approval
   const p=x.factory(),started=Date.now(),r=await p.runNext()
   assert.equal(r.reason,'authorization_unavailable')
   assert.equal(calls,2)
-  assert.ok(Date.now()-started>=AUTH_TIMEOUT_MS)
+  // Node timer callbacks may fire a few milliseconds before a wall-clock
+  // Date.now() reaches the nominal delay. Still reject premature dispatch.
+  assert.ok(Date.now()-started>=AUTH_TIMEOUT_MS-25)
   assert.equal(x.gathers,0)
   assert.equal(x.read('mission').phase,'ready')
   release(true)

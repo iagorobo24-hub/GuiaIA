@@ -109,12 +109,18 @@ def main():
                 "GuiaIA_QA joined the game" in recent_log(log) and
                 "OwnerQA joined the game" in recent_log(log)
             ), 30, process=server, note="two real QA clients joined")
-            for command in (
-                "tp OwnerQA 2 64 2",
+            # Crash test isolates durable transfer recovery from long route
+            # times on a resource-limited QA server. The normal integration
+            # test still verifies full navigation in both directions.
+            setup_commands = ["tp OwnerQA 2 64 2"]
+            if args.crash_after_deposit:
+                setup_commands.append("tp GuiaIA_QA 6 64 2")
+            setup_commands.extend([
                 "give GuiaIA_QA minecraft:oak_log 1",
                 "give GuiaIA_QA minecraft:birch_log 1",
                 "say GUIAIA_BRIDGE_TEST_INVENTORY_READY",
-            ):
+            ])
+            for command in setup_commands:
                 send(server, command)
             until(lambda: "GUIAIA_BRIDGE_TEST_INVENTORY_READY" in recent_log(log),
                   20, process=server, note="both QA inventories ready")
