@@ -6,7 +6,7 @@
   "description": "Opt-in, bounded, aggregate world telemetry for local AI clients",
   "environment": "server",
   "entrypoints": {
-    "main": ["dev.guia.observer.GuiaWorldObserver"]
+    "main": ["dev.guia.observer.GuiaWorldObserver", "dev.guia.observer.GuiaIdentityBridge"]
   },
   "depends": {
     "fabricloader": ">=0.16.0",
