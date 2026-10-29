@@ -40,7 +40,7 @@ class RconReadOnly:
     """Loopback-only by design; credentials read from file, never returned."""
     def __init__(self, password_file: str, port: int = 25575):
         self.password_file = Path(password_file).expanduser()
-        if not self.password_file.is_absolute() or not self.password_file.is_file():
+        if not self.password_file.is_absolute() or self.password_file.is_symlink() or not self.password_file.is_file():
             raise ValueError("RCON password file must exist at an absolute path")
         if not isinstance(port, int) or not (1 <= port <= 65535):
             raise ValueError("Invalid RCON port")

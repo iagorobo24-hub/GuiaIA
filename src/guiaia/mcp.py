@@ -10,6 +10,7 @@ import json
 import sys
 from .observer import SnapshotObserver, RconObserver
 from .tools import ToolRegistry, ToolError, format_content
+from .rcon import RconError
 
 PROTOCOL_VERSION = "2025-11-25"
 SUPPORTED = {"2025-11-25", "2025-06-18"}
@@ -26,6 +27,10 @@ class MCP:
             return self._error(message.get("id") if isinstance(message, dict) else None, -32600, "Invalid Request")
         method = message.get("method")
         request_id = message.get("id")
+        if "id" in message and (isinstance(request_id, bool) or not isinstance(request_id, (str, int))):
+            return self._error(None, -32600, "Invalid request id")
+        if isinstance(request_id, str) and len(request_id) > 128:
+            return self._error(None, -32600, "Invalid request id")
         if request_id is None:
             # JSON-RPC notification, never invoke a tool.
             if method == "notifications/initialized" and self.initialized:
@@ -37,6 +42,8 @@ class MCP:
         if not isinstance(params, dict):
             return self._error(request_id, -32602, "Params must be an object")
         if method == "initialize":
+            if self.initialized:
+                return self._error(request_id, -32600, "Already initialized")
             requested = params.get("protocolVersion")
             self.version = requested if requested in SUPPORTED else PROTOCOL_VERSION
             self.initialized = True
@@ -61,7 +68,7 @@ class MCP:
             try:
                 output = self.tools.invoke(name, params.get("arguments", {}))
                 return self._result(request_id, format_content(output))
-            except (ToolError, ValueError, OSError, json.JSONDecodeError) as exc:
+            except (ToolError, RconError, ValueError, OSError, json.JSONDecodeError) as exc:
                 # Errors are data, not stack traces; credentials and local paths must not leak.
                 safe = str(exc) if isinstance(exc, ToolError) else "Observer unavailable or invalid snapshot"
                 return self._result(request_id, format_content({"error": safe, "action_performed": False}, True))
