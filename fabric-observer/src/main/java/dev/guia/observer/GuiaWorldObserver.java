@@ -203,7 +203,7 @@ public final class GuiaWorldObserver implements ModInitializer {
             throw new IOException("Output path invalid");
         }
         Files.createDirectories(OUTPUT_DIR,
-                PosixFilePermissions.asFileAttribute("rwx------"));
+                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
         if (Files.isSymbolicLink(OUTPUT_DIR)) throw new IOException("Output directory invalid");
         Files.setPosixFilePermissions(OUTPUT_DIR, PosixFilePermissions.fromString("rwx------"));
         Path temp = Files.createTempFile(OUTPUT_DIR, "snapshot-", ".tmp");
