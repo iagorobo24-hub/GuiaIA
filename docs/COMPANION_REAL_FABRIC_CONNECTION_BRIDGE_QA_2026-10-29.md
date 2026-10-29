@@ -18,6 +18,16 @@ El nuevo companion/src/fabric_bridge_reader.js consume evidencias con una **clav
 
 Ocho pruebas unitarias del lector de eventos pasaron localmente. La segunda CI integra el lector en la verificación del registro real. Todos los secretos y mundos utilizados en las pruebas son temporales y no forman parte del repositorio.
 
+## Integración completa con el gateway de GuiaIA: superada
+
+La [CI real 40891113898](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40891113898) terminó **SUCCESS** tras comprobar el lector pasivo (8 pruebas) y el recorrido real Fabric → prueba firmada JOIN → verificador de sesión → permiso de operador → cofre.
+
+El servidor Minecraft Fabric 1.21.1 generó las firmas reales de JOIN y DISCONNECT, no el harness. Se vinculó la prueba del servidor a un ID de conexión concreto y a un permiso para **un solo tronco de roble**. El bot transfirió el roble al cofre, creó un recibo persistente y rechazó reutilizar el permiso. Tras desconectarse el jugador, el servidor emitió DISCONNECT firmado y una segunda autorización ya preparada fue rechazada antes de tocar el inventario. Saldo observado: bot roble 0 y abedul 1; cofre roble 1 y abedul 0; un recibo.
+
+Las firmas de la clave *personal del jugador* y la autorización del *operador* siguen generándose en QA. Esta ejecución demuestra la procedencia real de la atestación Fabric y el bloqueo por desconexión; **NO** demuestra inscripción ni titularidad real de un jugador no premium. La comprobación de presencia usa un log firmado de eventos que, ante fallos de escritura, puede quedar temporalmente desactualizado; no sustituye una consulta activa al servidor.
+
+Dos intentos previos fallaron al construir el escenario integrado: el jugador sintético conservaba una posición anterior fuera del alcance y el chunk del cofre no estaba cargado. Se corrigió solo la preparación del mundo de QA, exigiendo carga explícita del chunk, confirmación del cofre y distancias correctas; no se deshabilitaron ni debilitaron verificaciones del gateway.
+
 ## Riesgos pendientes antes de producción
 
 1. **No autentica todavía al jugador offline.** La firma del servidor demuestra la conexión, no la titularidad del nombre. Falta enrolamiento seguro de una clave personal por canal independiente y respuesta firmada al desafío del servidor.
