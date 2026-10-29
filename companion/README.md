@@ -121,3 +121,26 @@ operations are exposed. The runnable stdin CLI **still denies follow**;
 the wrapper is for the disposable QA harness only. A production feature
 must have authenticated real players and a protected off-host witness.
 See docs/GUIAIA_SIGNED_FOLLOW_QA_2026-10-29.md.
+
+## Signed durable gather-to-chest delivery (disposable QA only)
+
+The opt-in QA delivery pipeline joins the existing durable gather and
+chest-deposit journals with an exact operator-signed Ed25519 plan bound to
+the live Fabric session and a separately pinned revocation witness.
+The plan issuer ties its signature to both persisted journal IDs, targets,
+materials, quantities and the named chest. The signed adapter can stop
+movement or world operations when its live authority expires or is revoked.
+A bounded navigation adapter approaches *only* approved coordinates; it
+cannot open arbitrary mission, chat or LLM command surfaces.
+
+A read-only report shows signed task progress and uncertain operations
+without confirming Minecraft world state. A failed or interrupted step
+is never replayed without a new, operator-reviewed authorization.
+The runnable CLI does NOT enable this flow. It is not a production agent.
+
+See docs/QA_DELIVERY_PIPELINE_HANDOFF.md,
+docs/QA_SIGNED_DELIVERY_HANDOFF.md,
+docs/QA_DELIVERY_PLAN_ISSUER_HANDOFF.md,
+docs/QA_BOUNDED_NAVIGATION_V5_HANDOFF.md,
+docs/QA_DELIVERY_READOUT_V6_HANDOFF.md and
+docs/evidence/GUIAIA_DELIVERY_V6_PENGUIN_2026-10-29.json.
