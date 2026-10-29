@@ -9,6 +9,7 @@ on:
       - 'scripts/qa_observer_stress.py'
       - 'scripts/qa_companion_server.py'
       - 'scripts/qa_gather_server.py'
+      - 'scripts/qa_mission_server.py'
       - 'companion/**'
       - '.github/workflows/fabric.yml'
   pull_request:
@@ -18,6 +19,7 @@ on:
       - 'scripts/qa_observer_stress.py'
       - 'scripts/qa_companion_server.py'
       - 'scripts/qa_gather_server.py'
+      - 'scripts/qa_mission_server.py'
       - 'companion/**'
       - '.github/workflows/fabric.yml'
 
@@ -94,6 +96,11 @@ jobs:
           PYTHONPATH: src
         shell: bash
         run: python3 scripts/qa_gather_server.py --launcher "$RUNNER_TEMP/guiaia-qa/launcher.jar"
+      - name: Durable two-step Minecraft mission and restart without replay
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: python3 scripts/qa_mission_server.py --launcher "$RUNNER_TEMP/guiaia-qa/launcher.jar"
       - name: Archive mod for inspection (not a public release)
         uses: actions/upload-artifact@v4
         with:
