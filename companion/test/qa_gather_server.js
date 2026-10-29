@@ -3,6 +3,7 @@
 // Both accounts are fake lab identities. No chat/RCON/operator credentials.
 const mineflayer = require('mineflayer')
 const { Vec3 } = require('vec3')
+const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
 const { createQaGather, inventoryCount } = require('../src/gather')
 
 const connection = (username) => ({
@@ -11,6 +12,7 @@ const connection = (username) => ({
 })
 const owner = mineflayer.createBot(connection('OwnerQA'))
 const worker = mineflayer.createBot(connection('GuiaIA_QA'))
+worker.loadPlugin(pathfinder)
 const pause = (ms) => new Promise(resolve => setTimeout(resolve,ms))
 function spawned(bot) {
   if (bot.entity?.position) return Promise.resolve()
@@ -40,11 +42,25 @@ async function main(){
     }
     if(!ready) throw new Error('QA owner or oak log never observed')
     const before=inventoryCount(worker,'oak_log')
+    const moves=new Movements(worker)
+    moves.canDig=false
+    moves.canOpenDoors=false
+    moves.allowParkour=false
+    moves.allow1by1towers=false
+    moves.allowFreeMotion=false
+    worker.pathfinder.setMovements(moves)
     const gather=createQaGather(worker,{
-      sandboxOnly:true, ownerName:'OwnerQA',target, pickupTimeoutMs:14000
+      sandboxOnly:true, ownerName:'OwnerQA',target, pickupTimeoutMs:16000,
+      pickupApproach: async (position) => {
+        // Only the already-approved oak-log position in this disposable world.
+        worker.pathfinder.setGoal(new goals.GoalBlock(position.x, position.y, position.z))
+      }
     })
     const result=await gather.gatherOne()
-    if(!result.ok) throw new Error('QA gather failed: '+result.reason)
+    if(!result.ok) {
+      const drops=Object.values(worker.entities||{}).filter(e=>e.name==='item').length
+      throw new Error('QA gather failed: '+result.reason+'; nearby_lab_drops='+drops)
+    }
     const after=inventoryCount(worker,'oak_log')
     if(after-before < 1 || worker.blockAt(target)?.name==='oak_log') {
       throw new Error('Inventory and block-state receipts do not match')

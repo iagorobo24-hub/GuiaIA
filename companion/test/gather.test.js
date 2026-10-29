@@ -90,6 +90,22 @@ test('concurrent mining calls are rejected',async()=>{
   release()
   assert.equal((await promise).reason,'cancelled')
 })
+test('bounded pickup approach can recover a dropped item without inventing inventory',async()=>{
+  const bot=fakeBot({drop:false})
+  let moved=0
+  const result=await creator(bot, {
+    pickupTimeoutMs:4000,
+    pickupApproach:async (position)=>{
+      assert.deepEqual(position,target)
+      moved++
+      bot.inventory.items=()=>[{name:'oak_log',count:1}]
+    }
+  }).gatherOne()
+  assert.equal(result.ok,true)
+  assert.equal(moved,1)
+  assert.equal(result.inventory_delta,1)
+})
+
 test('owner disappears during a real dig: stopDigging and deny success',async()=>{
   const bot=fakeBot()
   let release

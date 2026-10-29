@@ -19,7 +19,7 @@ function validPosition(position) {
     Number.isInteger(position[k]) && Math.abs(position[k]) <= 30000000)
 }
 function createQaGather(bot, options) {
-  const { ownerName, target, sandboxOnly, pickupTimeoutMs = 12000 } = options || {}
+  const { ownerName, target, sandboxOnly, pickupTimeoutMs = 12000, pickupApproach } = options || {}
   if (sandboxOnly !== true || !/^[a-zA-Z0-9_]{3,16}$/.test(ownerName || '') ||
       !validPosition(target) || pickupTimeoutMs < 1 || pickupTimeoutMs > 30000) {
     throw new Error('Gathering denied: explicitly configured local QA only')
@@ -34,6 +34,9 @@ function createQaGather(bot, options) {
     cancelled = true
     if (typeof bot.stopDigging === 'function') {
       try { bot.stopDigging() } catch {}
+    }
+    if (typeof bot.pathfinder?.setGoal === 'function') {
+      try { bot.pathfinder.setGoal(null) } catch {}
     }
   }
   for (const event of ['end', 'kicked', 'death']) bot.on(event, cancel)
@@ -55,6 +58,8 @@ function createQaGather(bot, options) {
     busy = true
     cancelled = false
     let digAttempted = false
+    let guard = null
+    let attemptedApproach = false
     const finish = (ok, reason, delta=0) =>
       ({ ok, reason, mode:'single_block_local_qa', block:ALLOWED_BLOCK,
          item:ALLOWED_ITEM, inventory_delta:delta, dig_attempted:digAttempted,
@@ -73,19 +78,19 @@ function createQaGather(bot, options) {
       digAttempted = true
       // A player can walk away while the block is being mined. Keep watching
       // owner visibility, health, distance and immediate environmental danger.
-      const guard = setInterval(() => {
+      guard = setInterval(() => {
         if (!cancelled && safety() !== null) cancel()
       }, 150)
       try {
         await bot.dig(current)
       } catch {
         return finish(false, cancelled ? 'cancelled' : 'dig_failed')
-      } finally {
-        clearInterval(guard)
       }
       if (cancelled) return finish(false, 'cancelled')
       if (safety()) return finish(false, 'post_dig_safety_stop')
       const deadline = Date.now() + pickupTimeoutMs
+      const pickupStarted = Date.now()
+      let approached = false
       do {
         if (cancelled) return finish(false, 'cancelled')
         if (safety()) return finish(false, 'post_dig_safety_stop')
@@ -93,11 +98,21 @@ function createQaGather(bot, options) {
         const afterBlock = bot.blockAt(target)
         if (count !== null && count >= before + 1 && afterBlock &&
             afterBlock.name !== ALLOWED_BLOCK) return finish(true, 'verified_inventory_drop', count - before)
+        if (!approached && typeof pickupApproach === 'function' && Date.now() - pickupStarted > 1250) {
+          approached = true
+          attemptedApproach = true
+          try { await pickupApproach(target) }
+          catch { return finish(false, cancelled ? 'cancelled' : 'pickup_approach_failed') }
+        }
         if (Date.now() >= deadline) break
         await new Promise(resolve => setTimeout(resolve, 250))
       } while (true)
       return finish(false, 'item_not_verified')
     } finally {
+      if (guard !== null) clearInterval(guard)
+      if (attemptedApproach && typeof bot.pathfinder?.setGoal === 'function') {
+        try { bot.pathfinder.setGoal(null) } catch {}
+      }
       busy = false
     }
   }
