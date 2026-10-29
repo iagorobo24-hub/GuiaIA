@@ -22,7 +22,7 @@ El objetivo de esta fase es sustituir la confianza en nombres del chat por permi
 
 **Node 22:** 80 pruebas locales correctas, incluyendo 14 sobre el nuevo contrato: firma falsa o alterada, permiso sin firma, clave pública equivocada, mundo y bot diferentes, caducidad, cantidades y material no permitidos, ataques de reutilización y carrera, ruta simbólica, cambio del plan después de validación y vencimiento durante la espera.
 
-**Minecraft 1.21.1 real, servidor desechable:** [GitHub Actions 40872948404](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40872948404), **SUCCESS**:
+**Minecraft 1.21.1 real, servidor desechable:** [GitHub Actions 40873598259](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40873598259), **SUCCESS**:
 
 | Observación | Prueba |
 | --- | --- |
