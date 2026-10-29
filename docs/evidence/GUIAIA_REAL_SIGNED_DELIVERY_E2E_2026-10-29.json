@@ -1,0 +1,56 @@
+{
+  "branch": "feature/principal-enrollment-qa",
+  "date": "2026-10-29",
+  "limitations": [
+    "offline-mode disposable Fabric world not real player identity",
+    "ephemeral QA keys and witness local to Chromebook",
+    "single oak_log and one chest, no Cobblemon/claims validation",
+    "no production CLI or Teselia deployment"
+  ],
+  "local_logs": [
+    "/tmp/guiaia-delivery-fabric-e2e-20261029.log",
+    "/tmp/guiaia-delivery-real-node-full-20261029.log"
+  ],
+  "minecraft_version": "1.21.1",
+  "node_suite": {
+    "failed": 0,
+    "passed": 297,
+    "skipped": 0,
+    "tests": 297
+  },
+  "parent_commit": "135c09b",
+  "prior_session_regression": {
+    "durable_receipts": 1,
+    "external_checkpoint_detected_coherent_registry_rollback": true,
+    "real_fabric_signed_follow_revocation_stopped": true,
+    "result": "pass",
+    "signed_nonce_replay_denied": true,
+    "signed_revocation_denied_during_live_connection": true
+  },
+  "real_signed_delivery": {
+    "actual_block_removed": true,
+    "actual_chest_transfer": true,
+    "actual_inventory_pickup": true,
+    "checked_independent_qa_witness": true,
+    "deposit_receipts": 1,
+    "gather_receipts": 1,
+    "live_fabric_presence": true,
+    "moved_to_resource_blocks": 4,
+    "navigation_goals": 3,
+    "operator_signed_plan": true,
+    "owner_connection_verified": true,
+    "production": false,
+    "real_fabric_server": true,
+    "real_mineflayer_bot": true,
+    "result": "pass",
+    "returned_to_chest_blocks": 3.62
+  },
+  "server_cleanup": "temporary world deleted after test shutdown",
+  "source_sha256": {
+    "companion/test/qa_live_bridge_gateway.js": "af389893f6d984397b049c4081d2f678eeda03eb52114df60cad08cdaf3d27fd",
+    "companion/test/qa_real_signed_delivery_integration.js": "8d22a7a70555e7b0e87b0e4954faefa88e422324e8ed9bc6887d39b25b70ae80",
+    "scripts/qa_fabric_identity_bridge.py": "1db8b61fc6ff83e93e6ef5fbb0026613d18bd5629b57383b874e93f59ecbe7a7",
+    "scripts/qa_signed_delivery_real_server.py": "7e83787cdae29bb94ee87efd03dadcec72fb1ede6460aeb04eab9f6d975c5309"
+  },
+  "test_mode": "isolated_real_fabric_loopback"
+}

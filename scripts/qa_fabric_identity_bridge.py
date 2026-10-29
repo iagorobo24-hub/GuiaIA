@@ -130,11 +130,15 @@ def main():
                 "fill 0 63 0 8 63 8 minecraft:stone",
                 "setworldspawn 2 64 2",
                 "setblock 4 64 3 minecraft:chest",
+                "setblock 1 64 5 minecraft:chest",
+                "setblock 7 64 2 minecraft:oak_log",
                 "say GUIAIA_BRIDGE_CHEST_READY",
             ):
                 send(server,command)
             until(lambda:"GUIAIA_BRIDGE_CHEST_READY" in recent_log(restarted) and
                          "Changed the block at 4, 64, 3" in recent_log(restarted) and
+                         "Changed the block at 1, 64, 5" in recent_log(restarted) and
+                         "Changed the block at 7, 64, 2" in recent_log(restarted) and
                          "Successfully filled" in recent_log(restarted),
                   25,process=server,note="validated planted real QA chest and safe floor")
             client=subprocess.Popen(

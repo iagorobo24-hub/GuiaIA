@@ -15,6 +15,7 @@ const {verifyBridgeLog,createPinnedQaServerBridgeAuthority}=
   require('../src/fabric_bridge_reader')
 const {createQaStrictSessionActionGateway}=require('../src/session_identity')
 const {createQaAuthorizedFollow}=require('../src/qa_authorized_follow')
+const {runRealSignedDeliveryQa}=require('./qa_real_signed_delivery_integration')
 const {createQaCheckpointWitness}=require('../src/qa_checkpoint_witness')
 const {createPinnedQaRemoteCheckpointClient}=require('../src/remote_checkpoint')
 const {createPinnedQaLivePresenceAuthority}=require('../src/live_presence')
@@ -167,6 +168,9 @@ async function main(){
     }
     const gateway=createQaStrictSessionActionGateway(bot,authority)
     const session=ownerSession()
+    // Real world delivery: navigate to signed log, dig/pick up, return
+    // to a second chest and verify journal + actual inventory receipts.
+    await runRealSignedDeliveryQa({bot,session,authority,operatorKey,journalDir})
     const first=scope('oak_log')
     journal=openDepositJournal(journalDir,{
       sandboxOnly:true,ownerName:'OwnerQA',chest,
