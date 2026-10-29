@@ -41,7 +41,8 @@ def main():
             "online-mode=false\nenforce-secure-profile=false\n"
             "enable-rcon=false\nenable-query=false\n"
             "spawn-protection=0\nspawn-monsters=false\n"
-            "difficulty=peaceful\nview-distance=4\nsimulation-distance=4\n",
+            "difficulty=peaceful\nview-distance=4\nsimulation-distance=4\n"
+            "level-type=minecraft:flat\nlevel-seed=20261029\n",
             encoding="ascii")
         mods=root/"mods"
         mods.mkdir()
@@ -112,7 +113,11 @@ def main():
 
             # Actual Fabric-signed JOIN is consumed by the existing QA action
             # gateway, together with a synthetic pre-enrolled player key.
-            # Only temporary QA world commands; no use of Teselia.
+            # Force-load the synthetic lab chunk before setting the chest;
+            # otherwise random default world spawn can leave x=4,z=3 unloaded.
+            send(server,"forceload add 0 0")
+            until(lambda:"Marked chunk [0, 0]" in recent_log(restarted),
+                  30,process=server,note="temporary QA chunk force loaded")
             for command in (
                 "gamerule spawnRadius 0",
                 "fill 0 63 0 8 63 8 minecraft:stone",
@@ -121,8 +126,10 @@ def main():
                 "say GUIAIA_BRIDGE_CHEST_READY",
             ):
                 send(server,command)
-            until(lambda:"GUIAIA_BRIDGE_CHEST_READY" in recent_log(restarted),
-                  15,process=server,note="isolated real Fabric bridge chest")
+            until(lambda:"GUIAIA_BRIDGE_CHEST_READY" in recent_log(restarted) and
+                         "Changed the block at 4, 64, 3" in recent_log(restarted) and
+                         "Successfully filled" in recent_log(restarted),
+                  25,process=server,note="validated planted real QA chest and safe floor")
             client=subprocess.Popen(
                 ["node","test/qa_live_bridge_gateway.js",str(events),
                  str(public),str(root/"journal")],
