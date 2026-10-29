@@ -17,6 +17,8 @@ import time
 from pathlib import Path
 
 from guiaia.world_snapshot import WorldSnapshotError, parse_world_snapshot
+from guiaia.mcp import MCP
+from guiaia.observer import SnapshotObserver
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SERVER_TIMEOUT = 165
@@ -126,6 +128,17 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
             return True
 
         until(observed, 42, process=process, note="real chunk block and mob observations")
+        # Verify real Fabric JSON end-to-end through the actual MCP tool handler.
+        mcp = MCP(SnapshotObserver(str(snapshot_file)))
+        initialized = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                  "params": {"protocolVersion": "2025-11-25"}})
+        assert initialized["result"]["protocolVersion"] == "2025-11-25"
+        response = mcp.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                               "params": {"name": "guia_world_observe", "arguments": {}}})
+        live = response["result"]["structuredContent"]
+        assert not response["result"]["isError"]
+        assert live["block_counts"].get("minecraft:diamond_block", 0) >= 1
+        assert live["entity_counts"].get("minecraft:sheep", 0) >= 1
         # Output must not contain player names, raw coordinates or all world entities.
         raw = json.loads(snapshot_file.read_text(encoding="utf-8"))
         assert not any(k in raw for k in ("player_name", "player_uuid", "coordinates", "rcon", "chat"))
@@ -142,10 +155,54 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
             "entities_capped": seen["entities_capped"],
             "mspt_avg": seen["mspt_avg"],
             "elapsed_wall_seconds": round(time.monotonic() - started, 1),
-            "world_mutation_from_observer": False,
-            "real_world": False,
+            "observer_code_has_no_world_mutation_calls": True,
+            "real_minecraft_server": True,
+            "production_world": False,
+            "mcp_fabric_real_snapshot_roundtrip": True,
             "test_world": "disposable_flat_qa",
         }
+    except Exception as exc:
+        raw_snapshot = (snapshot_file.read_text(encoding="utf-8", errors="replace")[:1800]
+                        if snapshot_file.is_file() else "(snapshot missing)")
+        raise RuntimeError(str(exc) + "\nLAST_QA_SNAPSHOT=" + raw_snapshot
+                           + "\n" + recent_log(log_file)) from exc
+    finally:
+        shutdown(process, log)
+
+
+def validate_unloaded(server_dir: Path, launcher: Path, old_timestamp_ms: int) -> dict:
+    """Confirm that sampling a distant, ungenerated chunk does not load it."""
+    config_dir = server_dir / "config"
+    snapshot_file = config_dir / "guiaia-observer" / "snapshot.json"
+    (config_dir / "guiaia-observer.properties").write_text(
+        "enabled=true\n"
+        "dimension=minecraft:overworld\n"
+        "center_x=20000\ncenter_y=64\ncenter_z=20000\n"
+        "interval_ticks=200\n",
+        encoding="ascii",
+    )
+    log_file = server_dir / "unloaded-server.log"
+    process, log = start_server(server_dir, launcher, log_file)
+    try:
+        until(lambda: "Done (" in recent_log(log_file),
+              SERVER_TIMEOUT, process=process, note="distant chunk QA startup")
+
+        def distant_snapshot_is_safe():
+            if not snapshot_file.is_file():
+                return False
+            try:
+                raw = json.loads(snapshot_file.read_text(encoding="utf-8"))
+                if raw.get("sample_epoch_ms", 0) <= old_timestamp_ms:
+                    return False
+                data = parse_world_snapshot(snapshot_file)
+                return (data["chunks_loaded"] == 0 and data["blocks_sampled"] == 0
+                        and data["entities_loaded"] == 0)
+            except (ValueError, OSError, TypeError):
+                return False
+
+        until(distant_snapshot_is_safe, 45, process=process,
+              note="unloaded far chunk stays unobserved and unforced")
+        return {"distant_unloaded_chunk_not_forced": True}
     except Exception as exc:
         raw_snapshot = (snapshot_file.read_text(encoding="utf-8", errors="replace")[:1800]
                         if snapshot_file.is_file() else "(snapshot missing)")
@@ -203,6 +260,9 @@ def main() -> None:
         finally:
             shutdown(process, log)
         evidence = validate_enabled(qa_dir, launcher)
+        first_snapshot = qa_dir / "config/guiaia-observer/snapshot.json"
+        first_timestamp_ms = json.loads(first_snapshot.read_text(encoding="utf-8"))["sample_epoch_ms"]
+        evidence.update(validate_unloaded(qa_dir, launcher, first_timestamp_ms))
         evidence["disabled_by_default_verified"] = True
         evidence["java_runtime"] = "21"
         print("GUIAIA_QA_EVIDENCE=" + json.dumps(evidence, sort_keys=True))
