@@ -10,6 +10,7 @@ on:
       - 'scripts/qa_companion_server.py'
       - 'scripts/qa_gather_server.py'
       - 'scripts/qa_mission_server.py'
+      - 'scripts/qa_multiresource_server.py'
       - 'companion/**'
       - '.github/workflows/fabric.yml'
   pull_request:
@@ -20,6 +21,7 @@ on:
       - 'scripts/qa_companion_server.py'
       - 'scripts/qa_gather_server.py'
       - 'scripts/qa_mission_server.py'
+      - 'scripts/qa_multiresource_server.py'
       - 'companion/**'
       - '.github/workflows/fabric.yml'
 
@@ -101,6 +103,11 @@ jobs:
           PYTHONPATH: src
         shell: bash
         run: python3 scripts/qa_mission_server.py --launcher "$RUNNER_TEMP/guiaia-qa/launcher.jar"
+      - name: Two distinct resources, bounded navigation and durable receipts
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: python3 scripts/qa_multiresource_server.py --launcher "$RUNNER_TEMP/guiaia-qa/launcher.jar"
       - name: Archive mod for inspection (not a public release)
         uses: actions/upload-artifact@v4
         with:

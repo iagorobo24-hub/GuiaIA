@@ -5,6 +5,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
+const { RESOURCE_ITEMS } = require('./gather')
 const MAX_BYTES = 16384
 const STATES = new Set(['ready', 'dispatching', 'needs_review', 'paused', 'completed', 'cancelled'])
 
@@ -16,7 +17,8 @@ function validateSpec(spec) {
   }
   const seen = new Set()
   for (const p of spec.targets) {
-    if (!p || !['x','y','z'].every(k => Number.isInteger(p[k]) && Math.abs(p[k]) <= 30000000)) {
+    if (!p || !['x','y','z'].every(k => Number.isInteger(p[k]) && Math.abs(p[k]) <= 30000000) ||
+        (p.block !== undefined && !Object.hasOwn(RESOURCE_ITEMS, p.block))) {
       throw new Error('Unsafe mission coordinates')
     }
     const key = [p.x,p.y,p.z].join(':')
@@ -33,7 +35,8 @@ function validateState(state) {
   validateSpec(state)
   if (state.index > state.targets.length || state.receipts.length !== state.index ||
       state.receipts.some((r,i) => !r || r.step !== i ||
-        r.item !== 'oak_log' || !Number.isInteger(r.inventoryDelta) || r.inventoryDelta < 1 ||
+        r.item !== RESOURCE_ITEMS[state.targets[i].block || 'oak_log'] ||
+        !Number.isInteger(r.inventoryDelta) || r.inventoryDelta < 1 ||
         typeof r.operationId !== 'string')) throw new Error('Inconsistent QA mission receipts')
   if (state.phase === 'completed' && state.index !== state.targets.length) {
     throw new Error('Unverified mission completion')
@@ -110,7 +113,8 @@ function openMission(directory, specification = null) {
       state = {
         version:1, sandboxOnly:true, missionId:randomUUID(),
         ownerName: specification.ownerName,
-        targets: specification.targets.map(p=>({x:p.x,y:p.y,z:p.z})),
+        targets: specification.targets.map(p=>({x:p.x,y:p.y,z:p.z,
+          ...(p.block === undefined ? {} : {block:p.block})})),
         index:0, receipts:[], phase:'ready', operationId:null, reason:'created'
       }
       save()
@@ -131,7 +135,8 @@ function openMission(directory, specification = null) {
       const target = state.targets[state.index]
       if (!action || typeof action.gatherOne !== 'function' || action.sandboxOnly !== true ||
           action.ownerName !== state.ownerName || !action.target ||
-          !['x','y','z'].every(k => action.target[k] === target[k])) {
+          !['x','y','z'].every(k => action.target[k] === target[k]) ||
+          (target.block !== undefined && action.block !== target.block)) {
         throw new Error('Action does not match authorized mission step')
       }
       busy = true
@@ -148,11 +153,14 @@ function openMission(directory, specification = null) {
         if (state.phase !== 'dispatching') {
           return {ok:false, reason:'operation_interrupted', state:view()}
         }
+        const expectedBlock = target.block || 'oak_log'
         if (result.ok === true && result.reason === 'verified_inventory_drop' &&
             Number.isInteger(result.inventory_delta) && result.inventory_delta >= 1 &&
-            result.dig_attempted === true) {
+            result.dig_attempted === true &&
+            (target.block === undefined ||
+              (result.block === expectedBlock && result.item === RESOURCE_ITEMS[expectedBlock]))) {
           state.receipts.push({step:expected, operationId:state.operationId,
-                               item:'oak_log', inventoryDelta:result.inventory_delta})
+                               item:RESOURCE_ITEMS[expectedBlock], inventoryDelta:result.inventory_delta})
           state.index++
           state.phase = state.index === state.targets.length ? 'completed' : 'ready'
           state.reason = 'inventory_and_block_verified'

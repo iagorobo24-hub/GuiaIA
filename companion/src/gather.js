@@ -6,6 +6,8 @@ const { finiteDistance, OWNER_MAX_DISTANCE } = require('./controller')
 const HAZARDS = new Set(['water','lava','fire','soul_fire','cactus','powder_snow'])
 const ALLOWED_BLOCK = 'oak_log'
 const ALLOWED_ITEM = 'oak_log'
+// A hardcoded, reviewed allowlist — not arbitrary chat/model-supplied blocks.
+const RESOURCE_ITEMS = Object.freeze({oak_log:'oak_log', birch_log:'birch_log'})
 
 function inventoryCount(bot, name) {
   if (!bot.inventory || typeof bot.inventory.items !== 'function') return null
@@ -19,9 +21,11 @@ function validPosition(position) {
     Number.isInteger(position[k]) && Math.abs(position[k]) <= 30000000)
 }
 function createQaGather(bot, options) {
-  const { ownerName, target, sandboxOnly, pickupTimeoutMs = 12000, pickupApproach } = options || {}
+  const { ownerName, target, sandboxOnly, pickupTimeoutMs = 12000,
+    pickupApproach, resource = ALLOWED_BLOCK, preDigApproach } = options || {}
   if (sandboxOnly !== true || !/^[a-zA-Z0-9_]{3,16}$/.test(ownerName || '') ||
-      !validPosition(target) || pickupTimeoutMs < 1 || pickupTimeoutMs > 30000) {
+      !validPosition(target) || !Object.hasOwn(RESOURCE_ITEMS, resource) ||
+      pickupTimeoutMs < 1 || pickupTimeoutMs > 30000) {
     throw new Error('Gathering denied: explicitly configured local QA only')
   }
   if (typeof bot.blockAt !== 'function' || typeof bot.dig !== 'function' ||
@@ -60,17 +64,45 @@ function createQaGather(bot, options) {
     let digAttempted = false
     let guard = null
     let attemptedApproach = false
+    let navigationUsed = false
+    const item = RESOURCE_ITEMS[resource]
     const finish = (ok, reason, delta=0) =>
-      ({ ok, reason, mode:'single_block_local_qa', block:ALLOWED_BLOCK,
-         item:ALLOWED_ITEM, inventory_delta:delta, dig_attempted:digAttempted,
+      ({ ok, reason, mode:'single_block_local_qa', block:resource,
+         item, inventory_delta:delta, dig_attempted:digAttempted,
+         navigation_used:navigationUsed,
          world_changes_authorized:1, production:false })
     try {
-      const unsafe = safety()
+      let unsafe = safety()
+      if (unsafe === 'block_out_of_reach' && typeof preDigApproach === 'function') {
+        // One operator-approved QA coordinate only. No free exploration.
+        const owner = bot.players?.[ownerName]?.entity
+        if (!owner || finiteDistance(owner.position, target) > OWNER_MAX_DISTANCE) {
+          return finish(false, 'owner_out_of_range')
+        }
+        if (finiteDistance(bot.entity?.position, target) > 10) {
+          return finish(false, 'target_navigation_out_of_bounds')
+        }
+        navigationUsed = true
+        attemptedApproach = true
+        guard = setInterval(() => {
+          const ownerNow = bot.players?.[ownerName]?.entity
+          const position = bot.entity?.position
+          if (cancelled) return
+          if (!ownerNow || !position || !Number.isFinite(bot.health) || bot.health < 12 ||
+              finiteDistance(position, ownerNow.position) > OWNER_MAX_DISTANCE ||
+              finiteDistance(position, target) > 12) cancel()
+        }, 100)
+        try { await preDigApproach(target) }
+        catch { return finish(false, cancelled ? 'cancelled' : 'navigation_failed') }
+        finally { clearInterval(guard); guard = null }
+        if (cancelled) return finish(false, 'cancelled')
+        unsafe = safety()
+      }
       if (unsafe) return finish(false, unsafe)
-      const before = inventoryCount(bot, ALLOWED_ITEM)
+      const before = inventoryCount(bot, item)
       if (before === null) return finish(false, 'inventory_unavailable')
       const current = bot.blockAt(target)
-      if (!current || current.name !== ALLOWED_BLOCK) return finish(false, 'block_not_allowlisted')
+      if (!current || current.name !== resource) return finish(false, 'block_not_allowlisted')
       if (typeof bot.canDigBlock === 'function' && !bot.canDigBlock(current)) {
         return finish(false, 'block_not_diggable')
       }
@@ -94,10 +126,10 @@ function createQaGather(bot, options) {
       do {
         if (cancelled) return finish(false, 'cancelled')
         if (safety()) return finish(false, 'post_dig_safety_stop')
-        const count = inventoryCount(bot, ALLOWED_ITEM)
+        const count = inventoryCount(bot, item)
         const afterBlock = bot.blockAt(target)
         if (count !== null && count >= before + 1 && afterBlock &&
-            afterBlock.name !== ALLOWED_BLOCK) return finish(true, 'verified_inventory_drop', count - before)
+            afterBlock.name !== resource) return finish(true, 'verified_inventory_drop', count - before)
         if (!approached && typeof pickupApproach === 'function' && Date.now() - pickupStarted > 1250) {
           approached = true
           attemptedApproach = true
@@ -118,4 +150,4 @@ function createQaGather(bot, options) {
   }
   return { gatherOne, cancel, get busy() {return busy} }
 }
-module.exports = { createQaGather, inventoryCount, ALLOWED_BLOCK }
+module.exports = { createQaGather, inventoryCount, ALLOWED_BLOCK, RESOURCE_ITEMS }
