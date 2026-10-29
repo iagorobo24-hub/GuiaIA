@@ -95,15 +95,23 @@ function createOperatorAuthorizedQaDeposit(bot,plan,grant,authority){
      bot?.username!==authority.botName){
     throw Error('QA deposit request differs from signed operator scope')
   }
-  // The existing world safety and two-sided accounting remain unchanged.
-  const operation=createQaChestDeposit(bot,plan)
+  // Take a private, frozen snapshot of signed coordinates. The caller may
+  // mutate its plan object after validation, but never the authorized target.
+  const sealedPlan={sandboxOnly:true,ownerName:claim.ownerName,
+    chest:Object.freeze({...claim.chest}),item:claim.item,count:claim.count}
+  const sealedAuthority=Object.freeze({...authority})
+  const operation=createQaChestDeposit(bot,sealedPlan)
   const original=operation.depositOne
   let attempted=false
   operation.depositOne=async()=>{
     if(attempted)return {ok:false,reason:'signed_grant_already_used',transferAttempted:false}
     attempted=true
+    // Revalidate the signature and expiry at actual dispatch time as well.
+    // A valid grant that expires while queued must NEVER reach the world.
+    verifyGrant(grant,sealedAuthority)
+    if(bot.username!==sealedAuthority.botName)throw Error('Operator target bot changed')
     // No world mutation before the durable consumption barrier.
-    reserveGrantOnce(authority.ledgerDirectory,claim.nonce)
+    reserveGrantOnce(sealedAuthority.ledgerDirectory,claim.nonce)
     return original()
   }
   return operation

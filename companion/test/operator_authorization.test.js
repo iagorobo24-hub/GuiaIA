@@ -143,6 +143,29 @@ test('operator authority rejects symlink replay ledger without following it',t=>
   assert.throws(()=>reserveGrantOnce(f.authority.ledgerDirectory,randomUUID()),/Unsafe/)
   assert.equal(fs.readdirSync(target).length,0)
 })
+test('mutating plan coordinates after authorization cannot redirect a chest transfer',async t=>{
+  const f=setup(t),signed=f.issue()
+  const originalPosition={...f.plan.chest}
+  f.bot.blockAt=p=>{
+    assert.deepEqual({x:p.x,y:p.y,z:p.z},originalPosition)
+    return {name:'chest'}
+  }
+  const adapter=createOperatorAuthorizedQaDeposit(f.bot,f.plan,signed,f.authority)
+  f.plan.chest.x=999
+  f.plan.item='birch_log'
+  f.plan.count=2
+  assert.equal((await adapter.depositOne()).ok,true)
+  assert.equal(f.mutations,1)
+})
+test('grant that expires after construction but before dispatch never touches Minecraft',async t=>{
+  const f=setup(t),now=Date.now()
+  const g=f.issue({issuedAt:now-1300,expiresAt:now+100})
+  const adapter=createOperatorAuthorizedQaDeposit(f.bot,f.plan,g,f.authority)
+  await new Promise(resolve=>setTimeout(resolve,180))
+  await assert.rejects(adapter.depositOne(),/Expired/)
+  assert.equal(f.mutations,0)
+  assert.equal(fs.existsSync(f.authority.ledgerDirectory),false)
+})
 test('unknown signature key type (RSA) cannot grant access',t=>{
   const f=setup(t),g=f.issue()
   const {publicKey}=generateKeyPairSync('rsa',{modulusLength:2048})
