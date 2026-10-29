@@ -30,6 +30,10 @@ function fixture({resource='oak_log',amount=1,owner=true,health=20,
         window.slots[27]=null
         return
       }
+      if(transfer==='chest_only'){
+        window.slots[0]={name:resource,count}
+        return
+      }
       player-=count
       window.slots[27]=player>0?{name:resource,count:player}:null
       window.slots[0]={name:resource,count}
@@ -119,8 +123,15 @@ test('missing item in player inventory does not open container',async()=>{
   assert.equal(r.reason,'insufficient_inventory')
   assert.equal(opened,false)
 })
-test('chest received an item but player inventory did not update: never acknowledge',async()=>{
+test('player inventory decreased but chest did not increase: never acknowledge',async()=>{
   const f=fixture({transfer:'partial'})
+  const r=await action(f).depositOne()
+  assert.equal(r.ok,false)
+  assert.equal(r.transferAttempted,true)
+  assert.equal(r.reason,'unverified_inventory_transfer')
+})
+test('chest increases but player inventory does not decrease: never acknowledge',async()=>{
+  const f=fixture({transfer:'chest_only'})
   const r=await action(f).depositOne()
   assert.equal(r.ok,false)
   assert.equal(r.transferAttempted,true)

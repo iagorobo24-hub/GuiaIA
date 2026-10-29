@@ -1,29 +1,42 @@
-# GuiaIA — depósito supervisado en cofre (2026-10-29)
+# GuiaIA — Depósitos duraderos y recolección → cofre (2026-10-29)
 
-**Estado: implementación experimental y pruebas unitarias añadidas; integración Minecraft real pendiente.**
+**Estado: FASE QA DE LABORATORIO CERRADA Y VERIFICADA. NO APTO PARA PRODUCCIÓN.**
 
-Rama: `feature/companion-chest-deposit-qa`. Esta funcionalidad no está conectada a Teselia, ni a las órdenes de chat o a un modelo generativo.
+Repositorio público: `iagorobo24-hub/GuiaIA`. Rama de trabajo: `feature/companion-chest-deposit-qa`. No se han realizado cambios en Teselia, su mundo, sus servicios, su base de datos ni en la rama pública `main`.
 
-## Implementación
+## Qué funciona realmente
 
-- `companion/src/deposit.js`: una transferencia exacta, limitada a `oak_log` o `birch_log`, hacia un cofre `chest` en las coordenadas que autoriza previamente el operador.
-- Antes de interactuar se verifica dueño visible, salud mínima, distancia máxima de 18 bloques al dueño y 4,2 al cofre, tipo del bloque, presencia y cantidad del material.
-- La interfaz del cofre expone dos grupos de ranuras: las del contenedor y las del jugador. Solo se considera que la transferencia ha tenido éxito cuando las primeras aumentan exactamente la cantidad autorizada **y** las segundas disminuyen en esa misma cantidad.
-- `openDepositJournal` guarda con `fsync` un estado `transferring` antes de ejecutar cualquier depósito. Un resultado incompleto pasa a `needs_review`; tras un reinicio con operación pendiente se bloquea cualquier repetición automática.
-- Recibos tipados con material, cantidad, saldo inicial/final del jugador y saldo inicial/final del cofre, identificador por operación y bloqueo exclusivo de procesos. Directorio y archivos privados (`0700` y `0600` en Linux).
-- Ninguna orden puede elegir libremente cofres, objetos o cantidades. Las credenciales y los datos del mundo de Teselia no están involucrados.
+- `companion/src/deposit.js` admite solo un cofre `chest` autorizado mediante coordenadas exactas y materiales `oak_log` o `birch_log` en cantidades pequeñas y acotadas. Comprueba presencia del dueño, salud, radio máximo al dueño y proximidad al cofre.
+- Cada transferencia comprueba dos variaciones independientes: el inventario del jugador disminuye la cantidad autorizada y las ranuras del cofre la aumentan exactamente. Abre el cofre real mediante Mineflayer 4.39.0 y una posición `Vec3` (error de integración detectado y corregido).
+- `openDepositJournal` conserva un registro de escritura previa `transferring` con `fsync` antes de iniciar cada operación. Cada recibo contiene tipo, cantidad, posiciones autorizadas y saldos de ambos inventarios. Las operaciones sin resultado inequívoco pasan a `needs_review` y nunca se repiten automáticamente. Los archivos y el directorio del laboratorio quedan privados en Linux.
+- `companion/test/qa_multiresource_server.js` verifica una partida **sin introducir objetos artificiales entre pasos**: un tronco de roble y uno de abedul minados realmente, navegación controlada hasta el segundo bloque, dos recibos de minería, depósitos de esos mismos objetos y dos recibos de almacenamiento, cierre y reapertura del cofre y del diario, y rechazo de repetición.
+- El ensayo independiente `qa_chest_server.py` comprueba la API real de cofres con recursos inyectados **únicamente en su propio mundo sintético**. Su fuente está identificada claramente, sin confundirla con minería.
 
-## Pruebas incluidas
+## Evidencia registrada
 
-`companion/test/deposit.test.js` contiene casos para doble comprobación de saldos, persistencia de dos recibos, ubicación o material falsos, cofre incorrecto, dueño ausente, salud baja, distancia excesiva, inventario insuficiente, transferencia incompleta, cancelación, interrupción tras escritura previa, reinicio y bloqueo exclusivo.
+**Pruebas automatizadas:** 56 pruebas Node 22 y 50 Python superadas localmente; suites CI Node y Python también superadas para el código de esta fase.
 
-**Limitación de evidencia:** en esta sesión no se ha podido instalar la preparación del cofre en el servidor desechable ni ejecutar con éxito una transferencia contra Minecraft real. Por ello **no está validada la compatibilidad final con el protocolo de cofres de Minecraft 1.21.1**. Tampoco está demostrado el flujo completo de recolección hasta depósito en cofres tras un reinicio del servidor.
+**Minecraft Java 1.21.1 y Fabric reales (mundo temporal solo loopback):**
+[CI integral 40855197839](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40855197839) — **SUCCESS**.
+[CI de cofre independiente 40854617901](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40854617901) — **SUCCESS**.
 
-## Condiciones de cierre pendientes
+| Prueba | Resultado real |
+| --- | --- |
+| Recolección sin `/give` | `oak_log=1`, `birch_log=1` |
+| Movimiento al segundo recurso | 7 bloques medidos en la ejecución integral |
+| Inventario tras depositar | 0 robles, 0 abedules |
+| Cofre real reabierto | 1 roble y 1 abedul |
+| Recibos de minería | 2 |
+| Recibos de depósito | 2 |
+| Diario reabierto | Correcto |
+| Repetición de depósito terminado | Rechazada |
+| Pruebas de observación, carga y seguimiento | Superadas |
+| Entorno de prueba | Mundo Fabric desechable, puerto loopback, RCON deshabilitado |
 
-1. Ejecutar las pruebas Node 22 y registrar su resultado verificable en GitHub Actions.
-2. Ejecutar en servidor Minecraft 1.21.1 desechable una transferencia real de un roble y un abedul. Exigir inventario del jugador 1→0 para cada material, cofre 0→1, cierre y reapertura del cofre, y recepción duradera de ambos recibos sin repetición.
-3. Repetir el ensayo con cancelación/desconexión e inventario incoherente para confirmar el bloqueo `needs_review` sin pérdidas ni duplicaciones.
-4. Auditar carrera entre lectura/uso de contenedores y autenticación del dueño antes de considerar cualquier despliegue.
+Las ejecuciones anteriores que fallaron se conservaron para diagnóstico: la consulta inicial del cofre usaba un objeto ordinario en lugar de `Vec3` y causaba un error capturado por el diario, que pasó correctamente a `needs_review`. Se corrigió la causa y se agregó una regresión que comprueba explícitamente el tipo de coordenadas.
 
-**No conectar ni desplegar en Teselia.** La rama está separada y no debe fusionarse hasta que se cumplan las condiciones de aceptación.
+## Limitaciones y próximos bloqueos
+
+El éxito en laboratorio **no demuestra** seguridad ni estabilidad en Teselia. Todavía faltan autenticación sólida del dueño/UUID (los nombres offline no son identidad), pruebas en terreno irregular y con cofres ocupados, desconexiones y caídas reales del servidor durante el depósito, reconciliación entre inventario persistido y diario, compatibilidad con Cobblemon y objetivos abiertos, política de autorización de cofres en mundos de amigos y auditoría de condiciones de carrera.
+
+La simulación unitaria demuestra el estado seguro tras una interrupción, pero **no** se ha ejecutado una caída brusca de Minecraft durante una transferencia ni se han validado cofres en producción. Sigue prohibido desplegar, fusionar con `main` o conectar al mundo Teselia sin una autorización específica y superar esas barreras.
