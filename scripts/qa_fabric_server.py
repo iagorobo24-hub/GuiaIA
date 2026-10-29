@@ -105,6 +105,7 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
         # These commands change only the temporary QA world; the observer does not.
         send(process, "forceload add 0 0")
         send(process, "setblock 0 64 0 minecraft:diamond_block")
+        send(process, "setblock 2 63 2 minecraft:stone")
         send(process, "summon minecraft:sheep 2 64 2")
         seen = {}
 
