@@ -7,6 +7,7 @@ const fs=require('node:fs')
 const path=require('node:path')
 const os=require('node:os')
 const crypto=require('node:crypto')
+const {openQaPrincipalCheckpoint}=require('./principal_checkpoint')
 const MAX_BYTES=65536
 const MAX_EVENTS=48
 const MAX_AGE_MS=300000
@@ -89,7 +90,9 @@ function derive(events,operatorKey,worldId,now,{freshLast=false}={}){
   }
   return principals
 }
-function openQaPrincipalRegistry(directory,{worldId,operatorPublicKeyPem,sandboxOnly}={}){
+function openQaPrincipalRegistry(directory,{
+  worldId,operatorPublicKeyPem,sandboxOnly,externallyPinnedCheckpoint
+}={}){
   if(sandboxOnly!==true || !ID.test(worldId||'') ||
      typeof directory!=='string' || !path.isAbsolute(directory))
     throw Error('Explicit trusted QA principal registry required')
@@ -111,11 +114,19 @@ function openQaPrincipalRegistry(directory,{worldId,operatorPublicKeyPem,sandbox
   if(fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink())
     throw Error('Symlink principal registry denied')
   const fdLock=fs.openSync(lock,fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_WRONLY,0o600)
-  let closed=false
+  let closed=false,poisoned=false,checkpoint
   const fingerprint=crypto.createHash('sha256')
     .update(operatorKey.export({format:'der',type:'spki'})).digest('hex')
   let state
-  function ensureOpen(){if(closed)throw Error('Principal registry closed')}
+  function ensureOpen(){
+    if(closed)throw Error('Principal registry closed')
+    if(poisoned)throw Error('Principal registry poisoned: manual recovery required')
+  }
+  function assertConsistent(){
+    ensureOpen()
+    try{checkpoint.verify(state)}
+    catch(error){poisoned=true;throw error}
+  }
   function save(){
     const buffer=Buffer.from(JSON.stringify(state)+'\n')
     if(buffer.length>MAX_BYTES)throw Error('Enrollment history exceeds size budget')
@@ -133,7 +144,8 @@ function openQaPrincipalRegistry(directory,{worldId,operatorPublicKeyPem,sandbox
     }
   }
   try{
-    if(fs.existsSync(file)){
+    const hadRegistry=fs.existsSync(file)
+    if(hadRegistry){
       const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0))
       let buf
       try{
@@ -154,20 +166,33 @@ function openQaPrincipalRegistry(directory,{worldId,operatorPublicKeyPem,sandbox
       state={version:1,worldId,operatorFingerprint:fingerprint,events:[]}
       save()
     }
+    checkpoint=openQaPrincipalCheckpoint(path.dirname(directory),{
+      worldId,operatorFingerprint:fingerprint,registryFile:file,
+      newRegistry:!hadRegistry})
+    if(!hadRegistry)checkpoint.initialize(state)
+    checkpoint.verify(state)
+    // Only a checkpoint delivered by a separately trusted channel can detect
+    // a coherent rollback of BOTH files inside the disposable QA root.
+    if(externallyPinnedCheckpoint!==undefined)
+      checkpoint.verifyPinned(externallyPinnedCheckpoint)
   }catch(err){
     fs.closeSync(fdLock);fs.unlinkSync(lock);throw err
   }
   return Object.freeze({
+    exportCheckpoint(){
+      assertConsistent()
+      return checkpoint.snapshot()
+    },
     // A fresh denial check is mandatory at dispatch. Cached trust maps must
     // never override a revocation that happened after session creation.
     isRevoked(principalId){
-      ensureOpen()
+      assertConsistent()
       const principals=derive(state.events,operatorKey,worldId,Date.now())
       return typeof principalId!=='string' ||
         !Object.hasOwn(principals,principalId) || principals[principalId].revoked
     },
     trustedPrincipals(){
-      ensureOpen()
+      assertConsistent()
       const result=Object.create(null)
       const active=derive(state.events,operatorKey,worldId,Date.now())
       for(const [id,entry] of Object.entries(active)){
@@ -177,7 +202,7 @@ function openQaPrincipalRegistry(directory,{worldId,operatorPublicKeyPem,sandbox
       return Object.freeze(result)
     },
     applySignedChange(ticket,consent=null){
-      ensureOpen()
+      assertConsistent()
       const p=verifyTicket(ticket,operatorKey,worldId,Date.now())
       if(p.aud==='guiaia:principal-enrollment:v1')verifyConsent(p,consent)
       else if(consent!==null)throw Error('Revocations cannot contain consent data')
@@ -186,9 +211,11 @@ function openQaPrincipalRegistry(directory,{worldId,operatorPublicKeyPem,sandbox
       const sealedTicket=JSON.parse(JSON.stringify(ticket))
       const events=[...state.events,{ticket:sealedTicket,consent}]
       derive(events,operatorKey,worldId,Date.now(),{freshLast:true})
-      const previous=state
       state={...state,events}
-      try{save()}catch(error){state=previous;throw error}
+      // Any failure after the mutation is ambiguous: do NOT restore an old
+      // in-memory snapshot while disk may already have a new revision.
+      try{save();checkpoint.advance(state)}
+      catch(error){poisoned=true;throw error}
       return Object.freeze({principalId:p.principalId,
         action:p.aud==='guiaia:principal-enrollment:v1'?'enrolled':'revoked',
         totalEvents:events.length})

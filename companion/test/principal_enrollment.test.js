@@ -332,3 +332,149 @@ test('opt-in live-presence gate rejects unavailable or stale server and revocati
   assert.equal(fs.existsSync(ledgerDirectory),false)
   registry.close()
 })
+
+test('revocation cannot disappear by restoring ONLY the old signed registry file, even during active session',t=>{
+  const x=setup(t),registry=x.open(),f=path.join(x.directory,'principals.json')
+  const ticket=x.ticket()
+  registry.applySignedChange(ticket,x.consent(ticket))
+  const older=fs.readFileSync(f)
+  registry.applySignedChange(x.ticket({kind:'revoke'}))
+  assert.equal(registry.isRevoked('friend_one'),true)
+  const newer=fs.readFileSync(f)
+  fs.writeFileSync(f,older)
+  assert.throws(()=>registry.isRevoked('friend_one'),/rollback|checkpoint/i)
+  assert.throws(()=>registry.trustedPrincipals(),/poisoned/)
+  registry.close()
+  assert.throws(()=>x.open(),/rollback|checkpoint/i)
+  assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
+  fs.writeFileSync(f,newer)
+  const reopened=x.open()
+  assert.equal(reopened.isRevoked('friend_one'),true)
+  reopened.close()
+})
+
+test('checkpoint head rollback and checkpoint removal both fail closed',t=>{
+  const x=setup(t),reg=x.open(),a=path.join(x.root,'checkpoint','anchor.json')
+  const ticket=x.ticket()
+  reg.applySignedChange(ticket,x.consent(ticket))
+  const old=fs.readFileSync(a)
+  reg.applySignedChange(x.ticket({kind:'revoke'}))
+  const latest=fs.readFileSync(a)
+  reg.close()
+  fs.writeFileSync(a,old)
+  assert.throws(()=>x.open(),/rollback|checkpoint/i)
+  fs.writeFileSync(a,latest)
+  fs.rmSync(a)
+  assert.throws(()=>x.open(),/Missing independent anti-rollback checkpoint/)
+  assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
+})
+
+test('a missing registry with an old checkpoint cannot silently initialize a fresh whitelist',t=>{
+  const x=setup(t),reg=x.open(),s=x.ticket()
+  reg.applySignedChange(s,x.consent(s))
+  reg.close()
+  fs.rmSync(path.join(x.directory,'principals.json'))
+  assert.throws(()=>x.open(),/Orphan anti-rollback checkpoint/)
+  assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
+})
+
+test('checkpoint path and permissions cannot be redirected to public files',t=>{
+  const x=setup(t),reg=x.open()
+  reg.close()
+  const a=path.join(x.root,'checkpoint','anchor.json')
+  const original=fs.readFileSync(a)
+  const other=path.join(x.root,'external.json')
+  fs.writeFileSync(other,original)
+  fs.rmSync(a)
+  fs.symlinkSync(other,a)
+  assert.throws(()=>x.open(),/Symlink anti-rollback/)
+  fs.rmSync(a)
+  fs.writeFileSync(a,original,{mode:0o600})
+  fs.chmodSync(a,0o644)
+  assert.throws(()=>x.open(),/Unsafe checkpoint/)
+  fs.chmodSync(a,0o600)
+  fs.chmodSync(path.join(x.root,'checkpoint'),0o755)
+  assert.throws(()=>x.open(),/checkpoint directory/)
+  assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
+})
+
+test('simulated crash between registry save and checkpoint commit poisons writer and refuses restart',t=>{
+  const x=setup(t),reg=x.open(),s=x.ticket()
+  reg.applySignedChange(s,x.consent(s))
+  const originalRename=fs.renameSync
+  let injected=false
+  fs.renameSync=function(from,to){
+    if(String(to).endsWith('/checkpoint/anchor.json') && !injected){
+      injected=true;throw Error('QA simulated checkpoint fsync/rename failure')
+    }
+    return originalRename.apply(this,arguments)
+  }
+  try{
+    assert.throws(()=>reg.applySignedChange(x.ticket({kind:'revoke'})),/simulated checkpoint/)
+  }finally{fs.renameSync=originalRename}
+  assert.equal(injected,true)
+  assert.throws(()=>reg.isRevoked('friend_one'),/poisoned/)
+  reg.close()
+  assert.throws(()=>x.open(),/rollback|checkpoint/i)
+  assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
+})
+
+test('unprivileged local checkpoint is NOT an external immutable anchor: coherent dual rollback remains possible',t=>{
+  const x=setup(t),reg=x.open(),s=x.ticket()
+  reg.applySignedChange(s,x.consent(s))
+  const f=path.join(x.directory,'principals.json')
+  const a=path.join(x.root,'checkpoint','anchor.json')
+  const oldRegistry=fs.readFileSync(f),oldAnchor=fs.readFileSync(a)
+  reg.applySignedChange(x.ticket({kind:'revoke'}))
+  reg.close()
+  // Explicitly records the security limitation: possession of both files
+  // permits rollback. Production requires independent trusted high-water mark.
+  fs.writeFileSync(f,oldRegistry)
+  fs.writeFileSync(a,oldAnchor)
+  const restored=x.open()
+  assert.equal(restored.isRevoked('friend_one'),false)
+  restored.close()
+})
+
+test('externally trusted checkpoint detects a full, coherent dual-file rollback',t=>{
+  const x=setup(t),j=x.open(),s=x.ticket()
+  j.applySignedChange(s,x.consent(s))
+  const f=path.join(x.directory,'principals.json')
+  const a=path.join(x.root,'checkpoint','anchor.json')
+  const oldRegistry=fs.readFileSync(f),oldAnchor=fs.readFileSync(a)
+  j.applySignedChange(x.ticket({kind:'revoke'}))
+  // This reference must be kept off-device by a trusted operator. For QA the
+  // caller retains it independently in memory, outside files being restored.
+  const externalCheckpoint=j.exportCheckpoint()
+  const newRegistry=fs.readFileSync(f),newAnchor=fs.readFileSync(a)
+  assert.equal(externalCheckpoint.sequence,2)
+  assert.equal(Object.isFrozen(externalCheckpoint),true)
+  j.close()
+  fs.writeFileSync(f,oldRegistry)
+  fs.writeFileSync(a,oldAnchor)
+  assert.throws(()=>openQaPrincipalRegistry(x.directory,{
+    ...x.context,externallyPinnedCheckpoint:externalCheckpoint
+  }),/Externally pinned principal checkpoint mismatch/)
+  assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
+  fs.writeFileSync(f,newRegistry)
+  fs.writeFileSync(a,newAnchor)
+  const restored=openQaPrincipalRegistry(x.directory,{
+    ...x.context,externallyPinnedCheckpoint:externalCheckpoint
+  })
+  assert.equal(restored.isRevoked('friend_one'),true)
+  restored.close()
+})
+
+test('stale or tampered externally trusted checkpoint cannot silently lower revocation floor',t=>{
+  const x=setup(t),j=x.open(),s=x.ticket()
+  j.applySignedChange(s,x.consent(s))
+  const stale=j.exportCheckpoint()
+  j.applySignedChange(x.ticket({kind:'revoke'}))
+  j.close()
+  assert.throws(()=>openQaPrincipalRegistry(x.directory,{
+    ...x.context,externallyPinnedCheckpoint:stale}),/Externally pinned/)
+  assert.throws(()=>openQaPrincipalRegistry(x.directory,{
+    ...x.context,externallyPinnedCheckpoint:{...stale,sequence:2,registrySha256:'0'.repeat(64)}
+  }),/Externally pinned/)
+  assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
+})

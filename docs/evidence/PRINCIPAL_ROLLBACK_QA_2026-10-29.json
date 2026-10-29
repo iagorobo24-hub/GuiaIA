@@ -1,0 +1,43 @@
+{
+  "base_commit": "6341ffd",
+  "checks": {
+    "git_diff_check": "pass",
+    "node_full_regression": {
+      "cancelled": 0,
+      "fail": 0,
+      "pass": 142,
+      "skipped": 0,
+      "tests": 142
+    },
+    "principal_specific": {
+      "cancelled": 0,
+      "fail": 0,
+      "pass": 26,
+      "skipped": 0,
+      "tests": 26
+    },
+    "syntax_checks": "pass"
+  },
+  "date": "2026-10-29",
+  "demonstrated_limitation": "dual file rollback WITHOUT independent external pin is possible",
+  "external_anchor_service": "not_implemented",
+  "local_branch": "feature/principal-enrollment-qa",
+  "production": false,
+  "qa_rollback_detections": [
+    "only registry restored",
+    "only checkpoint restored",
+    "checkpoint removed",
+    "orphan checkpoint",
+    "checkpoint symlink/permissions",
+    "interrupted main-to-checkpoint update poisons object",
+    "external pin detects dual rollback"
+  ],
+  "real_fabric_retest": "not_run_blocked_by_tool_safety",
+  "result": "local_node_pass",
+  "source_sha256": {
+    "companion/src/principal_checkpoint.js": "0a10dc21995f93449bf96a37087329e0c28a264b2de11b63673b8d0c1bdc3ec4",
+    "companion/src/principal_enrollment.js": "c83b93ca50f846f9cd268f32bf8b34e142ab9ee5d3e7b415be2d201976c2d79d",
+    "companion/test/principal_enrollment.test.js": "46f034db7258ff9c0a8ccc1232c630e5a917e164d030e410724d6b9ef4857119",
+    "companion/test/qa_live_bridge_gateway.js": "e84c32f09bd8616c3e188b1bf6ad05cb0399eacd1e086b2f12c473572f44ffb5"
+  }
+}

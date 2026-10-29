@@ -79,3 +79,14 @@ stale JOIN files after a sudden server death in the disposable lab.
 This is not production authentication, does not cover a server crash after
 a successful query, and is not enforced by every legacy QA adapter.
 See docs/COMPANION_LIVE_SERVER_PRESENCE_QA_2026-10-29.md.
+
+## Principal registry checkpoint (QA only)
+
+The signed out-of-band principal registry now checks a separate local
+high-water-mark file before every trust/revocation read. Restoring only one
+file or interrupting a two-file update fails closed. exportCheckpoint()
+provides a value that an authorized operator MAY pin outside the same writable
+filesystem; opening with externallyPinnedCheckpoint enforces that exact
+value, including when both local files were rolled back together. The library
+does not manage an external trusted store; unpinned dual-file rollback remains
+possible. See docs/PRINCIPAL_ROLLBACK_CHECKPOINT_QA_2026-10-29.md.

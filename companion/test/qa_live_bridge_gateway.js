@@ -98,6 +98,12 @@ async function main(){
     }
     if(enroll('qa_pre_enrolled_user',ownerKey).action!=='enrolled')
       throw Error('Out-of-band operator enrollment denied')
+    // Earlier coherent snapshot, still validly signed, for intentional QA-only
+    // local file rollback. This is NOT an external immutable checkpoint.
+    const registryFile=path.join(registryDir,'principals.json')
+    const checkpointFile=path.join(registryRoot,'checkpoint','anchor.json')
+    const oldSnapshot={registry:fs.readFileSync(registryFile),
+      checkpoint:fs.readFileSync(checkpointFile)}
     const authority={
       sandboxOnly:true,identityMode:'trusted_server_bridge_lab',
       worldId,botName:'GuiaIA_QA',
@@ -196,8 +202,10 @@ async function main(){
        journal.view().receipts.length!==1){
       throw Error('Live-connection revocation altered unexpected inventory')
     }
+    const externalCheckpoint=registry.exportCheckpoint()
     registry.close();registry=null
-    const restored=openQaPrincipalRegistry(registryDir,enrollmentTrust)
+    const restored=openQaPrincipalRegistry(registryDir,{
+      ...enrollmentTrust,externallyPinnedCheckpoint:externalCheckpoint})
     let enrollmentReopened=false
     try{
       enrollmentReopened=restored.isRevoked('qa_pre_enrolled_user') &&
@@ -205,6 +213,31 @@ async function main(){
         Object.keys(restored.trustedPrincipals()).length===1
     }finally{restored.close()}
     if(!enrollmentReopened)throw Error('Signed enrollment/revocation was not durable')
+    const latestSnapshot={registry:fs.readFileSync(registryFile),
+      checkpoint:fs.readFileSync(checkpointFile)}
+    fs.writeFileSync(registryFile,oldSnapshot.registry)
+    fs.writeFileSync(checkpointFile,oldSnapshot.checkpoint)
+    let externalCheckpointDenial=false
+    try {
+      const unsafe=openQaPrincipalRegistry(registryDir,{
+        ...enrollmentTrust,externallyPinnedCheckpoint:externalCheckpoint})
+      unsafe.close()
+    }catch(error){
+      if(/Externally pinned principal checkpoint mismatch/.test(error.message))
+        externalCheckpointDenial=true
+    }finally{
+      // Restore the legitimate latest approved snapshot before final close.
+      fs.writeFileSync(registryFile,latestSnapshot.registry)
+      fs.writeFileSync(checkpointFile,latestSnapshot.checkpoint)
+    }
+    if(!externalCheckpointDenial)
+      throw Error('Coherent QA registry rollback bypassed trusted checkpoint')
+    const afterRollback=openQaPrincipalRegistry(registryDir,{
+      ...enrollmentTrust,externallyPinnedCheckpoint:externalCheckpoint})
+    try{
+      if(!afterRollback.isRevoked('qa_pre_enrolled_user'))
+        throw Error('Revocation was not preserved after QA rollback repair')
+    }finally{afterRollback.close()}
     console.log('GUIAIA_REAL_SERVER_SESSION_GATE_QA_EVIDENCE='+JSON.stringify({
       result:'pass',real_fabric_server_signs_join:true,
       real_fabric_server_signs_disconnect:true,
@@ -216,6 +249,7 @@ async function main(){
       independent_principal_possession_proof:true,
       signed_revocation_denied_during_live_connection:revokedBeforeWorldMutation,
       enrolled_registry_reopened_and_revocation_verified:enrollmentReopened,
+      external_checkpoint_detected_coherent_registry_rollback:externalCheckpointDenial,
       exact_server_connection_id_bound:true,
       joined_session_can_authorize:true,
       signed_nonce_replay_denied:true,
