@@ -15,6 +15,8 @@ import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
 import java.util.IdentityHashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -44,6 +46,8 @@ public final class GuiaIdentityBridge implements ModInitializer {
     private static final Path EVENTS = OUTPUT_DIR.resolve("events.jsonl");
     private final Map<ServerPlayNetworkHandler, Connection> sessions = new IdentityHashMap<>();
     private Settings settings;
+    private GuiaLiveSessionQuery liveQuery;
+    private final Map<String, Boolean> liveConnections = new ConcurrentHashMap<>();
 
     private record Settings(String worldId, PrivateKey privateKey) {}
     private record Connection(String worldId, String username, String id, String challenge) {}
@@ -63,11 +67,18 @@ public final class GuiaIdentityBridge implements ModInitializer {
             Files.writeString(EVENTS, "", java.nio.charset.StandardCharsets.US_ASCII,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             privateFile(EVENTS);
+            liveQuery = new GuiaLiveSessionQuery(settings.worldId(),
+                    settings.privateKey(), liveConnections::containsKey);
         } catch (Exception e) {
             settings = null;
-            LOG.warn("GuiaIA Identity Bridge disabled: cannot initialize private audit stream");
+            if (liveQuery != null) { liveQuery.close(); liveQuery = null; }
+            LOG.warn("GuiaIA Identity Bridge disabled: cannot initialize QA audit or presence listener");
             return;
         }
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            liveConnections.clear();
+            if (liveQuery != null) liveQuery.close();
+        });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             try { joined(handler); }
             catch (Exception e) {
@@ -127,7 +138,10 @@ public final class GuiaIdentityBridge implements ModInitializer {
         if (!username.matches("[A-Za-z0-9_]{3,16}")) return;
         // Keys are the actual *server network handlers*, never username/UUID.
         Connection old = sessions.remove(handler);
-        if (old != null) emit("disconnect", old);
+        if (old != null) {
+            liveConnections.remove(old.id());
+            emit("disconnect", old);
+        }
         String id = UUID.randomUUID().toString();
         byte[] bytes = new byte[24];
         RANDOM.nextBytes(bytes);
@@ -140,11 +154,16 @@ public final class GuiaIdentityBridge implements ModInitializer {
         // the private audit output cannot be committed.
         emit("join", current);
         sessions.put(handler, current);
+        liveConnections.put(current.id(), Boolean.TRUE);
     }
 
     private void disconnected(ServerPlayNetworkHandler handler) throws Exception {
         Connection current = sessions.remove(handler);
-        if (current != null) emit("disconnect", current);
+        if (current != null) {
+            // Revoke live presence before touching the potentially failing journal.
+            liveConnections.remove(current.id());
+            emit("disconnect", current);
+        }
     }
 
     private void emit(String event, Connection c) throws Exception {

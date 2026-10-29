@@ -1,0 +1,89 @@
+{
+  "branch": "feature/principal-enrollment-qa",
+  "checks": {
+    "GUIAIA_REAL_BRIDGE_CLIENTS_QA_EVIDENCE": {
+      "logins": 2,
+      "offline_login": true,
+      "production": false,
+      "reconnect_with_same_name": true,
+      "result": "pass",
+      "username": "OwnerQA"
+    },
+    "GUIAIA_REAL_BRIDGE_RESTART_QA_EVIDENCE": {
+      "no_offline_identity_authenticated": true,
+      "production": false,
+      "result": "pass",
+      "stale_connection_log_cleared": true
+    },
+    "GUIAIA_REAL_FABRIC_BRIDGE_QA_EVIDENCE": {
+      "all_sessions_inactive_after_disconnect": true,
+      "disconnect_count": 2,
+      "distinct_challenges": true,
+      "distinct_random_connection_ids": true,
+      "forged_payload_rejected": true,
+      "forged_signature_rejected": true,
+      "join_count": 2,
+      "player_identity_authenticated": false,
+      "private_file_modes": true,
+      "production": false,
+      "real_fabric_server_events": true,
+      "result": "pass",
+      "server_signed_ed25519": true,
+      "two_distinct_real_connections_same_offline_username": true
+    },
+    "GUIAIA_REAL_LIVE_PRESENCE_CRASH_QA_EVIDENCE": {
+      "fresh_challenge_failed_closed": true,
+      "nonce_spent": false,
+      "old_signed_join_still_active": true,
+      "production": false,
+      "real_fabric_process_killed": true,
+      "result": "pass",
+      "stale_join_replay_denied": true,
+      "world_operations": 0
+    },
+    "GUIAIA_REAL_SERVER_SESSION_GATE_QA_EVIDENCE": {
+      "chest_after": {
+        "birch_log": 0,
+        "oak_log": 1
+      },
+      "disconnected_session_denied_before_world_change": true,
+      "durable_receipts": 1,
+      "enrolled_registry_reopened_and_revocation_verified": true,
+      "exact_server_connection_id_bound": true,
+      "fresh_signed_live_query_before_deposit": true,
+      "independent_principal_possession_proof": true,
+      "joined_session_can_authorize": true,
+      "no_simulated_server_proof": true,
+      "operator_approved_enrollment_persisted": true,
+      "player_after": {
+        "birch_log": 1,
+        "oak_log": 0
+      },
+      "production": false,
+      "real_fabric_server_signs_disconnect": true,
+      "real_fabric_server_signs_join": true,
+      "real_friend_enrollment_implemented": false,
+      "result": "pass",
+      "signed_nonce_replay_denied": true,
+      "signed_revocation_denied_during_live_connection": true,
+      "synthetic_operator_grant": true,
+      "synthetic_pre_enrolled_user_proof": true
+    }
+  },
+  "date": "2026-10-29",
+  "fabric_build": "success",
+  "fabric_mod_sha256": "525106650083e44a9ae6d1aafe79f9ddc202bfd2709950067090f33addadae7b",
+  "full_node_tests": 134,
+  "limitations": [
+    "operator/principal keys ephemeral QA",
+    "live query has dispatch-to-mutation race",
+    "not globally enforced",
+    "no rollback-resistant revocation",
+    "Cobblemon and friends not certified"
+  ],
+  "origin_commit": "d870768",
+  "production": false,
+  "qa_environment": "actual disposable Minecraft Java 1.21.1 Fabric on Penguin, loopback",
+  "result": "pass",
+  "source_log": "/tmp/guiaia-live-fabric-qa-20261029.log"
+}

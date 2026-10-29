@@ -283,3 +283,52 @@ test('pinned signed bridge plus durable enrollment denies revoked and disconnect
   assert.equal(fs.existsSync(path.join(root,'spent')),false)
   registry.close()
 })
+
+test('opt-in live-presence gate rejects unavailable or stale server and revocation during query before nonce reservation',async t=>{
+  const {EventEmitter}=require('node:events')
+  const {createQaSessionActionGateway}=require('../src/session_identity')
+  const x=setup(t),registry=x.open(),ticket=x.ticket()
+  registry.applySignedChange(ticket,x.consent(ticket))
+  const bridge=keys()
+  const worldId=x.worldId,connectionId=crypto.randomUUID()
+  const challenge=crypto.randomBytes(24).toString('hex')
+  const now=Date.now()
+  const sign=(payload,key)=>({payload,signature:crypto.sign(null,
+    Buffer.from(JSON.stringify(payload)),key).toString('base64url')})
+  const b={aud:'guiaia:server-connection:v1',worldId,connectionId,
+    username:'OwnerQA',challenge,issuedAt:now-1000,expiresAt:now+44000}
+  const o={aud:'guiaia:principal-proof:v1',worldId,connectionId,
+    principalId:'friend_one',challenge,issuedAt:now-1000,expiresAt:now+44000}
+  const session={bridge:sign(b,bridge.privateKey),owner:sign(o,x.principal.privateKey)}
+  const scope=()=>sign({aud:'guiaia:session-deposit:v1',
+    worldId,botName:'GuiaIA_QA',ownerName:'OwnerQA',principalId:'friend_one',
+    connectionId,challenge,chest:{x:4,y:64,z:3},item:'birch_log',count:1,
+    nonce:crypto.randomUUID(),issuedAt:now-1000,expiresAt:now+44000},
+    x.operator.privateKey)
+  let touched=0
+  const bot=new EventEmitter()
+  Object.assign(bot,{username:'GuiaIA_QA',inventory:{items:()=>[]},
+    blockAt:()=>{touched++;throw Error('world access')},
+    openContainer:()=>{touched++;throw Error('world access')}})
+  const ledgerDirectory=path.join(x.root,'spent')
+  const base={sandboxOnly:true,identityMode:'trusted_server_bridge_lab',
+    worldId,botName:'GuiaIA_QA',serverBridgePublicKeyPem:bridge.publicKey.export({format:'pem',type:'spki'}),
+    operatorPublicKeyPem:x.operator.publicKey.export({format:'pem',type:'spki'}),
+    trustedPrincipals:registry.trustedPrincipals(),
+    activeConnection:()=>({worldId,connectionId,username:'OwnerQA',connected:true}),
+    isRevoked:id=>registry.isRevoked(id),requireLivePresence:true,ledgerDirectory}
+  const adapter=livePresence=>createQaSessionActionGateway(bot,{...base,livePresence})
+    .createDeposit(session,scope())
+  await assert.rejects(adapter(async()=>{throw Error('Live Fabric query unavailable')}).depositOne(),
+    /Live Fabric query unavailable/)
+  await assert.rejects(adapter(async()=>({
+    worldId,connectionId,connected:true,issuedAt:Date.now()-5000})).depositOne(),
+    /Current signed Fabric live presence unavailable/)
+  await assert.rejects(adapter(async()=>{
+    registry.applySignedChange(x.ticket({kind:'revoke'}))
+    return {worldId,connectionId,connected:true,issuedAt:Date.now()}
+  }).depositOne(),/revoked/)
+  assert.equal(touched,0)
+  assert.equal(fs.existsSync(ledgerDirectory),false)
+  registry.close()
+})

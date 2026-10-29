@@ -59,6 +59,13 @@ def main():
             clients(log,server)
             assert not (root/"config"/"guiaia-identity-bridge").exists(), (
                 "Disabled-by-default bridge emitted identity events")
+            # Disabled Fabric bridge MUST NOT start a live query listener.
+            import socket
+            try:
+                with socket.create_connection(("127.0.0.1",25594),timeout=0.4):
+                    raise RuntimeError("Disabled QA bridge unexpectedly opened presence port")
+            except (ConnectionRefusedError,TimeoutError,OSError):
+                pass
             shutdown(server,handle)
             server=None;handle=None
 
@@ -162,6 +169,51 @@ def main():
                     client.terminate()
                     try:client.wait(timeout=5)
                     except subprocess.TimeoutExpired:client.kill();client.wait()
+
+            # Last isolated scenario: intentionally SIGKILL this disposable
+            # Java server *during a real player connection*. The on-disk
+            # signed JOIN survives but NO running JVM can sign a fresh nonce.
+            crash_marker=root/"crash-qa-client.log"
+            with crash_marker.open("w",encoding="utf8") as f:
+                crashing=subprocess.Popen(
+                    ["node","test/qa_live_presence_crash_client.js",
+                     str(events),str(public)],cwd=ROOT/"companion",
+                    stdout=f,stderr=subprocess.STDOUT,text=True)
+                try:
+                    until(lambda:"GUIAIA_REAL_CRASH_QA_JOIN_READY=" in
+                          recent_log(crash_marker),30,process=crashing,
+                          note="signed real player live when killing lab server")
+                    ready=next(line for line in crash_marker.read_text().splitlines()
+                        if line.startswith("GUIAIA_REAL_CRASH_QA_JOIN_READY="))
+                    import json
+                    info=json.loads(ready.split("=",1)[1])
+                    assert info["worldId"]=="qa:real-fabric:25593"
+                    # Never kill a shared service: server was Popen-created
+                    # in a TemporaryDirectory in this function.
+                    server.kill()
+                    server.wait(timeout=15)
+                    assert server.returncode is not None
+                    if server.stdin: server.stdin.close()
+                    handle.close()
+                    server=None
+                    handle=None
+                    audit=subprocess.run(
+                        ["node","test/qa_live_presence_after_crash.js",
+                         str(events),str(public),info["connectionId"],
+                         str(root/"journal")],
+                        cwd=ROOT/"companion",capture_output=True,text=True,
+                        timeout=15)
+                    if audit.returncode!=0 or (
+                      "GUIAIA_REAL_LIVE_PRESENCE_CRASH_QA_EVIDENCE=" not in audit.stdout):
+                        raise RuntimeError("Post-SIGKILL stale JOIN was not denied: "+
+                                           (audit.stdout+audit.stderr)[-2000:])
+                    print(audit.stdout.strip())
+                finally:
+                    if crashing.poll() is None:
+                        crashing.terminate()
+                        try:crashing.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            crashing.kill();crashing.wait()
         finally:
             if server is not None:shutdown(server,handle)
 

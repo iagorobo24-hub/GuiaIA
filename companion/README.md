@@ -67,3 +67,15 @@ A new [triple-signed session contract](../docs/COMPANION_OFFLINE_SESSION_IDENTIT
 [Real server JOIN/DISCONNECT QA](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40881777326) now proves that a Fabric 1.21.1 server can create and sign Ed25519 evidence of **actual connection handlers**, including two distinct IDs/challenges for the same unverified offline nickname, and that disconnected or stale sessions are not present in the tested audit log. The separate [pinned-key evidence reader](../docs/COMPANION_REAL_FABRIC_CONNECTION_BRIDGE_QA_2026-10-29.md) rejects forged or expired records. No private key is committed and the actual server bridge is default-off and restricted to disposable /tmp QA worlds.
 
 **Production and public distribution remain blocked** until owner keys are safely enrolled outside Minecraft, the server provides a live authenticated-session check instead of merely a signed event log, mandatory authorization covers all world-modifying actions, in-flight server storage fault recovery is validated, and Cobblemon compatibility is established. For design context see [Issue #2](https://github.com/iagorobo24-hub/GuiaIA/issues/2).
+
+## Live server-presence guard (isolated QA only)
+
+An opt-in QA-only Fabric module answers a short-lived Ed25519-signed
+nonce challenge on 127.0.0.1:25594 from the running server's live
+connection-handler table. src/live_presence.js validates the reply using the
+separately pinned public key. The experimental requireLivePresence gateway
+requires it before consuming a one-use grant or opening a chest, addressing
+stale JOIN files after a sudden server death in the disposable lab.
+This is not production authentication, does not cover a server crash after
+a successful query, and is not enforced by every legacy QA adapter.
+See docs/COMPANION_LIVE_SERVER_PRESENCE_QA_2026-10-29.md.

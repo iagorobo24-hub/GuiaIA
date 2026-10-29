@@ -13,6 +13,7 @@ const {openDepositJournal,chestCount}=require('../src/deposit')
 const {verifyBridgeLog,createPinnedQaServerBridgeAuthority}=
   require('../src/fabric_bridge_reader')
 const {createQaSessionActionGateway}=require('../src/session_identity')
+const {createPinnedQaLivePresenceAuthority}=require('../src/live_presence')
 const {openQaPrincipalRegistry}=require('../src/principal_enrollment')
 const [eventsFile,pubFile,journalDir]=process.argv.slice(2)
 if(!eventsFile?.startsWith('/tmp/guiaia-fabric-bridge-qa-') ||
@@ -23,6 +24,8 @@ if(!eventsFile?.startsWith('/tmp/guiaia-fabric-bridge-qa-') ||
 const worldId='qa:real-fabric:25593'
 const publicKey=fs.readFileSync(pubFile,'utf8')
 const source=createPinnedQaServerBridgeAuthority(eventsFile,publicKey,worldId)
+const live=createPinnedQaLivePresenceAuthority({port:25594,worldId,
+  serverBridgePublicKeyPem:publicKey})
 const opts=username=>({host:'127.0.0.1',port:25593,
   username,auth:'offline',version:'1.21.1',hideErrors:true})
 const owner=mineflayer.createBot(opts('OwnerQA'))
@@ -66,6 +69,8 @@ async function main(){
       await sleep(140)
     }
     if(!ready)throw Error('Real signed JOIN or Minecraft inventories unavailable')
+    const liveProof=await live.livePresence(connectionId)
+    if(liveProof.connected!==true)throw Error('Real server presence query was denied')
     const ownerKey=crypto.generateKeyPairSync('ed25519')
     const operatorKey=crypto.generateKeyPairSync('ed25519')
     registryRoot=fs.mkdtempSync(path.join(os.tmpdir(),'guiaia-enrollment-qa-'))
@@ -101,7 +106,8 @@ async function main(){
       operatorPublicKeyPem:operatorKey.publicKey.export({format:'pem',type:'spki'}),
       ledgerDirectory:path.join(journalDir,'spent'),
       activeConnection:id=>source.activeConnection(id),
-      isRevoked:principalId=>registry.isRevoked(principalId)
+      isRevoked:principalId=>registry.isRevoked(principalId),
+      requireLivePresence:true,livePresence:live.livePresence
     }
     const ownerSession=(principalId='qa_pre_enrolled_user',key=ownerKey)=>{
       const now=Date.now()
@@ -203,6 +209,7 @@ async function main(){
       result:'pass',real_fabric_server_signs_join:true,
       real_fabric_server_signs_disconnect:true,
       no_simulated_server_proof:true,
+      fresh_signed_live_query_before_deposit:true,
       synthetic_pre_enrolled_user_proof:true,
       synthetic_operator_grant:true,
       operator_approved_enrollment_persisted:true,

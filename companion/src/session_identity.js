@@ -125,6 +125,22 @@ function createSessionAuthorizedQaDeposit(bot,bundle,capability,authority){
     const current=verifySessionBundle(bundle,trust)
     const grant=verifySessionDepositGrant(capability,current,trust)
     if(bot.username!==trust.botName)throw Error('Target bot changed before dispatch')
+    if(trust.requireLivePresence===true){
+      if(typeof trust.livePresence!=='function')
+        throw Error('Trusted live presence authority unavailable')
+      // An ephemeral challenge signed by the RUNNING Fabric JVM is mandatory.
+      // A stale JOIN file alone cannot authorize this opt-in gateway.
+      const live=await trust.livePresence(current.connectionId)
+      if(!live || live.connected!==true || live.connectionId!==current.connectionId ||
+         live.worldId!==current.worldId ||
+         !Number.isSafeInteger(live.issuedAt) ||
+         Date.now()-live.issuedAt>1500 || live.issuedAt>Date.now()+1000)
+        throw Error('Current signed Fabric live presence unavailable')
+      // The remote query yielded: re-check mutable revocation and session
+      // before consuming a one-use capability or changing Minecraft.
+      verifySessionBundle(bundle,trust)
+      verifySessionDepositGrant(capability,current,trust)
+    }
     reserveGrantOnce(trust.ledgerDirectory,grant.nonce)
     return base()
   }
