@@ -3,6 +3,7 @@
 // Run ONLY inside the disposable real Fabric signed-connection harness.
 // Never accepts Minecraft coordinates, keys or server endpoints from chat.
 const path=require('node:path')
+const fs=require('node:fs')
 const crypto=require('node:crypto')
 const {Vec3}=require('vec3')
 const {Movements,goals}=require('mineflayer-pathfinder')
@@ -71,9 +72,56 @@ async function runRealSignedDeliveryQa({bot,session,authority,operatorKey,journa
     if(!gathered.ok || gathered.state.gatherDone!==1 ||
        gathered.state.phase!=='deposit' ||
        inventoryCount(bot,'oak_log')!==before+1 ||
-       bot.blockAt(new Vec3(target.x,target.y,target.z))?.name==='oak_log')
-      throw Error('Real Fabric delivery gather did not prove world and inventory changes: '+
-        JSON.stringify({gathered,before,now:inventoryCount(bot,'oak_log')}))
+       bot.blockAt(new Vec3(target.x,target.y,target.z))?.name==='oak_log'){
+      const detail={gathered,before,now:inventoryCount(bot,'oak_log'),
+        goals:seenGoals,atStart,afterGather,
+        remainingBlock:bot.blockAt(new Vec3(target.x,target.y,target.z))?.name,
+        botHealth:bot.health,
+        ownerVisible:Boolean(bot.players?.OwnerQA?.entity)}
+      process.stderr.write('GUIAIA_REAL_GATHER_FAILURE_DIAGNOSTIC='+
+        JSON.stringify(detail)+'\n')
+      throw Error('Real Fabric delivery gather did not prove world and inventory changes')
+    }
+    // Deliberate crash injection ONLY in the isolated signed-delivery
+    // Fabric QA child. A transfer must be physically confirmed before the
+    // process exits; deposit.json remains at the fsynced 'transferring' barrier.
+    if(process.env.GUIAIA_QA_CRASH_DURING_SIGNED_DEPOSIT==='1'){
+      const originalOpen=bot.openContainer.bind(bot)
+      let targetSeen=false
+      bot.openContainer=async block=>{
+        const window=await originalOpen(block)
+        if(block?.position?.x===chest.x &&
+           block?.position?.y===chest.y &&
+           block?.position?.z===chest.z){
+          if(targetSeen)throw Error('Unexpected repeated crash QA chest open')
+          targetSeen=true
+          const pre=chestCount(window,'oak_log')
+          const originalDeposit=window.deposit.bind(window)
+          window.deposit=async(...args)=>{
+            await originalDeposit(...args)
+            let confirmed=false
+            for(let i=0;i<20;i++){
+              if(chestCount(window,'oak_log')===pre+1 &&
+                 inventoryCount(bot,'oak_log')===before){
+                confirmed=true;break
+              }
+              await new Promise(r=>setTimeout(r,100))
+            }
+            if(!confirmed)throw Error('QA crash requires real two-sided transfer proof')
+            fs.writeSync(1,'GUIAIA_REAL_SIGNED_DELIVERY_CRASH_POINT_QA_EVIDENCE='+
+              JSON.stringify({result:'pass',production:false,
+                real_gather_receipts:mission.view().receipts.length,
+                real_deposit_receipts:deposit.view().receipts.length,
+                crash_phase:deposit.view().phase,
+                transfer_confirmed_by_both_inventories:true,
+                exact_crash:'after_world_transfer_before_durable_receipt',
+                process_exit:77})+'\n')
+            process.exit(77)
+          }
+        }
+        return window
+      }
+    }
     const stored=await runner.runNext()
     const afterDeposit={...bot.entity.position}
     const container=await bot.openContainer(bot.blockAt(new Vec3(chest.x,chest.y,chest.z)))

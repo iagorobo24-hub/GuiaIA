@@ -1,0 +1,93 @@
+{
+  "attempts": [
+    {
+      "deposit_phase": "ready",
+      "deposit_receipts": 0,
+      "gather_receipts": 0,
+      "log_sha256": "91b6518ddf2402c555fe3288280f7af3adcd0c5414ae7c16009ac08185ea932f",
+      "mission_phase": "needs_review",
+      "result": "blocked_before_crash_injection",
+      "stage": "real_signed_gather"
+    },
+    {
+      "diagnostic": {
+        "afterGather": {
+          "x": 4.5,
+          "y": 64,
+          "z": 2.49999999999974
+        },
+        "atStart": {
+          "x": 2.5,
+          "y": 64,
+          "z": 2.5
+        },
+        "before": 1,
+        "botHealth": 20,
+        "gathered": {
+          "ok": false,
+          "reason": "unverified_step_no_replay",
+          "state": {
+            "completedSteps": 0,
+            "depositTotal": 1,
+            "depositsDone": 0,
+            "gatherDone": 0,
+            "gatherTotal": 1,
+            "ownerName": "OwnerQA",
+            "phase": "blocked",
+            "reason": "journal_not_replay_safe",
+            "totalSteps": 2
+          }
+        },
+        "goals": [
+          {
+            "x": 7,
+            "y": 64,
+            "z": 2
+          },
+          {
+            "x": 7,
+            "y": 64,
+            "z": 2
+          }
+        ],
+        "now": 1,
+        "ownerVisible": true,
+        "remainingBlock": "air"
+      },
+      "log_sha256": "9306bce790668ebdf53517d9b578fb5fffdc381a169d0bf1b87e8621a336611a",
+      "result": "blocked_before_crash_injection",
+      "stage": "real_signed_gather"
+    }
+  ],
+  "branch": "feature/principal-enrollment-qa",
+  "date": "2026-10-29",
+  "git_remote_modified": false,
+  "next_action": "diagnose raw gather result and stabilize pickup before retesting crash",
+  "node_focused": {
+    "fail": 0,
+    "pass": 9,
+    "tests": 9
+  },
+  "node_full": {
+    "fail": 0,
+    "pass": 298,
+    "skipped": 0,
+    "tests": 298
+  },
+  "observed_real_crash_after_transfer": false,
+  "observed_restarted_server_passive_reconciliation": false,
+  "parent_commit": "e4864ba",
+  "production_deployed": false,
+  "qa_logs": [
+    "/tmp/guiaia-signed-delivery-crash-real-20261029.log",
+    "/tmp/guiaia-signed-delivery-crash-real-retry-20261029.log",
+    "/tmp/guiaia-uncertain-pickup-global-20261029.log"
+  ],
+  "source_sha256": {
+    "companion/test/qa_delivery_navigation_integration.test.js": "03073097cb91a6f04f4f177946c3f012fca6eb4b38b8853b1c523197b0dd4ac3",
+    "companion/test/qa_real_signed_delivery_crash_audit.js": "c663e55b103b2cb5731f2f39e52bccd58d264a5f1550662de1bb8bc80f75bbf7",
+    "companion/test/qa_real_signed_delivery_integration.js": "9eb253544ef6c4768e58bf53183e5ca436a2f844f14b34cf126b58f9a8234e6d",
+    "scripts/qa_signed_delivery_real_server.py": "af6a8fbad0a15f7d37d53b88f08bd1342e44793e53e173e14335b56b46399a9c"
+  },
+  "status": "incomplete_pickup_regression_verified_crash_recovery_not_yet_verified"
+}

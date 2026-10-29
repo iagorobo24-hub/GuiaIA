@@ -20,7 +20,7 @@ const keypair=()=>crypto.generateKeyPairSync('ed25519')
 const publicPem=k=>k.publicKey.export({format:'pem',type:'spki'})
 const sign=(payload,key)=>({payload,signature:crypto.sign(null,
   Buffer.from(JSON.stringify(payload)),key.privateKey).toString('base64url')})
-function fixture(t,{initialX=0,stalledPath=false,targetsX=9}={}){
+function fixture(t,{initialX=0,stalledPath=false,targetsX=9,lostDrop=false}={}){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'guiaia-delivery-path-v5-'))
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}))
   const srv=keypair(),principal=keypair(),operator=keypair()
@@ -68,7 +68,7 @@ function fixture(t,{initialX=0,stalledPath=false,targetsX=9}={}){
     async dig(block){
       assert.equal(block.name,'oak_log')
       assert.ok(block.position instanceof Vec3)
-      dug++;inventory++
+      dug++;if(!lostDrop)inventory++
     },
     stopDigging(){},
     async openContainer(block){
@@ -210,4 +210,25 @@ test('manual journal resume never replays a consumed signed deposit nonce',async
   assert.equal((await pipeline.runNext()).ok,false)
   assert.equal(w.journalD.view().receipts.length,0)
   assert.equal(w.bot.worldDeposits||0,0)
+})
+
+
+test('real journals: mined block without verified pickup is never retried or deposited',async t=>{
+  // Regression for the real Fabric failure observed on Penguin: the block
+  // was air, but the oak_log count had not increased after the dig.
+  const w=fixture(t,{lostDrop:true})
+  const pipeline=w.create({navigationClasses:w.classes,pickupTimeoutMs:350})
+  const first=await pipeline.runAll()
+  assert.equal(first.ok,false)
+  assert.equal(w.dug,1,'the block was actually mined once')
+  assert.equal(w.inventory,0,'world mutation is NOT proof of collection')
+  assert.equal(w.journalM.view().phase,'needs_review')
+  assert.equal(w.journalM.view().receipts.length,0)
+  assert.equal(w.journalD.view().phase,'ready')
+  assert.equal(w.journalD.view().receipts.length,0)
+  const after=await pipeline.runAll()
+  assert.equal(after.ok,false)
+  assert.equal(after.state.phase,'blocked')
+  assert.equal(w.dug,1,'no automatic re-dig after an uncertain pickup')
+  assert.equal(w.chest,0,'no deposit without a proven pickup')
 })
