@@ -35,6 +35,10 @@ class SnapshotObserver:
                 clean[k] = val
         return clean
 
+    def world(self) -> dict:
+        from .world_snapshot import parse_world_snapshot
+        return parse_world_snapshot(self.path)
+
     def status(self) -> dict:
         m = self._metrics()
         return {"source": "operator_snapshot", "read_only": True,
@@ -56,6 +60,10 @@ class RconObserver:
 
     def status(self) -> dict:
         return {**self.client.status(), **self.client.gametime()}
+
+    def world(self) -> dict:
+        from .world_snapshot import WorldSnapshotError
+        raise WorldSnapshotError("No Fabric observer configured; RCON cannot see blocks/entities")
 
     def performance(self) -> dict:
         return {"source": "minecraft_java_rcon", "read_only": True,

@@ -9,6 +9,7 @@
 - Análisis orientativo de métricas tomadas de un archivo JSON de prueba o una exportación confiable.
 - Propuestas de misiones sencillas de recolección **sin ejecutarlas**.
 - Barreras de seguridad separadas de cualquier modelo de IA.
+- Herramienta MCP adicional `guia_world_observe`: consume una muestra local reciente del [observador Fabric experimental](fabric-observer/README.md), si se configura; no modifica mundos.
 
 ## Cómo probarlo
 

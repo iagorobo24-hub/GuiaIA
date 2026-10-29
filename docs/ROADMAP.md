@@ -6,7 +6,7 @@ Updated 2026-10-29.
 | --- | --- | --- |
 | 0. Baseline & separation | Inventory private Teselia prototype, keep worlds/secrets out | **Partial:** inspected live services, repository code/architecture; original history must remain private |
 | 1. Public developer preview | Independent Python package, CI, security docs, tests | **Implemented locally:** read-only MCP, planner, safety guard, 25 tests pass; Linux Penguin lacks pip so install/build only through CI |
-| 2. World Observer | Authoritative Fabric chunk/entity/event snapshot, bounded budget | **Partial:** live RCON status works; no real chunk/entity observation yet |
+| 2. World Observer | Authoritative Fabric chunk/entity/event snapshot, bounded budget | **Prototype:** optional read-only loaded-chunk sampler + strict Python MCP consumer; Java CI and in-world QA required; no event stream yet |
 | 3. Agent tools | Local MCP, typed schemas, audit/policy, permissions | **Partial:** 4 MCP tools, deterministic plans, no mutation capabilities; modern 2026 protocol + formal security audit pending |
 | 4. Companion MVP | Bot follows, stops, gathers and validates inventory in a fresh world | **Pending:** independent public build and Minecraft in-world integration |
 | 5. Developer Agent MVP | Diagnose issue; run isolated QA, verify result, propose deployment | **Pending:** only telemetry-based read-only heuristic diagnosis exists |

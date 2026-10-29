@@ -27,7 +27,7 @@ class MCPTests(unittest.TestCase):
     def test_handshake_and_listing(self):
         self.boot()
         names = {x["name"] for x in self.request("tools/list")["result"]["tools"]}
-        self.assertEqual(names, {"guia_status", "guia_performance", "guia_diagnose", "guia_plan_gather"})
+        self.assertEqual(names, {"guia_status", "guia_performance", "guia_diagnose", "guia_world_observe", "guia_plan_gather"})
 
     def test_status_sanitized(self):
         self.boot()

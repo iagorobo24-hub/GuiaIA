@@ -27,13 +27,14 @@ This starts a **stdio** MCP server, designed for an MCP-compatible local AI clie
 
 For a local MCP client, configure its program to `python3` and arguments to `-m guiaia.mcp --snapshot /absolute/path/to/examples/synthetic_world.json` with environment variable `PYTHONPATH=/absolute/path/to/GuiaIA/src`. Detailed examples are in [MCP usage](docs/MCP_USAGE.md).
 
-Once connected, you can ask an agent to use these four tools:
+Once connected, you can ask an agent to use these five tools:
 
 | MCP tool | Working behavior |
 | --- | --- |
 | `guia_status` | Sanitized player count and game tick information |
 | `guia_performance` | Read a trusted metric snapshot or explicitly report unavailable metrics |
 | `guia_diagnose` | Propose a performance investigation without mutating anything |
+| `guia_world_observe` | Read bounded, fresh Fabric world samples from an optional local observer; rejects unavailable or stale observations |
 | `guia_plan_gather` | Validate a bounded Spanish gather request; **only propose**, never execute |
 
 ## Connect to a running Minecraft Java server (operator only)
@@ -54,6 +55,10 @@ python3 -m compileall -q src tests
 ```
 
 CI additionally installs and tests the package on Python 3.11, 3.12 and 3.13. Current test results are in [milestones](docs/ROADMAP.md).
+
+## Optional Fabric observer (experimental, QA-only)
+
+A separate [Fabric 1.21.1 World Observer prototype](fabric-observer/README.md) can capture aggregated samples from one already-loaded chunk, without exposing player identifiers. **Do not install it on the production server.** See [observer security/limits](docs/WORLD_OBSERVER.md). Java compilation and real in-world tests are separate release gates.
 
 ## Architecture and roadmap
 

@@ -27,6 +27,13 @@ TOOL_DEFS = [
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
     {
+        "name": "guia_world_observe",
+        "title": "Read bounded Fabric world observation",
+        "description": "Read a recent, privacy-safe aggregate sample of one already-loaded chunk; no player identities or world changes.",
+        "annotations": {"readOnlyHint": True},
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
         "name": "guia_plan_gather",
         "title": "Propose a bounded companion mission",
         "description": "Parse a Spanish request into an explicit non-executing plan. No gameplay actions.",
@@ -63,6 +70,8 @@ class ToolRegistry:
             return self.observer.status()
         if name == "guia_performance":
             return self.observer.performance()
+        if name == "guia_world_observe":
+            return self.observer.world()
         if name == "guia_plan_gather":
             try:
                 return propose_gather(arguments.get("message"))
