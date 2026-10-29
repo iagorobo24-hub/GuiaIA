@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from qa_fabric_server import require_file, recent_log, start_server, shutdown, until
+from qa_fabric_server import require_file, recent_log, start_server, shutdown, until, send
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -109,6 +109,47 @@ def main():
             print('GUIAIA_REAL_BRIDGE_RESTART_QA_EVIDENCE={"result":"pass",'
                   '"stale_connection_log_cleared":true,'
                   '"no_offline_identity_authenticated":true,"production":false}')
+
+            # Actual Fabric-signed JOIN is consumed by the existing QA action
+            # gateway, together with a synthetic pre-enrolled player key.
+            # Only temporary QA world commands; no use of Teselia.
+            for command in (
+                "gamerule spawnRadius 0",
+                "fill 0 63 0 8 63 8 minecraft:stone",
+                "setworldspawn 2 64 2",
+                "setblock 4 64 3 minecraft:chest",
+                "say GUIAIA_BRIDGE_CHEST_READY",
+            ):
+                send(server,command)
+            until(lambda:"GUIAIA_BRIDGE_CHEST_READY" in recent_log(restarted),
+                  15,process=server,note="isolated real Fabric bridge chest")
+            client=subprocess.Popen(
+                ["node","test/qa_live_bridge_gateway.js",str(events),
+                 str(public),str(root/"journal")],
+                cwd=ROOT/"companion",stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,text=True)
+            try:
+                until(lambda:"GuiaIA_QA joined the game" in recent_log(restarted),
+                      30,process=server,note="real Fabric QA bot joined")
+                for command in (
+                    "give GuiaIA_QA minecraft:oak_log 1",
+                    "give GuiaIA_QA minecraft:birch_log 1",
+                    "say GUIAIA_BRIDGE_TEST_INVENTORY_READY",
+                ):
+                    send(server,command)
+                until(lambda:"GUIAIA_BRIDGE_TEST_INVENTORY_READY" in recent_log(restarted),
+                      15,process=server,note="temporary QA inventory provided")
+                out,err=client.communicate(timeout=83)
+                result=out+"\\n"+err
+                if client.returncode!=0 or "GUIAIA_REAL_SERVER_SESSION_GATE_QA_EVIDENCE=" not in result:
+                    raise RuntimeError("Actual Fabric-to-companion session proof failed\\n"+
+                                       result[-2000:]+"\\n"+recent_log(restarted,1600))
+                print(result.strip())
+            finally:
+                if client.poll() is None:
+                    client.terminate()
+                    try:client.wait(timeout=5)
+                    except subprocess.TimeoutExpired:client.kill();client.wait()
         finally:
             if server is not None:shutdown(server,handle)
 
