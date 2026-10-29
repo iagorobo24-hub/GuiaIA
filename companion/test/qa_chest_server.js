@@ -50,7 +50,13 @@ async function main(){
         chest,item:item.name,count:item.count})
       let depositEvidence
       const originalDeposit=action.depositOne
-      action.depositOne=async()=>{depositEvidence=await originalDeposit();return depositEvidence}
+      action.depositOne=async()=>{
+        try { depositEvidence=await originalDeposit();return depositEvidence }
+        catch(error) {
+          console.error('QA deposit exception='+String(error?.message||'unknown').slice(0,160))
+          throw error
+        }
+      }
       const outcome=await journal.runNext(action)
       if(!outcome.ok) {
         console.error('QA deposit step diagnostic='+JSON.stringify(depositEvidence||{}))

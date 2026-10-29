@@ -5,6 +5,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
+const { Vec3 } = require('vec3')
 const { finiteDistance, OWNER_MAX_DISTANCE } = require('./controller')
 const { inventoryCount, RESOURCE_ITEMS } = require('./gather')
 
@@ -100,7 +101,7 @@ function createQaChestDeposit(bot, plan) {
     try {
       const reason=safe()
       if(reason) return response(false,reason)
-      const block=bot.blockAt(position)
+      const block=bot.blockAt(new Vec3(position.x,position.y,position.z))
       if(!block || block.name!=='chest') return response(false,'chest_not_authorized')
       const inventoryBefore=inventoryCount(bot,item)
       if(inventoryBefore===null || inventoryBefore<count) return response(false,'insufficient_inventory')

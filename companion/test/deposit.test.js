@@ -60,6 +60,15 @@ test('realistic chest slots: deposits one oak log with two independent inventory
   assert.equal(r.chestAfter,1)
   assert.equal(f.window.closed,true)
 })
+test('real Mineflayer block lookup receives a Vec3 position',async()=>{
+  const f=fixture()
+  f.bot.blockAt=p=>{
+    assert.equal(typeof p.floored,'function')
+    assert.deepEqual({x:p.x,y:p.y,z:p.z},chest)
+    return {name:'chest'}
+  }
+  assert.equal((await action(f).depositOne()).ok,true)
+})
 test('deposit journal persists two different receipts with exclusive UUIDs',async t=>{
   const folder=dir(t)
   const journal=openDepositJournal(folder,plan)
