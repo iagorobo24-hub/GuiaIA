@@ -3,13 +3,14 @@
 // Pure observation after a real Minecraft server restart. Never /give, dig,
 // withdraw, deposit, resume or auto-replay. Both accounts are synthetic QA.
 const mineflayer=require('mineflayer')
+const fs=require('node:fs')
 const {Vec3}=require('vec3')
 const {inventoryCount}=require('../src/gather')
 const {chestCount}=require('../src/deposit')
 const {readDepositJournalPassive,reconcileDepositSnapshot}=require('../src/recovery')
 
 const directory=process.env.GUIAIA_QA_DEPOSIT_DIR
-if(!directory || !directory.startsWith('/tmp/guiaia-restart-qa-')) {
+if(!directory || !['/tmp/guiaia-restart-qa-','/tmp/guiaia-inflight-qa-'].some(p=>directory.startsWith(p))) {
   throw Error('Only a disposable restart QA directory is allowed')
 }
 const port=25594
@@ -31,7 +32,14 @@ async function main(){
   },45000)
   try{
     // The audit must NOT recover pending transactions or touch disk.
+    const rawJournalBefore=fs.readFileSync(directory+'/deposit.json')
     const state=readDepositJournalPassive(directory)
+    if(!fs.readFileSync(directory+'/deposit.json').equals(rawJournalBefore)) {
+      throw Error('Passive audit unexpectedly modified the journal')
+    }
+    if(state.phase==='transferring' && !fs.existsSync(directory+'/deposit.lock')) {
+      throw Error('Crash injection stale process lock not preserved')
+    }
     const expectedStatus=process.env.GUIAIA_QA_EXPECTED_PHASE||'completed'
     if(state.phase!==expectedStatus) throw Error('Unexpected persisted journal phase')
     await Promise.all([spawn(owner),spawn(worker)])
@@ -63,6 +71,10 @@ async function main(){
     const expect=process.env.GUIAIA_QA_EXPECTED_STATUS||'completed_inventory_verified'
     if(proof.status!==expect || proof.canAutoReplay!==false) {
       throw Error('Reconciliation gate refused: '+JSON.stringify(proof))
+    }
+    if(process.env.GUIAIA_QA_REQUIRE_TRANSFER_COUNTS==='true' &&
+       (player.oak_log!==0||container.oak_log!==1)) {
+      throw Error('World did not persist the accepted in-flight transfer')
     }
     if(expect==='completed_inventory_verified' &&
        (!proof.ok || player.oak_log!==0||player.birch_log!==0 ||

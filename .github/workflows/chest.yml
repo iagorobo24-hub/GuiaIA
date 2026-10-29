@@ -12,6 +12,8 @@ on:
       - 'companion/test/qa_chest_server.js'
       - 'scripts/qa_chest_server.py'
       - 'scripts/qa_chest_restart_server.py'
+      - 'scripts/qa_chest_inflight_server.py'
+      - 'companion/test/qa_inflight_deposit_crash.js'
       - '.github/workflows/chest.yml'
   workflow_dispatch:
 
@@ -55,3 +57,7 @@ jobs:
         env:
           PYTHONPATH: src
         run: python3 scripts/qa_chest_restart_server.py --launcher "$RUNNER_TEMP/chest-launcher.jar"
+      - name: Crash QA bot after world transfer before journal receipt and verify no replay
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/qa_chest_inflight_server.py --launcher "$RUNNER_TEMP/chest-launcher.jar"
