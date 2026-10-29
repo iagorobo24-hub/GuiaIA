@@ -1,0 +1,72 @@
+{
+  "branch": "feature/principal-enrollment-qa",
+  "checks": {
+    "GUIAIA_REAL_BRIDGE_CLIENTS_QA_EVIDENCE": {
+      "logins": 2,
+      "offline_login": true,
+      "production": false,
+      "reconnect_with_same_name": true,
+      "result": "pass",
+      "username": "OwnerQA"
+    },
+    "GUIAIA_REAL_BRIDGE_RESTART_QA_EVIDENCE": {
+      "no_offline_identity_authenticated": true,
+      "production": false,
+      "result": "pass",
+      "stale_connection_log_cleared": true
+    },
+    "GUIAIA_REAL_FABRIC_BRIDGE_QA_EVIDENCE": {
+      "all_sessions_inactive_after_disconnect": true,
+      "disconnect_count": 2,
+      "distinct_challenges": true,
+      "distinct_random_connection_ids": true,
+      "forged_payload_rejected": true,
+      "forged_signature_rejected": true,
+      "join_count": 2,
+      "player_identity_authenticated": false,
+      "private_file_modes": true,
+      "production": false,
+      "real_fabric_server_events": true,
+      "result": "pass",
+      "server_signed_ed25519": true,
+      "two_distinct_real_connections_same_offline_username": true
+    },
+    "GUIAIA_REAL_SERVER_SESSION_GATE_QA_EVIDENCE": {
+      "chest_after": {
+        "birch_log": 0,
+        "oak_log": 1
+      },
+      "disconnected_session_denied_before_world_change": true,
+      "durable_receipts": 1,
+      "enrolled_registry_reopened_and_revocation_verified": true,
+      "exact_server_connection_id_bound": true,
+      "independent_principal_possession_proof": true,
+      "joined_session_can_authorize": true,
+      "no_simulated_server_proof": true,
+      "operator_approved_enrollment_persisted": true,
+      "player_after": {
+        "birch_log": 1,
+        "oak_log": 0
+      },
+      "production": false,
+      "real_fabric_server_signs_disconnect": true,
+      "real_fabric_server_signs_join": true,
+      "real_friend_enrollment_implemented": false,
+      "result": "pass",
+      "signed_nonce_replay_denied": true,
+      "signed_revocation_denied_during_live_connection": true,
+      "synthetic_operator_grant": true,
+      "synthetic_pre_enrolled_user_proof": true
+    }
+  },
+  "environment": "disposable localhost Minecraft Java 1.21.1 Fabric 0.19.5",
+  "execution": "local Penguin 2026-10-29",
+  "limits": [
+    "no production deployment",
+    "synthetic operator and player signers",
+    "no actual friend identity or power-cut recovery"
+  ],
+  "mod_sha256": "b135e0d78cb42ed22976ea7a8f11afd24016886c35caba9834fdaa08f3746db4",
+  "result": "pass",
+  "source_log": "/tmp/guiaia-enrollment-real-qa-retry.log"
+}

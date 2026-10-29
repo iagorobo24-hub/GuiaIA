@@ -1,8 +1,9 @@
 'use strict'
-// Real Fabric server-signed bridge proof + SYNTHETIC pre-enrolled principal
-// and operator; demonstrates adapter integration, NOT real friend enrollment.
+// Real Fabric-signed JOIN + operator-approved, durable QA enrollment of keys.
+// Both operator and principal keys are EPHEMERAL LAB SIGNERS: not friend identity.
 const fs=require('node:fs')
 const path=require('node:path')
+const os=require('node:os')
 const mineflayer=require('mineflayer')
 const crypto=require('node:crypto')
 const {Vec3}=require('vec3')
@@ -12,6 +13,7 @@ const {openDepositJournal,chestCount}=require('../src/deposit')
 const {verifyBridgeLog,createPinnedQaServerBridgeAuthority}=
   require('../src/fabric_bridge_reader')
 const {createQaSessionActionGateway}=require('../src/session_identity')
+const {openQaPrincipalRegistry}=require('../src/principal_enrollment')
 const [eventsFile,pubFile,journalDir]=process.argv.slice(2)
 if(!eventsFile?.startsWith('/tmp/guiaia-fabric-bridge-qa-') ||
    !pubFile?.startsWith('/tmp/guiaia-fabric-bridge-qa-') ||
@@ -40,7 +42,7 @@ async function main(){
     console.error('Real server bridge-to-companion QA timeout')
     owner.end();bot.end()
   },70000)
-  let journal
+  let journal,registry,registryRoot
   try {
     await Promise.all([spawn(owner),spawn(bot)])
     let realProof,connectionId,ready=false
@@ -66,28 +68,53 @@ async function main(){
     if(!ready)throw Error('Real signed JOIN or Minecraft inventories unavailable')
     const ownerKey=crypto.generateKeyPairSync('ed25519')
     const operatorKey=crypto.generateKeyPairSync('ed25519')
+    registryRoot=fs.mkdtempSync(path.join(os.tmpdir(),'guiaia-enrollment-qa-'))
+    const registryDir=path.join(registryRoot,'registry')
+    const enrollmentTrust={worldId,sandboxOnly:true,
+      operatorPublicKeyPem:operatorKey.publicKey.export({format:'pem',type:'spki'})}
+    registry=openQaPrincipalRegistry(registryDir,enrollmentTrust)
+    const enroll=(principalId,key)=>{
+      const now=Date.now()
+      const payload={aud:'guiaia:principal-enrollment:v1',
+        worldId,principalId,nonce:crypto.randomUUID(),
+        issuedAt:now-1000,expiresAt:now+60000,
+        publicKeyDer:key.publicKey.export({format:'der',type:'spki'}).toString('base64url')}
+      const consent=crypto.sign(null,Buffer.from(
+        'guiaia:principal-consent:v1\n'+JSON.stringify(payload)),
+        key.privateKey).toString('base64url')
+      return registry.applySignedChange(signed(payload,operatorKey),consent)
+    }
+    const revoke=principalId=>{
+      const now=Date.now()
+      return registry.applySignedChange(signed({
+        aud:'guiaia:principal-revocation:v1',worldId,principalId,
+        nonce:crypto.randomUUID(),issuedAt:now-1000,expiresAt:now+60000
+      },operatorKey))
+    }
+    if(enroll('qa_pre_enrolled_user',ownerKey).action!=='enrolled')
+      throw Error('Out-of-band operator enrollment denied')
     const authority={
       sandboxOnly:true,identityMode:'trusted_server_bridge_lab',
       worldId,botName:'GuiaIA_QA',
       serverBridgePublicKeyPem:publicKey,
-      trustedPrincipals:{qa_pre_enrolled_user:ownerKey.publicKey.export({format:'pem',type:'spki'})},
+      trustedPrincipals:registry.trustedPrincipals(),
       operatorPublicKeyPem:operatorKey.publicKey.export({format:'pem',type:'spki'}),
       ledgerDirectory:path.join(journalDir,'spent'),
       activeConnection:id=>source.activeConnection(id),
-      isRevoked:()=>false
+      isRevoked:principalId=>registry.isRevoked(principalId)
     }
-    const ownerSession=()=>{
+    const ownerSession=(principalId='qa_pre_enrolled_user',key=ownerKey)=>{
       const now=Date.now()
       const claim={aud:'guiaia:principal-proof:v1',worldId,connectionId,
-        principalId:'qa_pre_enrolled_user',challenge:realProof.payload.challenge,
+        principalId,challenge:realProof.payload.challenge,
         issuedAt:now-1000,expiresAt:now+30000}
-      return {bridge:realProof,owner:signed(claim,ownerKey)}
+      return {bridge:realProof,owner:signed(claim,key)}
     }
-    const scope=item=>{
+    const scope=(item,principalId='qa_pre_enrolled_user')=>{
       const now=Date.now()
       return signed({aud:'guiaia:session-deposit:v1',worldId,
         botName:'GuiaIA_QA',ownerName:'OwnerQA',
-        principalId:'qa_pre_enrolled_user',connectionId,
+        principalId,connectionId,
         challenge:realProof.payload.challenge,
         chest:{...chest},item,count:1,
         nonce:crypto.randomUUID(),issuedAt:now-1000,expiresAt:now+30000},
@@ -115,7 +142,28 @@ async function main(){
         if(error.code!=='EEXIST')throw error
       }
     })()
-    const second=gateway.createDeposit(session,scope('birch_log'))
+    // Create authorization while this actual signed Fabric connection is LIVE,
+    // then revoke enrollment BEFORE any world mutation: dispatch must re-check.
+    const revokedAction=gateway.createDeposit(session,scope('birch_log'))
+    if(revoke('qa_pre_enrolled_user').action!=='revoked')
+      throw Error('Signed operator revocation failed')
+    let revokedBeforeWorldMutation=false
+    try { await revokedAction.depositOne() }
+    catch(error) {
+      if(/revoked/.test(error.message))revokedBeforeWorldMutation=true
+    }
+    if(!revokedBeforeWorldMutation || inventoryCount(bot,'birch_log')!==1)
+      throw Error('Revoked enrolled principal could still deposit into the chest')
+    // A separate QA principal is independently approved to keep the existing
+    // DISCONNECT denial test unmasked by the earlier revocation.
+    const replacementKey=crypto.generateKeyPairSync('ed25519')
+    if(enroll('qa_replacement_user',replacementKey).action!=='enrolled')
+      throw Error('Replacement QA principal enrollment failed')
+    const refreshedGateway=createQaSessionActionGateway(bot,{
+      ...authority,trustedPrincipals:registry.trustedPrincipals()})
+    const replacementSession=ownerSession('qa_replacement_user',replacementKey)
+    const disconnectAction=refreshedGateway.createDeposit(
+      replacementSession,scope('birch_log','qa_replacement_user'))
     owner.quit()
     let disconnected=false
     for(let k=0;k<75;k++){
@@ -126,7 +174,7 @@ async function main(){
     }
     if(!disconnected)throw Error('Real Fabric DISCONNECT not recorded')
     let revoked=false
-    try{await second.depositOne()}catch(error){
+    try{await disconnectAction.depositOne()}catch(error){
       if(/live matching connection/.test(error.message))revoked=true
     }
     if(!revoked)throw Error('Old session still permitted actions after disconnect')
@@ -142,12 +190,25 @@ async function main(){
        journal.view().receipts.length!==1){
       throw Error('Live-connection revocation altered unexpected inventory')
     }
+    registry.close();registry=null
+    const restored=openQaPrincipalRegistry(registryDir,enrollmentTrust)
+    let enrollmentReopened=false
+    try{
+      enrollmentReopened=restored.isRevoked('qa_pre_enrolled_user') &&
+        !restored.isRevoked('qa_replacement_user') &&
+        Object.keys(restored.trustedPrincipals()).length===1
+    }finally{restored.close()}
+    if(!enrollmentReopened)throw Error('Signed enrollment/revocation was not durable')
     console.log('GUIAIA_REAL_SERVER_SESSION_GATE_QA_EVIDENCE='+JSON.stringify({
       result:'pass',real_fabric_server_signs_join:true,
       real_fabric_server_signs_disconnect:true,
       no_simulated_server_proof:true,
       synthetic_pre_enrolled_user_proof:true,
       synthetic_operator_grant:true,
+      operator_approved_enrollment_persisted:true,
+      independent_principal_possession_proof:true,
+      signed_revocation_denied_during_live_connection:revokedBeforeWorldMutation,
+      enrolled_registry_reopened_and_revocation_verified:enrollmentReopened,
       exact_server_connection_id_bound:true,
       joined_session_can_authorize:true,
       signed_nonce_replay_denied:true,
@@ -159,6 +220,8 @@ async function main(){
   }finally{
     clearTimeout(watchdog)
     if(journal)journal.close()
+    if(registry)registry.close()
+    if(registryRoot)fs.rmSync(registryRoot,{recursive:true,force:true})
     owner.quit();bot.quit()
   }
 }

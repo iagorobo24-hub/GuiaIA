@@ -209,3 +209,77 @@ test('enrolled public key interoperates with existing sandbox session verifier; 
   assert.throws(()=>verifySessionBundle(bundle,authority()),/identity or scope/)
   j.close()
 })
+
+test('pinned signed bridge plus durable enrollment denies revoked and disconnected actions before world mutation',async t=>{
+  const {EventEmitter}=require('node:events')
+  const {createPinnedQaServerBridgeAuthority}=require('../src/fabric_bridge_reader')
+  const {createQaSessionActionGateway}=require('../src/session_identity')
+  const x=setup(t),registry=x.open()
+  const bridgeKey=keys(),worldId=x.worldId
+  const connectionId=crypto.randomUUID(),challenge=crypto.randomBytes(24).toString('hex')
+  const now=Date.now(),chest={x:4,y:64,z:3}
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'guiaia-bridge-fixture-'))
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}))
+  const eventsFile=path.join(root,'events.jsonl')
+  const bridgePub=bridgeKey.publicKey.export({format:'pem',type:'spki'})
+  const sign=(payload,privateKey)=>({payload,signature:crypto.sign(null,
+    Buffer.from(JSON.stringify(payload)),privateKey).toString('base64url')})
+  const br={aud:'guiaia:server-connection:v1',worldId,connectionId,
+    username:'OwnerQA',challenge,issuedAt:now,expiresAt:now+45000}
+  const append=(event,p)=>fs.appendFileSync(eventsFile,
+    JSON.stringify({event,...sign(p,bridgeKey.privateKey)})+'\n',{mode:0o600})
+  append('join',br)
+  const source=createPinnedQaServerBridgeAuthority(eventsFile,bridgePub,worldId)
+  assert.equal(source.joinProof(connectionId).payload.connectionId,connectionId)
+  const valid=x.ticket()
+  registry.applySignedChange(valid,x.consent(valid))
+  let opened=0
+  const bot=new EventEmitter()
+  Object.assign(bot,{
+    username:'GuiaIA_QA',health:20,
+    entity:{position:{x:2,y:64,z:3}},
+    players:{OwnerQA:{entity:{position:{x:2,y:64,z:3}}}},
+    blockAt:()=>({name:'chest'}),
+    openContainer:async()=>{opened++;throw Error('Forbidden preauthorization world mutation')},
+    inventory:{items:()=>[{name:'birch_log',count:1}]},
+    registry:{itemsByName:{birch_log:{id:31}}}
+  })
+  const authority=()=>({sandboxOnly:true,identityMode:'trusted_server_bridge_lab',
+    worldId,botName:'GuiaIA_QA',serverBridgePublicKeyPem:bridgePub,
+    trustedPrincipals:registry.trustedPrincipals(),
+    operatorPublicKeyPem:x.operator.publicKey.export({format:'pem',type:'spki'}),
+    ledgerDirectory:path.join(root,'spent'),
+    activeConnection:id=>source.activeConnection(id),
+    isRevoked:id=>registry.isRevoked(id)})
+  const session=(id,key)=>({
+    bridge:source.joinProof(connectionId),
+    owner:sign({aud:'guiaia:principal-proof:v1',worldId,connectionId,
+      principalId:id,challenge,issuedAt:now,expiresAt:now+45000},key)
+  })
+  const grant=id=>sign({aud:'guiaia:session-deposit:v1',worldId,
+    botName:'GuiaIA_QA',ownerName:'OwnerQA',principalId:id,connectionId,
+    challenge,chest,item:'birch_log',count:1,nonce:crypto.randomUUID(),
+    issuedAt:now,expiresAt:now+45000},x.operator.privateKey)
+  const gateway=createQaSessionActionGateway(bot,authority())
+  const revokedAction=gateway.createDeposit(
+    session('friend_one',x.principal.privateKey),grant('friend_one'))
+  assert.equal(opened,0)
+  registry.applySignedChange(x.ticket({kind:'revoke'}))
+  assert.equal(source.activeConnection(connectionId).connected,true)
+  await assert.rejects(revokedAction.depositOne(),/revoked/)
+  assert.equal(opened,0)
+  const replacement=keys()
+  const enrollSecond=x.ticket({id:'friend_two',
+    key:replacement.publicKey.export({format:'der',type:'spki'}).toString('base64url')})
+  registry.applySignedChange(enrollSecond,x.consent(enrollSecond,replacement.privateKey))
+  const refreshed=createQaSessionActionGateway(bot,authority())
+  const disconnectAction=refreshed.createDeposit(
+    session('friend_two',replacement.privateKey),grant('friend_two'))
+  const dc={...br,aud:'guiaia:server-disconnect:v1'}
+  append('disconnect',dc)
+  assert.equal(source.activeConnection(connectionId),null)
+  await assert.rejects(disconnectAction.depositOne(),/live matching connection/)
+  assert.equal(opened,0)
+  assert.equal(fs.existsSync(path.join(root,'spent')),false)
+  registry.close()
+})

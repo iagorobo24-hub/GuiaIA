@@ -8,6 +8,8 @@ on:
       - 'companion/test/qa_real_bridge_clients.js'
       - 'companion/test/qa_verify_real_bridge.js'
       - 'companion/test/qa_live_bridge_gateway.js'
+      - 'companion/src/principal_enrollment.js'
+      - 'companion/test/principal_enrollment.test.js'
       - 'companion/src/fabric_bridge_reader.js'
       - 'companion/test/fabric_bridge_reader.test.js'
       - 'scripts/qa_fabric_identity_bridge.py'
