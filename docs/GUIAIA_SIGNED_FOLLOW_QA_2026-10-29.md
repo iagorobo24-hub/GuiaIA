@@ -38,3 +38,11 @@ Logs locales:
 
 El resultado de Fabric debe verificarse en el log antes de
 marcarlo como superado. No despliegue en produccion.
+
+## Resultado real verificado
+
+Regresion Node: 176/176. Movimiento firmado: 13/13.
+Fabric real desechable: cinco marcadores PASS, incluido seguimiento
+firmado detenido tras revocacion y verificacion del testigo QA.
+El timeout de arranque QA aumento de 240 a 390 s porque el
+primer intento agoto el limite mientras terminaba de iniciar Fabric.

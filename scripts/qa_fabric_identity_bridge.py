@@ -54,7 +54,7 @@ def main():
             # Absolute fail-closed: no config means no key read, no output.
             log=root/"default-disabled.log"
             server,handle=start_server(root,launcher,log)
-            until(lambda:"Done (" in recent_log(log),240,process=server,
+            until(lambda:"Done (" in recent_log(log),390,process=server,
                   note="identity bridge default-disabled server")
             clients(log,server)
             assert not (root/"config"/"guiaia-identity-bridge").exists(), (
@@ -89,7 +89,7 @@ def main():
                 encoding="ascii")
             log=root/"configured-real-server.log"
             server,handle=start_server(root,launcher,log)
-            until(lambda:"Done (" in recent_log(log),240,process=server,
+            until(lambda:"Done (" in recent_log(log),390,process=server,
                   note="opt-in Fabric bridge with ephemeral server key")
             print(clients(log,server).strip())
             events=config/"guiaia-identity-bridge"/"events.jsonl"
@@ -110,7 +110,7 @@ def main():
             # can be treated as still active by a file-based observer.
             restarted=root/"restarted-without-players.log"
             server,handle=start_server(root,launcher,restarted)
-            until(lambda:"Done (" in recent_log(restarted),240,
+            until(lambda:"Done (" in recent_log(restarted),390,
                   process=server,note="QA restart with no live sessions")
             assert events.is_file() and events.stat().st_size==0, (
                 "Stale bridge connection evidence survived server boot")
