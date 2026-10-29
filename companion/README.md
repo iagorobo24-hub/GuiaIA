@@ -22,4 +22,6 @@ npm test
 
 For launch, the script intentionally requires `GUIAIA_QA_OWNER` and an explicit `--qa-local-only` argument, and connects to port 25598. The stdin protocol accepts only `follow`, `stop`, `status`, `quit`, with one command per line.
 
-**Production and public distribution are blocked** pending a genuine local in-game follow/stop demonstration, stable recovery from disconnection, terrain hazard policy, owner authentication and integration tests under Fabric/Cobblemon. For design context see [Issue #2](https://github.com/iagorobo24-hub/GuiaIA/issues/2).
+**A real, isolated in-game follow/stop demonstration has passed:** [GitHub Actions run 40836717049](https://github.com/iagorobo24-hub/GuiaIA/actions/runs/40836717049) joined two local QA accounts in a disposable Minecraft 1.21.1 server, accepted a follow goal, measured **6.075 blocks of actual companion movement**, and successfully stopped. This proves a small functional QA prototype, not full gameplay autonomy.
+
+**Production and public distribution remain blocked** pending stable reconnect/recovery, terrain hazard policy, secure owner authentication, inventory verification and integration tests under actual modpacks (including Cobblemon). For design context see [Issue #2](https://github.com/iagorobo24-hub/GuiaIA/issues/2).

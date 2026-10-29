@@ -67,6 +67,26 @@ class StabilityTests(unittest.TestCase):
                                     "params": {"protocolVersion": "2025-06-18"}})
         self.assertEqual(response["error"]["code"], -32600)
 
+    def test_credential_swap_after_init_is_denied(self):
+        with tempfile.TemporaryDirectory() as d:
+            original = Path(d) / "operator-credential"
+            other = Path(d) / "private"
+            original.write_text("synthetic-password")
+            other.write_text("never-allow-this")
+            r = RconReadOnly(str(original))
+            original.unlink()
+            original.symlink_to(other)
+            with self.assertRaises(RconError):
+                r._query("list")
+
+    def test_credential_file_size_is_bounded(self):
+        with tempfile.TemporaryDirectory() as d:
+            secret = Path(d) / "oversized"
+            secret.write_text("a" * 1000000)
+            r = RconReadOnly(str(secret))
+            with self.assertRaises(RconError):
+                r._query("list")
+
     def test_credential_symlink_denied(self):
         with tempfile.TemporaryDirectory() as d:
             actual = Path(d) / "real"

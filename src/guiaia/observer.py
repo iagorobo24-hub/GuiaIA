@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from math import isfinite
 from .rcon import RconReadOnly
+from .world_snapshot import load_snapshot_json
 
 
 class SnapshotObserver:
@@ -15,11 +16,7 @@ class SnapshotObserver:
             raise ValueError("Snapshot file does not exist")
 
     def _metrics(self) -> dict:
-        if self.path.stat().st_size > 16384:
-            raise ValueError("Snapshot exceeds size budget")
-        content = json.loads(self.path.read_text(encoding="utf-8"))
-        if not isinstance(content, dict):
-            raise ValueError("Snapshot must be a JSON object")
+        content = load_snapshot_json(self.path, max_bytes=16384)
         clean: dict = {}
         for k in ("players_online", "max_players", "entities_loaded", "game_ticks"):
             if k in content:
@@ -40,14 +37,9 @@ class SnapshotObserver:
         return parse_world_snapshot(self.path)
 
     def _fabric(self) -> dict | None:
-        size = self.path.stat().st_size
-        if size > 16384:
-            raise ValueError("Snapshot exceeds size budget")
-        data = json.loads(self.path.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and data.get("source") == "fabric_loaded_chunks":
-            if size > 8192:
-                raise ValueError("Fabric snapshot exceeds size budget")
-            return self.world()  # applies schema, freshness, privacy and count checks
+        data = load_snapshot_json(self.path, max_bytes=16384)
+        if data.get("source") == "fabric_loaded_chunks":
+            return self.world()  # applies stricter size, schema, freshness and privacy checks
         return None
 
     def status(self) -> dict:

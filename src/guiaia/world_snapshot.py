@@ -36,30 +36,37 @@ def _number(v, low, high, name):
     return v
 
 
-def parse_world_snapshot(path: str | Path, *, now_ms: int | None = None) -> dict:
+def load_snapshot_json(path: str | Path, *, max_bytes: int = 8192) -> dict:
+    """Load a bounded regular JSON file without following a final symlink.
+
+    This protects against final-component symlink swaps and non-regular files.
+    Parent directories must still be trusted/configured by the local operator.
+    """
     p = Path(path).expanduser()
     if p.is_symlink():
-        raise WorldSnapshotError("World snapshot symbolic link denied")
-    # Open the actual file once, with NOFOLLOW, then bound the bytes read.
-    # File size and JSON are checked on the same file descriptor, removing
-    # the previous stat/read race and preventing oversized replacement reads.
+        raise WorldSnapshotError("Snapshot symbolic link denied")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(p, flags)
         with os.fdopen(fd, "rb") as stream:
             metadata = os.fstat(stream.fileno())
-            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 8192:
-                raise WorldSnapshotError("World snapshot unavailable or too large")
-            payload = stream.read(8193)
-            if len(payload) > 8192:
-                raise WorldSnapshotError("World snapshot exceeds byte budget")
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > max_bytes:
+                raise WorldSnapshotError("Snapshot unavailable or too large")
+            payload = stream.read(max_bytes + 1)
+            if len(payload) > max_bytes:
+                raise WorldSnapshotError("Snapshot exceeds byte budget")
         raw = json.loads(payload, object_pairs_hook=_pairs_unique)
     except OSError as exc:
-        raise WorldSnapshotError("World snapshot unavailable") from exc
+        raise WorldSnapshotError("Snapshot unavailable") from exc
     except (UnicodeError, json.JSONDecodeError) as exc:
-        raise WorldSnapshotError("Invalid Fabric snapshot JSON") from exc
+        raise WorldSnapshotError("Invalid snapshot JSON") from exc
     if not isinstance(raw, dict):
-        raise WorldSnapshotError("World snapshot must be an object")
+        raise WorldSnapshotError("Snapshot must be an object")
+    return raw
+
+
+def parse_world_snapshot(path: str | Path, *, now_ms: int | None = None) -> dict:
+    raw = load_snapshot_json(path, max_bytes=8192)
     if type(raw.get("schema_version")) is not int or raw["schema_version"] != 1:
         raise WorldSnapshotError("Unsupported world snapshot schema")
     if raw.get("source") != _SOURCE or raw.get("dimension") != "minecraft:overworld":

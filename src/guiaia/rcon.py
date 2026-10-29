@@ -1,7 +1,9 @@
 """Read-only Minecraft Java RCON access. Never accepts model-supplied commands."""
 from __future__ import annotations
+import os
 import re
 import socket
+import stat
 import struct
 from pathlib import Path
 
@@ -49,9 +51,23 @@ class RconReadOnly:
     def _query(self, command: str) -> str:
         if command not in ("list", "time query gametime"):
             raise ValueError("Command denied by read-only allowlist")
-        password = self.password_file.read_text(encoding="utf-8").strip()
-        if not password:
-            raise RconError("Empty RCON password")
+        # Reopen with NOFOLLOW on every use, so a final symlink swapped in
+        # after initialization cannot redirect credential reads to other files.
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        try:
+            fd = os.open(self.password_file, flags)
+            with os.fdopen(fd, "rb") as file:
+                meta = os.fstat(file.fileno())
+                if not stat.S_ISREG(meta.st_mode) or meta.st_size > 512:
+                    raise RconError("Invalid RCON credential file")
+                raw_password = file.read(513)
+                if len(raw_password) > 512:
+                    raise RconError("Invalid RCON credential file")
+            password = raw_password.decode("utf-8").strip()
+        except (OSError, UnicodeError) as exc:
+            raise RconError("RCON credential unavailable") from exc
+        if not 1 <= len(password) <= 256:
+            raise RconError("Invalid RCON password")
         try:
             with socket.create_connection(("127.0.0.1", self.port), timeout=2.0) as sock:
                 sock.settimeout(3.0)

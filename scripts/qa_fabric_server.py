@@ -139,6 +139,13 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
         assert not response["result"]["isError"]
         assert live["block_counts"].get("minecraft:diamond_block", 0) >= 1
         assert live["entity_counts"].get("minecraft:sheep", 0) >= 1
+        # Verify private Linux permissions of the observer-owned output.
+        # GitHub Actions is Linux/POSIX, where these checks are mandatory.
+        from stat import S_IMODE
+        output_directory_mode = S_IMODE(snapshot_file.parent.stat().st_mode)
+        output_file_mode = S_IMODE(snapshot_file.stat().st_mode)
+        if output_directory_mode != 0o700 or output_file_mode != 0o600:
+            raise RuntimeError("Observer output permissions are not private")
         # Output must not contain player names, raw coordinates or all world entities.
         raw = json.loads(snapshot_file.read_text(encoding="utf-8"))
         assert not any(k in raw for k in ("player_name", "player_uuid", "coordinates", "rcon", "chat"))
@@ -159,6 +166,7 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
             "real_minecraft_server": True,
             "production_world": False,
             "mcp_fabric_real_snapshot_roundtrip": True,
+            "private_file_0600_and_directory_0700_verified": True,
             "test_world": "disposable_flat_qa",
         }
     except Exception as exc:
