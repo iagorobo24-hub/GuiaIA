@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--launcher", required=True)
-    parser.add_argument("--client", choices=["qa_chest_server.js","qa_operator_auth_server.js"], default="qa_chest_server.js")
+    parser.add_argument("--client", choices=["qa_chest_server.js","qa_operator_auth_server.js","qa_offline_session_server.js"], default="qa_chest_server.js")
     args=parser.parse_args()
     launcher = require_file(args.launcher, "Fabric server launcher")
     with tempfile.TemporaryDirectory(prefix="guiaia-chest-qa-") as temporary:
@@ -63,7 +63,8 @@ def main():
                   15, process=server, note="test items delivered")
             out, err = client.communicate(timeout=87)
             evidence = out + "\n" + err
-            marker = ("GUIAIA_SIGNED_CHEST_AUTH_QA_EVIDENCE=" if args.client == "qa_operator_auth_server.js" else "GUIAIA_CHEST_DEPOSIT_QA_EVIDENCE=")
+            markers = {"qa_chest_server.js":"GUIAIA_CHEST_DEPOSIT_QA_EVIDENCE=", "qa_operator_auth_server.js":"GUIAIA_SIGNED_CHEST_AUTH_QA_EVIDENCE=", "qa_offline_session_server.js":"GUIAIA_OFFLINE_SESSION_GATE_QA_EVIDENCE="}
+            marker = markers[args.client]
             if client.returncode != 0 or marker not in evidence:
                 raise RuntimeError("Real chest QA failed:\n" + evidence[-2500:] +
                                    "\n" + recent_log(log_file, 2400))
