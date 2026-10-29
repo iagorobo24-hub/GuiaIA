@@ -1,0 +1,24 @@
+name: Bug report
+description: Report a reproducible defect without sharing private worlds or credentials
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Observed behavior
+      description: What happened and what should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Steps with sanitized synthetic data and version information
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Evidence
+      description: Tests, errors and screenshots with private information redacted

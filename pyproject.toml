@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guiaia-minecraft"
+version = "0.1.0"
+description = "Safe, read-only Minecraft world observability and agent companion planning via MCP"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "GuiaIA contributors"}]
+classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License"]
+dependencies = []
+
+[project.scripts]
+guiaia-mcp = "guiaia.mcp:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,17 @@
+name: Feature request
+description: Propose a safely testable feature for GuiaIA
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: User goal
+      description: What would GuiaIA help you do?
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and acceptance criteria
+      description: How would you verify this in an isolated test world?

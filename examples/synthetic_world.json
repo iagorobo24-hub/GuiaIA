@@ -1,0 +1,8 @@
+{
+  "players_online": 1,
+  "max_players": 4,
+  "game_ticks": 120000,
+  "mspt_avg": 61.5,
+  "tps": 16.2,
+  "entities_loaded": 342
+}
