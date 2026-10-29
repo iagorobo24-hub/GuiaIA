@@ -136,6 +136,37 @@ class WorldSnapshotTests(unittest.TestCase):
         with self.assertRaises(WorldSnapshotError):
             parse_world_snapshot(self.file)
 
+    def test_rejects_forged_boolean_cap(self):
+        raw = sample()
+        raw["entities_capped"] = 1
+        self.write(raw)
+        with self.assertRaises(WorldSnapshotError):
+            parse_world_snapshot(self.file)
+
+    def test_rejects_content_from_unloaded_chunk(self):
+        raw = sample()
+        raw["chunks_loaded"] = 0
+        self.write(raw)
+        with self.assertRaises(WorldSnapshotError):
+            parse_world_snapshot(self.file)
+
+    def test_rejects_directory_and_fifo(self):
+        with self.assertRaises(WorldSnapshotError):
+            parse_world_snapshot(self.directory.name)
+        import os
+        fifo = Path(self.directory.name) / "untrusted-pipe"
+        if hasattr(os, "mkfifo"):
+            os.mkfifo(fifo)
+            with self.assertRaises(WorldSnapshotError):
+                parse_world_snapshot(fifo)
+
+    def test_rejects_oversize_bytes(self):
+        raw = sample()
+        raw["padding"] = "X" * 9000
+        self.write(raw)
+        with self.assertRaises(WorldSnapshotError):
+            parse_world_snapshot(self.file)
+
     def test_rejects_symlink(self):
         actual = Path(self.directory.name) / "actual.json"
         actual.write_text(json.dumps(sample()))

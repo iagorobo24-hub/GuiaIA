@@ -2,7 +2,6 @@ package dev.guia.observer;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -10,7 +9,6 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
@@ -46,7 +44,8 @@ public final class GuiaWorldObserver implements ModInitializer {
     private static final int ENTITY_SAMPLE_CAP = 64;
     private static final int TYPE_COUNT_CAP = 16;
     private static final Path GAME = FabricLoader.getInstance().getGameDir();
-    private static final Path CONFIG = GAME.resolve("config/guiaia-observer.properties");
+    private static final Path CONFIG_DIR = GAME.resolve("config");
+    private static final Path CONFIG = CONFIG_DIR.resolve("guiaia-observer.properties");
     private static final Path OUTPUT_DIR = GAME.resolve("config/guiaia-observer");
     private static final Path OUTPUT = OUTPUT_DIR.resolve("snapshot.json");
 
@@ -75,7 +74,8 @@ public final class GuiaWorldObserver implements ModInitializer {
     }
 
     private static Settings readSettings() {
-        if (!Files.isRegularFile(CONFIG, LinkOption.NOFOLLOW_LINKS)
+        if (Files.isSymbolicLink(CONFIG_DIR)
+                || !Files.isRegularFile(CONFIG, LinkOption.NOFOLLOW_LINKS)
                 || Files.isSymbolicLink(CONFIG)) return null;
         try {
             if (Files.size(CONFIG) > 2048) return null;
@@ -198,10 +198,14 @@ public final class GuiaWorldObserver implements ModInitializer {
 
     private static void writeAtomic(String contents) throws IOException {
         if (contents.length() > 8192
+                || Files.isSymbolicLink(CONFIG_DIR)
                 || Files.isSymbolicLink(OUTPUT_DIR) || Files.isSymbolicLink(OUTPUT)) {
             throw new IOException("Output path invalid");
         }
-        Files.createDirectories(OUTPUT_DIR);
+        Files.createDirectories(OUTPUT_DIR,
+                PosixFilePermissions.asFileAttribute("rwx------"));
+        if (Files.isSymbolicLink(OUTPUT_DIR)) throw new IOException("Output directory invalid");
+        Files.setPosixFilePermissions(OUTPUT_DIR, PosixFilePermissions.fromString("rwx------"));
         Path temp = Files.createTempFile(OUTPUT_DIR, "snapshot-", ".tmp");
         try {
             try {

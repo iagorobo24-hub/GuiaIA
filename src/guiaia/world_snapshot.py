@@ -6,7 +6,9 @@ The MCP host must choose an authorized local file. No chunk is loaded or mutated
 from __future__ import annotations
 
 import json
+import os
 import re
+import stat
 import time
 from math import isfinite
 from pathlib import Path
@@ -36,10 +38,24 @@ def _number(v, low, high, name):
 
 def parse_world_snapshot(path: str | Path, *, now_ms: int | None = None) -> dict:
     p = Path(path).expanduser()
-    if not p.is_file() or p.is_symlink() or p.stat().st_size > 8192:
-        raise WorldSnapshotError("World snapshot unavailable or too large")
+    if p.is_symlink():
+        raise WorldSnapshotError("World snapshot symbolic link denied")
+    # Open the actual file once, with NOFOLLOW, then bound the bytes read.
+    # File size and JSON are checked on the same file descriptor, removing
+    # the previous stat/read race and preventing oversized replacement reads.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        raw = json.loads(p.read_text(encoding="utf-8"), object_pairs_hook=_pairs_unique)
+        fd = os.open(p, flags)
+        with os.fdopen(fd, "rb") as stream:
+            metadata = os.fstat(stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 8192:
+                raise WorldSnapshotError("World snapshot unavailable or too large")
+            payload = stream.read(8193)
+            if len(payload) > 8192:
+                raise WorldSnapshotError("World snapshot exceeds byte budget")
+        raw = json.loads(payload, object_pairs_hook=_pairs_unique)
+    except OSError as exc:
+        raise WorldSnapshotError("World snapshot unavailable") from exc
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise WorldSnapshotError("Invalid Fabric snapshot JSON") from exc
     if not isinstance(raw, dict):
@@ -62,7 +78,7 @@ def parse_world_snapshot(path: str | Path, *, now_ms: int | None = None) -> dict
     players = _number(raw.get("players_online"), 0, 1000, "players_online")
     if any(type(x) is not int for x in (chunks, blocks, entities, players, tick, stamp)):
         raise WorldSnapshotError("World counters must be integers")
-    if raw.get("entities_capped") not in (True, False):
+    if type(raw.get("entities_capped")) is not bool:
         raise WorldSnapshotError("Invalid entity cap flag")
 
     def extract_counts(name: str, maximum: int, total_limit: int) -> dict[str, int]:
@@ -84,6 +100,8 @@ def parse_world_snapshot(path: str | Path, *, now_ms: int | None = None) -> dict
     entity_counts = extract_counts("entity_counts", 16, 64)
     if sum(block_counts.values()) > blocks or sum(entity_counts.values()) > entities:
         raise WorldSnapshotError("Count proof failed")
+    if chunks == 0 and (blocks != 0 or entities != 0 or block_counts or entity_counts):
+        raise WorldSnapshotError("Unloaded chunk cannot report sampled world content")
     mspt = raw.get("mspt_avg")
     if mspt is not None:
         mspt = _number(mspt, 0, 1000, "mspt_avg")
