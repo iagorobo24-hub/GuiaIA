@@ -71,16 +71,24 @@ function createQaGather(bot, options) {
       }
       if (cancelled) return finish(false, 'cancelled')
       digAttempted = true
+      // A player can walk away while the block is being mined. Keep watching
+      // owner visibility, health, distance and immediate environmental danger.
+      const guard = setInterval(() => {
+        if (!cancelled && safety() !== null) cancel()
+      }, 150)
       try {
         await bot.dig(current)
       } catch {
-        return finish(false, 'dig_failed')
+        return finish(false, cancelled ? 'cancelled' : 'dig_failed')
+      } finally {
+        clearInterval(guard)
       }
       if (cancelled) return finish(false, 'cancelled')
       if (safety()) return finish(false, 'post_dig_safety_stop')
       const deadline = Date.now() + pickupTimeoutMs
       do {
         if (cancelled) return finish(false, 'cancelled')
+        if (safety()) return finish(false, 'post_dig_safety_stop')
         const count = inventoryCount(bot, ALLOWED_ITEM)
         const afterBlock = bot.blockAt(target)
         if (count !== null && count >= before + 1 && afterBlock &&

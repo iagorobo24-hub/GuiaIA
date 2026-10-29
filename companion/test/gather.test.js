@@ -90,6 +90,23 @@ test('concurrent mining calls are rejected',async()=>{
   release()
   assert.equal((await promise).reason,'cancelled')
 })
+test('owner disappears during a real dig: stopDigging and deny success',async()=>{
+  const bot=fakeBot()
+  let release
+  let stopped=false
+  bot.dig=()=>new Promise(resolve=>{release=resolve})
+  bot.stopDigging=()=>{stopped=true}
+  const gather=creator(bot)
+  const active=gather.gatherOne()
+  bot.players={}
+  await new Promise(resolve=>setTimeout(resolve,320))
+  release()
+  const result=await active
+  assert.equal(stopped,true)
+  assert.equal(result.ok,false)
+  assert.equal(result.reason,'cancelled')
+})
+
 test('inventory counting rejects malformed data',()=>{
   assert.equal(inventoryCount({inventory:{items:()=>[{name:'oak_log',count:2},{name:'oak_log',count:3}]}},'oak_log'),5)
   assert.equal(inventoryCount({},'oak_log'),null)
