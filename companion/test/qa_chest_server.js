@@ -9,10 +9,11 @@ const {inventoryCount}=require('../src/gather')
 const fs=require('node:fs')
 
 const directory=process.env.GUIAIA_QA_DEPOSIT_DIR
-if (!directory?.startsWith('/tmp/guiaia-chest-qa-')) {
+if (!directory || !['/tmp/guiaia-chest-qa-','/tmp/guiaia-restart-qa-'].some(p=>directory.startsWith(p))) {
   throw Error('Disposable QA-only deposit directory required')
 }
-const opts=name=>({host:'127.0.0.1',port:25595,version:'1.21.1',
+const qaPort=process.env.GUIAIA_QA_PORT==='25594'?25594:25595
+const opts=name=>({host:'127.0.0.1',port:qaPort,version:'1.21.1',
   auth:'offline',hideErrors:true,username:name})
 const owner=mineflayer.createBot(opts('OwnerQA'))
 const bot=mineflayer.createBot(opts('GuiaIA_QA'))

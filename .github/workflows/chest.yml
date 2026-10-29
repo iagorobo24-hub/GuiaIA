@@ -5,9 +5,13 @@ on:
     branches: [main, 'feature/**']
     paths:
       - 'companion/src/deposit.js'
+      - 'companion/src/recovery.js'
       - 'companion/test/deposit.test.js'
+      - 'companion/test/recovery.test.js'
+      - 'companion/test/qa_restart_snapshot_server.js'
       - 'companion/test/qa_chest_server.js'
       - 'scripts/qa_chest_server.py'
+      - 'scripts/qa_chest_restart_server.py'
       - '.github/workflows/chest.yml'
   workflow_dispatch:
 
@@ -34,7 +38,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify chest unit contracts
         working-directory: companion
-        run: node --test test/deposit.test.js
+        run: node --test test/deposit.test.js test/recovery.test.js
       - name: Retrieve official pinned Fabric 1.21.1 server
         shell: bash
         run: |
@@ -47,3 +51,7 @@ jobs:
         env:
           PYTHONPATH: src
         run: python3 scripts/qa_chest_server.py --launcher "$RUNNER_TEMP/chest-launcher.jar"
+      - name: Restart persisted Minecraft world and forensically verify chest and journal
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/qa_chest_restart_server.py --launcher "$RUNNER_TEMP/chest-launcher.jar"
