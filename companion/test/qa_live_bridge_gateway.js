@@ -16,6 +16,7 @@ const {verifyBridgeLog,createPinnedQaServerBridgeAuthority}=
 const {createQaStrictSessionActionGateway}=require('../src/session_identity')
 const {createQaAuthorizedFollow}=require('../src/qa_authorized_follow')
 const {runRealSignedDeliveryQa}=require('./qa_real_signed_delivery_integration')
+const {runRealSignedMultiDeliveryQa}=require('./qa_real_signed_multi_delivery')
 const {createQaCheckpointWitness}=require('../src/qa_checkpoint_witness')
 const {createPinnedQaRemoteCheckpointClient}=require('../src/remote_checkpoint')
 const {createPinnedQaLivePresenceAuthority}=require('../src/live_presence')
@@ -153,7 +154,8 @@ async function main(){
       const now=Date.now()
       const claim={aud:'guiaia:principal-proof:v1',worldId,connectionId,
         principalId,challenge:realProof.payload.challenge,
-        issuedAt:now-1000,expiresAt:now+30000}
+        issuedAt:now-1000,expiresAt:now+
+          (process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'?45000:30000)}
       return {bridge:realProof,owner:signed(claim,key)}
     }
     const scope=(item,principalId='qa_pre_enrolled_user')=>{
@@ -170,6 +172,10 @@ async function main(){
     const session=ownerSession()
     // Real world delivery: navigate to signed log, dig/pick up, return
     // to a second chest and verify journal + actual inventory receipts.
+    if(process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'){
+      await runRealSignedMultiDeliveryQa({bot,session,authority,operatorKey,journalDir})
+      return // Isolated multi-step mission; legacy revocation QA is separate.
+    }
     await runRealSignedDeliveryQa({bot,session,authority,operatorKey,journalDir})
     const first=scope('oak_log')
     journal=openDepositJournal(journalDir,{

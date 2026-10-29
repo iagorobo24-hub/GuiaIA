@@ -74,6 +74,43 @@ test('real journals finish gather then deposit and preserve 4 durable receipts',
   }finally{reopenedMission.close();reopenedDeposit.close()}
 })
 
+test('two-resource mission resumes after distinct safe restart boundaries without duplicates',async t=>{
+  const w=testWorld(t)
+  let mission=w.mission(),deposit=w.deposit()
+  try{
+    const pipe=w.makePipeline(mission,deposit)
+    assert.equal((await pipe.runNext()).ok,true)
+    assert.equal(pipe.status().gatherDone,1)
+    assert.equal(pipe.status().depositsDone,0)
+  }finally{mission.close();deposit.close()}
+
+  mission=w.mission();deposit=w.deposit()
+  try{
+    const pipe=w.makePipeline(mission,deposit)
+    assert.equal(pipe.status().gatherDone,1)
+    assert.equal((await pipe.runNext()).ok,true)
+    assert.equal(pipe.status().phase,'deposit')
+    assert.equal((await pipe.runNext()).ok,true)
+    assert.equal(pipe.status().depositsDone,1)
+    assert.deepEqual(w.events,['gather:oak_log','gather:birch_log','deposit:oak_log'])
+  }finally{mission.close();deposit.close()}
+
+  mission=w.mission();deposit=w.deposit()
+  try{
+    const pipe=w.makePipeline(mission,deposit)
+    assert.equal(pipe.status().phase,'deposit')
+    assert.equal(pipe.status().depositsDone,1)
+    assert.equal((await pipe.runAll()).ok,true)
+    assert.equal(pipe.status().phase,'completed')
+    assert.deepEqual(w.events,['gather:oak_log','gather:birch_log',
+      'deposit:oak_log','deposit:birch_log'])
+    assert.equal(mission.view().receipts.length,2)
+    assert.equal(deposit.view().receipts.length,2)
+    assert.equal((await pipe.runNext()).reason,'already_completed')
+    assert.equal(w.events.length,4)
+  }finally{mission.close();deposit.close()}
+})
+
 test('real mission unknown dig outcome remains needs_review after reopen',async t=>{
   const w=testWorld(t),mission=w.mission(),deposit=w.deposit()
   try{

@@ -1,0 +1,55 @@
+{
+  "branch": "feature/principal-enrollment-qa",
+  "date": "2026-10-29",
+  "journal_regression": {
+    "failed": 0,
+    "module_total": 10,
+    "passed": 10,
+    "safe_reopen_boundaries": 2
+  },
+  "lab_tuning_pending_fabric_verification": {
+    "attestation_timeout_relaxed": false,
+    "inter_step_pacing_ms": 900,
+    "permission_lifetime_extended": false,
+    "simulation_distance": 2,
+    "startup_settle_seconds": 3,
+    "view_distance": 2
+  },
+  "overall": "MULTI_RESOURCE_FABRIC_NOT_YET_VALIDATED",
+  "parent_commit": "3361109",
+  "previous_full_node_regression": {
+    "before_added_test": true,
+    "failed": 0,
+    "passed": 298,
+    "tests": 298
+  },
+  "production_changes": false,
+  "real_multistep_attempts": [
+    {
+      "attempt": 1,
+      "deposit_receipts": 0,
+      "exit_code": 1,
+      "gather_receipts": 1,
+      "internal_failure": "not_captured",
+      "second_gather_journal_phase": "needs_review"
+    },
+    {
+      "attempt": 2,
+      "deposit_receipts": 0,
+      "dig_attempted": true,
+      "exit_code": 1,
+      "gather_receipts": 1,
+      "internal_failure": "delivery_authority_lost_during_gather",
+      "second_gather_journal_phase": "needs_review"
+    }
+  ],
+  "reason_for_deferral": "separate_qa_jvm_active_on_penguin",
+  "scope": "isolated_disposable_Fabric_1.21.1",
+  "source_sha256": {
+    "companion/test/qa_delivery_real_journals.test.js": "ed11ba4d4e6b5de1f1279d72f72d4fa64b131965a54a2fbe0d810a293f66a57d",
+    "companion/test/qa_live_bridge_gateway.js": "eb5899cc16be1bf5a22a128d554794edcc6c3578718f24de16d4c314577ba73e",
+    "companion/test/qa_real_signed_multi_delivery.js": "1d246fad4f9fc5a0aaf51403784d838b6e488706cc24446400412ac785395a56",
+    "scripts/qa_signed_delivery_real_server.py": "4adeba80d28ae82a1945fc9b62f61a39feb8131699d63eda634d38ede4233b4e"
+  },
+  "teselia_server_modified": false
+}

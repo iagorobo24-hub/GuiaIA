@@ -11,6 +11,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from qa_fabric_server import require_file, recent_log, start_server, shutdown, until, send
@@ -24,7 +25,10 @@ def main():
     parser.add_argument("--fabric-api", required=True)
     parser.add_argument("--mod", required=True)
     parser.add_argument("--crash-after-deposit", action="store_true")
+    parser.add_argument("--multi-resource", action="store_true")
     args = parser.parse_args()
+    if args.crash_after_deposit and args.multi_resource:
+        parser.error("--multi-resource and --crash-after-deposit are exclusive")
     launcher = require_file(args.launcher, "QA Fabric server")
     fabric_api = require_file(args.fabric_api, "QA Fabric API")
     observer = require_file(args.mod, "QA bridge mod")
@@ -43,7 +47,9 @@ def main():
             "online-mode=false\nenforce-secure-profile=false\n"
             "enable-rcon=false\nenable-query=false\nmax-players=3\n"
             "spawn-protection=0\nspawn-monsters=false\n"
-            "difficulty=peaceful\nview-distance=4\nsimulation-distance=4\n"
+            "difficulty=peaceful\n"
+            f"view-distance={2 if args.multi_resource else 4}\n"
+            f"simulation-distance={2 if args.multi_resource else 4}\n"
             "level-type=minecraft:flat\nlevel-seed=20261029\n",
             encoding="ascii",
         )
@@ -78,7 +84,7 @@ def main():
             server, handle = start_server(root, launcher, log)
             until(lambda: "Done (" in recent_log(log), 390,
                   process=server, note="single-instance signed delivery QA ready")
-            for command in (
+            world_commands = [
                 "forceload add 0 0",
                 "gamerule spawnRadius 0",
                 "fill 0 63 0 8 63 8 minecraft:stone",
@@ -86,19 +92,30 @@ def main():
                 "setblock 4 64 3 minecraft:chest",
                 "setblock 1 64 5 minecraft:chest",
                 "setblock 7 64 2 minecraft:oak_log",
-                "say GUIAIA_REAL_DELIVERY_WORLD_READY",
-            ):
+            ]
+            if args.multi_resource:
+                world_commands.append("setblock 7 64 3 minecraft:birch_log")
+            world_commands.append("say GUIAIA_REAL_DELIVERY_WORLD_READY")
+            for command in world_commands:
                 send(server, command)
             until(lambda: (
                 "GUIAIA_REAL_DELIVERY_WORLD_READY" in recent_log(log) and
                 "Changed the block at 4, 64, 3" in recent_log(log) and
                 "Changed the block at 1, 64, 5" in recent_log(log) and
-                "Changed the block at 7, 64, 2" in recent_log(log)
-            ), 30, process=server, note="exact disposable chest and log")
+                "Changed the block at 7, 64, 2" in recent_log(log) and
+                (not args.multi_resource or
+                 "Changed the block at 7, 64, 3" in recent_log(log))
+            ), 30, process=server, note="exact disposable chest and logs")
+            if args.multi_resource:
+                # Give the lightweight 2-chunk QA world time to catch up on
+                # initial ticks before opening a short signed session.
+                time.sleep(3)
             events = config / "guiaia-identity-bridge" / "events.jsonl"
             child_env = os.environ.copy()
             if args.crash_after_deposit:
                 child_env["GUIAIA_QA_CRASH_DURING_SIGNED_DEPOSIT"] = "1"
+            if args.multi_resource:
+                child_env["GUIAIA_QA_MULTI_RESOURCE_DELIVERY"] = "1"
             client = subprocess.Popen(
                 ["node", "test/qa_live_bridge_gateway.js", str(events),
                  str(public), str(root / "journal")],
@@ -113,7 +130,7 @@ def main():
             # times on a resource-limited QA server. The normal integration
             # test still verifies full navigation in both directions.
             setup_commands = ["tp OwnerQA 2 64 2"]
-            if args.crash_after_deposit:
+            if args.crash_after_deposit or args.multi_resource:
                 setup_commands.append("tp GuiaIA_QA 6 64 2")
             setup_commands.extend([
                 "give GuiaIA_QA minecraft:oak_log 1",
@@ -126,7 +143,28 @@ def main():
                   20, process=server, note="both QA inventories ready")
             out, err = client.communicate(timeout=120)
             result = out + "\n" + err
-            if args.crash_after_deposit:
+            if args.multi_resource:
+                marker = "GUIAIA_REAL_SIGNED_MULTI_DELIVERY_QA_EVIDENCE="
+                if client.returncode != 0 or marker not in result:
+                    raise RuntimeError(
+                        "Real multi-resource QA did not finish all 4 steps\n" +
+                        result[-3500:] + "\n" + recent_log(log, 1400)
+                    )
+                evidence = next(json.loads(line.split("=", 1)[1])
+                                for line in result.splitlines()
+                                if line.startswith(marker))
+                if (evidence.get("result") != "pass" or
+                    evidence.get("gather_receipts") != 2 or
+                    evidence.get("deposit_receipts") != 2 or
+                    evidence.get("physical_chest") !=
+                        {"oak_log": 1, "birch_log": 1} or
+                    evidence.get("ordered_operations") !=
+                        ["gather", "gather", "deposit", "deposit"] or
+                    evidence.get("next_step_after_completion", {}).get("reason") !=
+                        "already_completed"):
+                    raise RuntimeError("Real multi-resource evidence is incomplete")
+                print(marker + json.dumps(evidence))
+            elif args.crash_after_deposit:
                 marker = "GUIAIA_REAL_SIGNED_DELIVERY_CRASH_POINT_QA_EVIDENCE="
                 if client.returncode != 77 or marker not in result:
                     raise RuntimeError(
