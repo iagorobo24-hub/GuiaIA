@@ -1,0 +1,71 @@
+{
+  "basis_commit": "a193990",
+  "branch": "feature/principal-enrollment-qa",
+  "date": "2026-10-29",
+  "exit_code": 0,
+  "limitations": [
+    "isolated Fabric server in offline mode and synthetic operator/friend identities",
+    "witness signer is not external to Chromebook",
+    "no automatic reconciliation or reissue of uncertain transfer",
+    "one oak-log transaction; not general Cobblemon or claims/region compatibility",
+    "no deployment to production Teselia"
+  ],
+  "mode": "disposable_real_fabric_1.21.1",
+  "node_regression": {
+    "fail": 0,
+    "pass": 298,
+    "skipped": 0,
+    "tests": 298
+  },
+  "overall": {
+    "client_exit": 77,
+    "deposit_receipt_saved": false,
+    "no_auto_replay_or_reissue": true,
+    "production": false,
+    "real_deposit_transferred": true,
+    "result": "pass",
+    "same_fabric_world_restarted": true,
+    "signed_gather_durable": true,
+    "stale_locks_preserved": true,
+    "uncertain_transfer_needs_manual_review": true
+  },
+  "real_fabric_crash_point": {
+    "crash_phase": "transferring",
+    "exact_crash": "after_world_transfer_before_durable_receipt",
+    "process_exit": 77,
+    "production": false,
+    "real_deposit_receipts": 0,
+    "real_gather_receipts": 1,
+    "result": "pass",
+    "transfer_confirmed_by_both_inventories": true
+  },
+  "real_fabric_crash_recovery": {
+    "automatic_replay_permitted": false,
+    "deposit_receipts": 0,
+    "durable_consumed_step_markers": 3,
+    "durable_issued_plan_markers": 1,
+    "gather_receipts": 1,
+    "gathered_block_remains_removed": true,
+    "in_flight_deposit_phase": "transferring",
+    "journals_unchanged_by_read_only_audit": true,
+    "oak_log_in_chest": 1,
+    "oak_log_retained_by_bot": 1,
+    "production": false,
+    "real_fabric_server_restarted": true,
+    "real_mineflayer_inventory_reconnected": true,
+    "requires_operator_reconciliation": true,
+    "result": "pass",
+    "stale_locks_preserved": true
+  },
+  "source_sha256": {
+    "companion/src/deposit.js": "082f7aab408707b3602dd961ca8c129393ccbe55ddccd6e8c486ea453b49acb4",
+    "companion/src/mission.js": "d2b5bc4cf0d9589847afb7a4f2b567025c5e4fb3382451feaaf1a1085f1df529",
+    "companion/src/qa_delivery_minecraft.js": "f6aa56608ec8b1ed3f6ea3e630339d5bf05b6652c234bd1d851b513dd415c71e",
+    "companion/src/qa_signed_delivery.js": "368fe98d296b199b1018f1d7bfb3a4ff7258183d120079d0902bfe80410f10d1",
+    "companion/test/qa_real_signed_delivery_crash_audit.js": "5a464d93b75a5a5ed8527978c25014050fcd992b7912b1fad820f531c4537569",
+    "companion/test/qa_real_signed_delivery_integration.js": "e48a3eebf4360d4932078e218d6814ef98fcf0963871950ee95a693bb4ad3895",
+    "scripts/qa_signed_delivery_real_server.py": "912f8c0426b47c703e678ba04d43455ca91b117df9c09a559450a9e9fe8041bc"
+  },
+  "test_command": "scripts/qa_signed_delivery_real_server.py --crash-after-deposit (with pinned local QA launcher/API/mod)",
+  "world": "isolated_localhost_25593"
+}

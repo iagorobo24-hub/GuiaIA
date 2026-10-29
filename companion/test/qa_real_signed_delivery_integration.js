@@ -8,7 +8,7 @@ const crypto=require('node:crypto')
 const {Vec3}=require('vec3')
 const {Movements,goals}=require('mineflayer-pathfinder')
 const {openMission}=require('../src/mission')
-const {openDepositJournal,chestCount}=require('../src/deposit')
+const {openDepositJournal,chestCount,chestPlayerCount}=require('../src/deposit')
 const {inventoryCount}=require('../src/gather')
 const {issueQaDeliveryPlan}=require('../src/qa_delivery_plan_issuer')
 const {createQaSignedMinecraftDelivery}=require('../src/qa_delivery_minecraft')
@@ -96,18 +96,23 @@ async function runRealSignedDeliveryQa({bot,session,authority,operatorKey,journa
           if(targetSeen)throw Error('Unexpected repeated crash QA chest open')
           targetSeen=true
           const pre=chestCount(window,'oak_log')
+          const playerBeforeWindow=chestPlayerCount(window,'oak_log')
+          if(pre!==0 || playerBeforeWindow!==before+1)
+            throw Error('QA crash requires empty chest and exact player window inventory')
           const originalDeposit=window.deposit.bind(window)
           window.deposit=async(...args)=>{
             await originalDeposit(...args)
             let confirmed=false
             for(let i=0;i<20;i++){
+              // The open container window is authoritative for BOTH sides
+              // of the transfer. bot.inventory can lag behind that window.
               if(chestCount(window,'oak_log')===pre+1 &&
-                 inventoryCount(bot,'oak_log')===before){
+                 chestPlayerCount(window,'oak_log')===playerBeforeWindow-1){
                 confirmed=true;break
               }
               await new Promise(r=>setTimeout(r,100))
             }
-            if(!confirmed)throw Error('QA crash requires real two-sided transfer proof')
+            if(!confirmed)throw Error('QA crash requires real two-sided window proof')
             fs.writeSync(1,'GUIAIA_REAL_SIGNED_DELIVERY_CRASH_POINT_QA_EVIDENCE='+
               JSON.stringify({result:'pass',production:false,
                 real_gather_receipts:mission.view().receipts.length,
@@ -123,6 +128,11 @@ async function runRealSignedDeliveryQa({bot,session,authority,operatorKey,journa
       }
     }
     const stored=await runner.runNext()
+    if(process.env.GUIAIA_QA_CRASH_DURING_SIGNED_DEPOSIT==='1')
+      process.stderr.write('GUIAIA_CRASH_QA_UNEXPECTED_DEPOSIT_RETURN='+
+        JSON.stringify({stored,deposit:deposit.view(),
+          botPosition:bot.entity?.position,
+          oakInventory:inventoryCount(bot,'oak_log')})+'\n')
     const afterDeposit={...bot.entity.position}
     const container=await bot.openContainer(bot.blockAt(new Vec3(chest.x,chest.y,chest.z)))
     let oakInChest
