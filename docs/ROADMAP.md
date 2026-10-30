@@ -32,3 +32,10 @@ Updated: 2026-10-30
 - [x] Disposable diagnostic sandbox with structured comparative reports (`qa_diagnostic_sandbox.py` PASS)
 - [x] Public documentation: `GETTING_STARTED.md` and `VERIFIED_CAPABILITIES.md`
 - [ ] Another-machine clean install confirmation
+- [x] Isolated QA integration: separately enrolled owner + live signed Fabric
+      presence + checkpoint witness + signed journal runtime + terminal operator
+      (library simulation and standalone TCP/HTTP preflight verified)
+- [ ] Real Fabric end-to-end using the new standalone --qa-operate entry point,
+      with independently provisioned keys and existing signed grants
+- [ ] Verifiable official account identity and witness on another trusted host
+- [ ] Independent user-facing installation and controlled multiplayer beta

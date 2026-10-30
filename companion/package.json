@@ -11,7 +11,8 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "start": "node src/cli.js --qa-local-only",
-    "principal:offline-qa": "node offline_principal_handoff.js"
+    "principal:offline-qa": "node offline_principal_handoff.js",
+    "operator:qa": "node qa_operator.js"
   },
   "dependencies": {
     "mineflayer": "4.39.0",
