@@ -145,8 +145,34 @@ function createSessionAuthorizedQaDeposit(bot,bundle,capability,authority){
      typeof trust.ledgerDirectory!=='string') {
     throw Error('Wrong QA bot or missing single-use ledger')
   }
+  // The Minecraft chest-open await is an authorization race. The adapter
+  // calls this immediately before its first transfer packet, *after* opening
+  // and inspecting the container. This does not reuse a stale earlier proof.
+  const authorizeBeforeTransfer=async()=>{
+    const current=verifySessionBundle(bundle,trust)
+    verifySessionDepositGrant(capability,current,trust)
+    if(trust.requireLivePresence===true){
+      if(typeof trust.livePresence!=='function')throw Error('Live presence required')
+      const live=await trust.livePresence(current.connectionId)
+      const now=Date.now()
+      if(!live||live.connected!==true||live.worldId!==current.worldId||
+         live.connectionId!==current.connectionId||
+         !Number.isSafeInteger(live.issuedAt)||
+         live.issuedAt>now+1000||now-live.issuedAt>1500)
+        throw Error('Live signed presence lost before chest transfer')
+    }
+    if(trust.requireRemoteCheckpoint===true){
+      if(typeof trust.currentRegistryCheckpoint!=='function'||
+         typeof trust.remoteCheckpointMatch!=='function'||
+         await trust.remoteCheckpointMatch(trust.currentRegistryCheckpoint())!==true)
+        throw Error('Signed checkpoint missing before chest transfer')
+    }
+    const latest=verifySessionBundle(bundle,trust)
+    verifySessionDepositGrant(capability,latest,trust)
+    return true
+  }
   const scope={sandboxOnly:true,ownerName:p.ownerName,chest:Object.freeze({...p.chest}),
-    item:p.item,count:p.count}
+    item:p.item,count:p.count,authorizeBeforeTransfer}
   const adapter=createQaChestDeposit(bot,scope)
   const base=adapter.depositOne
   let attempted=false

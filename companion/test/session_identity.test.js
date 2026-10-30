@@ -285,7 +285,10 @@ test('strict QA gateway demands both live server and witness before any chest tr
   const result=await gateway.createDeposit({
     bridge:tokens.bridge,owner:tokens.owner},tokens.grant).depositOne()
   assert.equal(result.ok,true)
-  assert.deepEqual(events,['live','checkpoint','remote'])
+  // Opening the chest is async; a second signed authority check must run
+  // after the open and before the actual inventory-transfer packet.
+  assert.deepEqual(events,['live','checkpoint','remote',
+    'live','checkpoint','remote'])
   assert.equal(f.operations,1)
 })
 test('strict QA gate denies remote mismatch with no inventory or nonce mutation',async t=>{

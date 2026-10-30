@@ -45,5 +45,10 @@ Updated: 2026-10-30
       (2026-10-30; synthetic offline identity and localhost witness)
 - [ ] Real independent-user credentials and a remote-hosted witness verified
       in an authenticated online-mode Minecraft server
-- [ ] Denial of in-flight operations on mid-mission revocation in isolated QA
+- [x] In-process mid-mission revocation: Ed25519 enrolled principal revoked
+      during chest opening or gather navigation; fresh signed presence and
+      witness checked before transfer/dig, with no unauthorized world action
+      (isolated runtime QA, 2026-10-30)
+- [ ] Independently deliver signed revocations while a running operator owns
+      the registry lock; then verify live Fabric mid-mission revocation
 - [ ] Independent user-facing installation and controlled multiplayer beta

@@ -74,7 +74,7 @@ function chestPlayerCount(window,itemName) {
 }
 function createQaChestDeposit(bot, plan) {
   validatePlan({...plan,items:[{name:plan.item,count:plan.count}]})
-  const {ownerName,chest:position,item,count}=plan
+  const {ownerName,chest:position,item,count,authorizeBeforeTransfer}=plan
   if (typeof bot.blockAt !== 'function' || typeof bot.openContainer !== 'function' ||
       !bot.inventory || typeof bot.inventory.items !== 'function') {
     throw Error('QA chest observations unavailable')
@@ -120,6 +120,16 @@ function createQaChestDeposit(bot, plan) {
           inventoryEnd:window.inventoryEnd
         })
       }
+      // Opening the chest can block on a slow server. For signed callers,
+      // require a fresh identity, live JVM and checkpoint *after* that await,
+      // immediately before sending the world-changing transfer packet.
+      if(typeof authorizeBeforeTransfer==='function'){
+        try{
+          if(await authorizeBeforeTransfer()!==true)
+            return response(false,'authorization_denied')
+        }catch{return response(false,'authorization_denied')}
+      }
+      if(cancelled || safe())return response(false,'unsafe_before_transfer')
       transferAttempted=true
       try { await window.deposit(registryItem.id,null,count) }
       catch (error) { return response(false,'transfer_failed',{

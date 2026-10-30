@@ -444,3 +444,99 @@ test('standalone QA preflight verifies real separately signed TCP presence, HTTP
   assert.equal(denied.stdout,'')
   assert.match(denied.stderr,/local interactive TTY/)
 })
+
+function revokeEnrolledQaPrincipal(f){
+  const now=Date.now()
+  const ticket=sign({aud:'guiaia:principal-revocation:v1',
+    worldId,principalId,nonce:crypto.randomUUID(),
+    issuedAt:now-1000,expiresAt:now+45000},f.x.operator)
+  assert.equal(f.x.registry.applySignedChange(ticket).action,'revoked')
+  assert.equal(f.x.registry.isRevoked(principalId),true)
+  assert.equal(f.x.registry.exportCheckpoint().sequence,2)
+}
+
+test('signed mid-flight revocation during chest-open denies transfer, even after prior authorization',async t=>{
+  const f=integratedFixture(t)
+  let entered,release
+  const waiting=new Promise(resolve=>{entered=resolve})
+  const pause=new Promise(resolve=>{release=resolve})
+  const open=f.bot.openContainer
+  f.bot.openContainer=async (...args)=>{
+    entered()
+    await pause
+    return open(...args)
+  }
+  const running=await createQaEnrolledOperatorRuntime(f.options)
+  const active=running.operator.execute('mision')
+  await waiting
+  try{
+    assert.equal(f.missionJournal.view().phase,'completed')
+    assert.equal(f.depositJournal.view().phase,'transferring')
+    assert.equal(f.observations().deposited,0)
+    revokeEnrolledQaPrincipal(f)
+  }finally{release()}
+  const result=await active
+  assert.equal(result.ok,false)
+  assert.deepEqual(f.observations(),{stock:1,deposited:0,digs:1,transfers:0})
+  assert.equal(f.missionJournal.view().receipts.length,1)
+  assert.equal(f.depositJournal.view().receipts.length,0)
+  assert.equal(f.depositJournal.view().phase,'paused')
+  assert.equal(f.nonceFiles().length,2)
+  const retry=await running.operator.execute('mision')
+  assert.equal(retry.ok,false)
+  assert.equal(f.observations().transfers,0)
+  assert.equal(f.nonceFiles().length,2)
+  assert.equal((await running.operator.execute('para')).ok,true)
+})
+
+test('witness withdrawn while chest-open awaits prevents any transfer with no fabricated receipt',async t=>{
+  const f=integratedFixture(t)
+  let entered,release
+  const waiting=new Promise(resolve=>{entered=resolve})
+  const pause=new Promise(resolve=>{release=resolve})
+  const open=f.bot.openContainer
+  f.bot.openContainer=async (...args)=>{entered();await pause;return open(...args)}
+  const running=await createQaEnrolledOperatorRuntime(f.options)
+  const active=running.operator.execute('mision')
+  await waiting
+  try{
+    f.options.identity.witness.verifyLocal=async()=>false
+  }finally{release()}
+  const result=await active
+  assert.equal(result.ok,false)
+  assert.deepEqual(f.observations(),{stock:1,deposited:0,digs:1,transfers:0})
+  assert.equal(f.missionJournal.view().receipts.length,1)
+  assert.equal(f.depositJournal.view().receipts.length,0)
+  assert.equal(f.depositJournal.view().phase,'paused')
+  assert.equal(f.nonceFiles().length,2)
+  assert.equal((await running.operator.execute('para')).ok,true)
+})
+
+test('signed revocation during bounded approach prevents digging after nonce reservation',async t=>{
+  const f=integratedFixture(t)
+  let entered,release
+  const waiting=new Promise(resolve=>{entered=resolve})
+  const pause=new Promise(resolve=>{release=resolve})
+  f.bot.pathfinder.goto=async goal=>{
+    entered()
+    await pause
+    f.bot.entity.position=new Vec3(goal.x,goal.y,goal.z)
+  }
+  const running=await createQaEnrolledOperatorRuntime(f.options)
+  const active=running.operator.execute('mision')
+  await waiting
+  try{
+    assert.equal(f.missionJournal.view().phase,'dispatching')
+    revokeEnrolledQaPrincipal(f)
+  }finally{release()}
+  const result=await active
+  assert.equal(result.ok,false)
+  assert.deepEqual(f.observations(),{stock:0,deposited:0,digs:0,transfers:0})
+  assert.equal(f.missionJournal.view().receipts.length,0)
+  assert.equal(f.missionJournal.view().phase,'paused')
+  assert.equal(f.depositJournal.view().phase,'ready')
+  assert.equal(f.nonceFiles().length,1)
+  assert.equal((await running.operator.execute('mision')).ok,false)
+  assert.equal(f.observations().digs,0)
+  assert.equal((await running.operator.execute('para')).ok,true)
+})

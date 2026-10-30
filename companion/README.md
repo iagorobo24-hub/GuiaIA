@@ -260,3 +260,14 @@ without changing journals or chest contents. The operator and principal keys
 are still synthetic QA signers, and the witness still runs on loopback.
 See [QA_INTEGRATED_OPERATOR_BOOT_2026-10-30.md](../docs/QA_INTEGRATED_OPERATOR_BOOT_2026-10-30.md)
 and [the actual Fabric evidence](../docs/GUIAIA_STANDALONE_REAL_FABRIC_QA_2026-10-30.md).
+
+### In-flight revocation guards
+
+The signed QA chest adapter now rechecks principal revocation, live Fabric
+presence and pinned checkpoint **after async chest opening, immediately before
+transfer**. Gather already rechecks after movement. Three deterministic
+integration tests cover signed revocation during chest opening or movement and
+witness withdrawal: no extra world mutation, no fake receipt or automatic
+nonce reuse. See [QA_INFLIGHT_REVOCATION_2026-10-30.md](../docs/QA_INFLIGHT_REVOCATION_2026-10-30.md).
+These tests inject a simulated bot; live remote revocation delivery while the
+registry is locked remains unimplemented and is not claimed as verified.
