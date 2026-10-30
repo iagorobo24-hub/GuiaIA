@@ -79,8 +79,8 @@ function openMission(directory, specification = null) {
       fs.closeSync(fd)
       fd = null
       fs.renameSync(tmp, journal)
-      const d = fs.openSync(directory, fs.constants.O_RDONLY)
-      try { fs.fsyncSync(d) } finally { fs.closeSync(d) }
+      if (process.platform !== 'win32') { const d = fs.openSync(directory, fs.constants.O_RDONLY)
+      try { fs.fsyncSync(d) } finally { fs.closeSync(d) } }
     } finally {
       if (fd !== null && fd !== undefined) fs.closeSync(fd)
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp)

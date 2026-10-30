@@ -30,8 +30,8 @@ test('two acknowledged oak steps complete with separate durable receipts',async 
   assert.equal((await m.runNext(adapter(1))).reason,'mission_not_ready')
   const data=JSON.parse(fs.readFileSync(path.join(dir,'mission.json')))
   assert.equal(data.index,2)
-  assert.equal(fs.statSync(dir).mode & 0o777,0o700)
-  assert.equal(fs.statSync(path.join(dir,'mission.json')).mode & 0o777,0o600)
+  if(process.platform!=='win32'){assert.equal(fs.statSync(dir).mode & 0o777,0o700)
+  assert.equal(fs.statSync(path.join(dir,'mission.json')).mode & 0o777,0o600)}
   m.close()
   const reopened=openMission(dir)
   assert.equal(reopened.view().phase,'completed')

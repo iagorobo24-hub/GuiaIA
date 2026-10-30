@@ -39,8 +39,8 @@ test('out-of-band operator signature AND principal possession both required; per
   assert.equal(receipt.action,'enrolled')
   assert.match(j.trustedPrincipals().friend_one,/BEGIN PUBLIC KEY/)
   assert.deepEqual(Object.keys(j.trustedPrincipals()),['friend_one'])
-  assert.equal(fs.statSync(x.directory).mode&0o777,0o700)
-  assert.equal(fs.statSync(path.join(x.directory,'principals.json')).mode&0o777,0o600)
+  if(process.platform!=='win32'){assert.equal(fs.statSync(x.directory).mode&0o777,0o700)
+  assert.equal(fs.statSync(path.join(x.directory,'principals.json')).mode&0o777,0o600)}
   j.close()
   const reopened=x.open()
   assert.equal(reopened.trustedPrincipals().friend_one,
@@ -390,11 +390,11 @@ test('checkpoint path and permissions cannot be redirected to public files',t=>{
   assert.throws(()=>x.open(),/Symlink anti-rollback/)
   fs.rmSync(a)
   fs.writeFileSync(a,original,{mode:0o600})
-  fs.chmodSync(a,0o644)
+  if(process.platform!=='win32'){fs.chmodSync(a,0o644)
   assert.throws(()=>x.open(),/Unsafe checkpoint/)
   fs.chmodSync(a,0o600)
   fs.chmodSync(path.join(x.root,'checkpoint'),0o755)
-  assert.throws(()=>x.open(),/checkpoint directory/)
+  assert.throws(()=>x.open(),/checkpoint directory/)}
   assert.equal(fs.existsSync(path.join(x.directory,'principals.lock')),false)
 })
 
@@ -404,7 +404,7 @@ test('simulated crash between registry save and checkpoint commit poisons writer
   const originalRename=fs.renameSync
   let injected=false
   fs.renameSync=function(from,to){
-    if(String(to).endsWith('/checkpoint/anchor.json') && !injected){
+    if((String(to).endsWith('/checkpoint/anchor.json') || String(to).endsWith('\\checkpoint\\anchor.json')) && !injected){
       injected=true;throw Error('QA simulated checkpoint fsync/rename failure')
     }
     return originalRename.apply(this,arguments)

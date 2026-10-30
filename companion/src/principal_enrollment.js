@@ -136,8 +136,8 @@ function openQaPrincipalRegistry(directory,{
       fd=fs.openSync(tmp,'wx',0o600)
       fs.writeSync(fd,buffer);fs.fsyncSync(fd);fs.closeSync(fd);fd=null
       fs.renameSync(tmp,file)
-      const d=fs.openSync(directory,fs.constants.O_RDONLY)
-      try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
+      if(process.platform!=='win32'){const d=fs.openSync(directory,fs.constants.O_RDONLY)
+      try{fs.fsyncSync(d)}finally{fs.closeSync(d)}}
     }finally{
       if(fd!==null)fs.closeSync(fd)
       if(fs.existsSync(tmp))fs.unlinkSync(tmp)
@@ -151,7 +151,7 @@ function openQaPrincipalRegistry(directory,{
       try{
         const s=fs.fstatSync(fd)
         if(!s.isFile() || s.size>MAX_BYTES || s.size===0 ||
-           (s.mode&0o777)!==0o600)throw Error('Unsafe principal registry file')
+           (process.platform!=='win32' && (s.mode&0o777)!==0o600))throw Error('Unsafe principal registry file')
         buf=Buffer.alloc(s.size)
         if(fs.readSync(fd,buf,0,buf.length,0)!==buf.length)
           throw Error('Partial principal registry read')

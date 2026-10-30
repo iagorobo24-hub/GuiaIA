@@ -10,7 +10,7 @@ const {createPinnedQaServerBridgeAuthority}=require('../src/fabric_bridge_reader
 const {createPinnedQaLivePresenceAuthority}=require('../src/live_presence')
 const {createQaSessionActionGateway}=require('../src/session_identity')
 const [eventsFile,pubFile,connectionId,journalDirectory]=process.argv.slice(2)
-if(![eventsFile,pubFile,journalDirectory].every(p=>p?.startsWith('/tmp/guiaia-fabric-bridge-qa-')) ||
+const isQaP=p=>typeof p==='string'&&(p.startsWith('/tmp/guiaia-fabric-bridge-qa-')||/^guiaia-fabric-bridge-qa-[a-zA-Z0-9_-]+[\\\/]/.test(require('node:path').relative(require('node:os').tmpdir(),p))); if(![eventsFile,pubFile,journalDirectory].every(isQaP) ||
    !/^[0-9a-f-]{36}$/.test(connectionId||''))throw Error('Disposable server evidence required')
 const worldId='qa:real-fabric:25593'
 const key=fs.readFileSync(pubFile,'utf8')

@@ -6,8 +6,8 @@ const {verifyBridgeLog}=require('../src/fabric_bridge_reader')
 const {createPinnedQaLivePresenceAuthority}=require('../src/live_presence')
 const fs=require('node:fs')
 const [eventsFile,pubFile]=process.argv.slice(2)
-if(!eventsFile?.startsWith('/tmp/guiaia-fabric-bridge-qa-') ||
-   !pubFile?.startsWith('/tmp/guiaia-fabric-bridge-qa-'))
+const isQa=p=>typeof p==='string'&&(p.startsWith('/tmp/guiaia-fabric-bridge-qa-')||/^guiaia-fabric-bridge-qa-[a-zA-Z0-9_-]+[\\\/]/.test(require('node:path').relative(require('node:os').tmpdir(),p))); if(!isQa(eventsFile) ||
+   !isQa(pubFile))
   throw Error('Actual connection crash QA requires disposable files')
 const worldId='qa:real-fabric:25593'
 const pub=fs.readFileSync(pubFile,'utf8')

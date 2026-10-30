@@ -22,9 +22,9 @@ const {createPinnedQaRemoteCheckpointClient}=require('../src/remote_checkpoint')
 const {createPinnedQaLivePresenceAuthority}=require('../src/live_presence')
 const {openQaPrincipalRegistry}=require('../src/principal_enrollment')
 const [eventsFile,pubFile,journalDir]=process.argv.slice(2)
-if(!eventsFile?.startsWith('/tmp/guiaia-fabric-bridge-qa-') ||
-   !pubFile?.startsWith('/tmp/guiaia-fabric-bridge-qa-') ||
-   !journalDir?.startsWith('/tmp/guiaia-fabric-bridge-qa-')) {
+const isQaPath=p=>typeof p==='string'&&(p.startsWith('/tmp/guiaia-fabric-bridge-qa-')||/^guiaia-fabric-bridge-qa-[a-zA-Z0-9_-]+([\\\/].*)?$/.test(path.relative(os.tmpdir(),p))); if(!isQaPath(eventsFile) ||
+   !isQaPath(pubFile) ||
+   !isQaPath(journalDir)) {
   throw Error('Only isolated real Fabric connection QA paths permitted')
 }
 const worldId='qa:real-fabric:25593'
@@ -155,7 +155,7 @@ async function main(){
       const claim={aud:'guiaia:principal-proof:v1',worldId,connectionId,
         principalId,challenge:realProof.payload.challenge,
         issuedAt:now-1000,expiresAt:now+
-          (process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'?45000:30000)}
+          (process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'?120000:30000)}
       return {bridge:realProof,owner:signed(claim,key)}
     }
     const scope=(item,principalId='qa_pre_enrolled_user')=>{

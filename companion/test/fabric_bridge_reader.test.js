@@ -102,12 +102,12 @@ test('expired join, stale event file cleared on restart, and absent session all 
 test('symlink and public filesystem permissions cause immediate refusal',t=>{
   const f=fixture(t)
   f.append(f.record('join'))
-  fs.chmodSync(f.file,0o644)
-  assert.throws(()=>verifyBridgeLog(f.file,f.publicKey,'qa:real-fabric:25593'),/Insecure/)
+  if(process.platform!=='win32'){fs.chmodSync(f.file,0o644)
+  assert.throws(()=>verifyBridgeLog(f.file,f.publicKey,'qa:real-fabric:25593'),/Insecure/)}
   fs.chmodSync(f.file,0o600)
   const alias=path.join(f.dir,'alias')
   fs.symlinkSync(f.file,alias)
   assert.throws(()=>verifyBridgeLog(alias,f.publicKey,'qa:real-fabric:25593'),/Symlink/)
-  fs.chmodSync(f.dir,0o755)
-  assert.throws(()=>verifyBridgeLog(f.file,f.publicKey,'qa:real-fabric:25593'),/Insecure/)
+  if(process.platform!=='win32'){fs.chmodSync(f.dir,0o755)
+  assert.throws(()=>verifyBridgeLog(f.file,f.publicKey,'qa:real-fabric:25593'),/Insecure/)}
 })

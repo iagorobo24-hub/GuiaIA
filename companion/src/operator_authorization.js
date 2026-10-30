@@ -82,8 +82,8 @@ function reserveGrantOnce(directory,nonce) {
     fs.writeSync(fd,Buffer.from('spent\n'))
     fs.fsyncSync(fd)
   }finally{fs.closeSync(fd)}
-  const d=fs.openSync(directory,fs.constants.O_RDONLY)
-  try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
+  if(process.platform!=='win32'){const d=fs.openSync(directory,fs.constants.O_RDONLY)
+  try{fs.fsyncSync(d)}finally{fs.closeSync(d)}}
   return file
 }
 function createOperatorAuthorizedQaDeposit(bot,plan,grant,authority){

@@ -13,6 +13,7 @@ const strict=(v,fields)=>v && Object.getPrototypeOf(v)===Object.prototype &&
 const digest=value=>crypto.createHash('sha256')
   .update(JSON.stringify(value)+'\n').digest('hex')
 function fsyncDirectory(dir){
+  if(process.platform==='win32')return
   const fd=fs.openSync(dir,fs.constants.O_RDONLY)
   try{fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
 }
@@ -20,7 +21,7 @@ function readSecure(file,limit){
   const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0))
   try{
     const s=fs.fstatSync(fd)
-    if(!s.isFile()||s.size===0||s.size>limit||(s.mode&0o777)!==0o600)
+    if(!s.isFile()||s.size===0||s.size>limit||(process.platform!=='win32' && (s.mode&0o777)!==0o600))
       throw Error('Unsafe checkpoint or registry file')
     const data=Buffer.alloc(s.size)
     if(fs.readSync(fd,data,0,data.length,0)!==data.length)
@@ -58,7 +59,7 @@ function openQaPrincipalCheckpoint(root,{worldId,operatorFingerprint,registryFil
     throw Error('Missing independent anti-rollback checkpoint')
   }
   if(!fs.statSync(directory).isDirectory() ||
-     (fs.statSync(directory).mode&0o777)!==0o700)
+     (process.platform!=='win32' && (fs.statSync(directory).mode&0o777)!==0o700))
     throw Error('Unsafe anti-rollback checkpoint directory')
   if(!newRegistry && !fs.existsSync(file))
     throw Error('Missing independent anti-rollback checkpoint')
@@ -69,7 +70,7 @@ function openQaPrincipalCheckpoint(root,{worldId,operatorFingerprint,registryFil
   function readHead(){
     const parent=fs.lstatSync(directory)
     if(!parent.isDirectory() || parent.isSymbolicLink() ||
-       (parent.mode&0o777)!==0o700)
+       (process.platform!=='win32' && (parent.mode&0o777)!==0o700))
       throw Error('Unsafe anti-rollback checkpoint directory')
     if(fs.lstatSync(file).isSymbolicLink())
       throw Error('Symlink anti-rollback checkpoint')

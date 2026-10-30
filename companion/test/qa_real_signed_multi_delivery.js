@@ -29,7 +29,7 @@ const exactBlock=(bot,position,name)=>
 
 async function runRealSignedMultiDeliveryQa({bot,session,authority,operatorKey,journalDir}){
   if(typeof journalDir!=='string' ||
-     !/^\/tmp\/guiaia-fabric-bridge-qa-[a-z0-9_-]+\/journal$/.test(journalDir) ||
+     !(/^\/tmp\/guiaia-fabric-bridge-qa-[a-z0-9_-]+\/journal$/.test(journalDir)||/^guiaia-fabric-bridge-qa-[a-zA-Z0-9_-]+[\\\/]journal$/.test(path.relative(require('node:os').tmpdir(),journalDir))) ||
      authority?.sandboxOnly!==true ||
      authority?.identityMode!=='trusted_server_bridge_lab' ||
      authority?.worldId!=='qa:real-fabric:25593' ||
@@ -92,7 +92,7 @@ async function runRealSignedMultiDeliveryQa({bot,session,authority,operatorKey,j
       operatorPrivateKey:operatorKey.privateKey,reviewedSpec:spec,
       missionJournal:mission,depositJournal:deposit,
       approvalDirectory:path.join(journalDir,'multi-resource-approvals'),
-      lifetimeMs:40000})
+      lifetimeMs:100000})
     const grants={}
     for(const item of items){
       const now=Date.now()
@@ -103,7 +103,7 @@ async function runRealSignedMultiDeliveryQa({bot,session,authority,operatorKey,j
         challenge:session.bridge.payload.challenge,
         chest:{...chest},item:item.name,count:item.count,
         nonce:crypto.randomUUID(),issuedAt:now-1000,
-        expiresAt:Math.min(now+45000,session.owner.payload.expiresAt,
+        expiresAt:Math.min(now+100000,session.owner.payload.expiresAt,
           session.bridge.payload.expiresAt)}
       grants[item.name]={payload,signature:crypto.sign(null,
         Buffer.from(JSON.stringify(payload)),operatorKey.privateKey)

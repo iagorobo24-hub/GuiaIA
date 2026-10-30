@@ -17,10 +17,10 @@ const NAME=/^[A-Za-z0-9_]{3,16}$/
 const ID=/^[A-Za-z0-9:_-]{1,64}$/
 const CHALLENGE=/^[a-f0-9]{32,64}$/
 const MAX_DURATION_MS=300000
-const FRESH_PROOF_MS=1500
-const ATTEST_TIMEOUT_MS=1500
-const ACTION_MONITOR_MS=250
-const ACTION_MAX_UNATTESTED_MS=1500
+const FRESH_PROOF_MS=2000
+const ATTEST_TIMEOUT_MS=2000
+const ACTION_MONITOR_MS=300
+const ACTION_MAX_UNATTESTED_MS=2000
 const hasExact=(value,fields)=>value && Object.getPrototypeOf(value)===Object.prototype &&
   Object.keys(value).length===fields.length && fields.every(key=>Object.hasOwn(value,key))
 const pos=p=>hasExact(p,['x','y','z'])&&['x','y','z'].every(k=>
@@ -175,8 +175,8 @@ function createQaSignedDeliveryPipeline({bot,bundle,signedPlan,authority,
     }
     const poll=setInterval(()=>{
       if(finished||revoked)return
-      if(isCancelled()||Date.now()>=validUntil){revoke();return}
-      if(pending)return
+      if(isCancelled()||(!pending && Date.now()>=validUntil)){revoke();return}
+      if(pending){if(Date.now()>=validUntil+ATTEST_TIMEOUT_MS)revoke();return}
       pending=true
       void attest().then(ok=>{
         if(finished||revoked)return

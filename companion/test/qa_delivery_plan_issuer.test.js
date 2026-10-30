@@ -205,8 +205,8 @@ test('issuance ledger persists one-use marker before reporting success',t=>{
   const x=fixture(t),issued=x.issue()
   const [entry]=fs.readdirSync(x.approvalDirectory)
   assert.match(entry,/^[a-f0-9]{64}\.used$/)
-  assert.equal(fs.statSync(x.approvalDirectory).mode&0o777,0o700)
-  assert.equal(fs.statSync(path.join(x.approvalDirectory,entry)).mode&0o777,0o600)
+  if(process.platform!=='win32'){assert.equal(fs.statSync(x.approvalDirectory).mode&0o777,0o700)
+  assert.equal(fs.statSync(path.join(x.approvalDirectory,entry)).mode&0o777,0o600)}
   assert.equal(issued.signedPlan.payload.expiresAt<=x.bundle.bridge.payload.expiresAt,true)
   assert.equal(issued.signedPlan.payload.expiresAt<=x.bundle.owner.payload.expiresAt,true)
 })

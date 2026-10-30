@@ -14,8 +14,8 @@ function verifyBridgeLog(eventsFile,pinnedKey,worldId,now=Date.now()){
   const folder=path.dirname(eventsFile)
   if(fs.lstatSync(folder).isSymbolicLink() ||
      fs.lstatSync(eventsFile).isSymbolicLink())throw Error('Symlink bridge data denied')
-  if((fs.statSync(folder).mode&0o777)!==0o700 ||
-     (fs.statSync(eventsFile).mode&0o777)!==0o600)throw Error('Insecure bridge evidence mode')
+  if(process.platform!=='win32' && ((fs.statSync(folder).mode&0o777)!==0o700 ||
+     (fs.statSync(eventsFile).mode&0o777)!==0o600))throw Error('Insecure bridge evidence mode')
   const fd=fs.openSync(eventsFile,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0))
   let bytes
   try{

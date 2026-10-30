@@ -85,8 +85,8 @@ test('deposit journal persists two different receipts with exclusive UUIDs',asyn
   assert.equal(state.phase,'completed')
   assert.deepEqual(state.receipts.map(r=>r.name),['oak_log','birch_log'])
   assert.equal(new Set(state.receipts.map(r=>r.operationId)).size,2)
-  assert.equal(fs.statSync(folder).mode&0o777,0o700)
-  assert.equal(fs.statSync(path.join(folder,'deposit.json')).mode&0o777,0o600)
+  if(process.platform!=='win32'){assert.equal(fs.statSync(folder).mode&0o777,0o700)
+  assert.equal(fs.statSync(path.join(folder,'deposit.json')).mode&0o777,0o600)}
   journal.close()
   const restored=openDepositJournal(folder)
   assert.equal(restored.view().phase,'completed')

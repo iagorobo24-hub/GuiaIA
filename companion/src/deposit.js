@@ -175,8 +175,8 @@ function openDepositJournal(directory,plan=null) {
       fd=fs.openSync(tmp,'wx',0o600)
       fs.writeSync(fd,bytes);fs.fsyncSync(fd);fs.closeSync(fd);fd=null
       fs.renameSync(tmp,file)
-      const d=fs.openSync(directory,fs.constants.O_RDONLY)
-      try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
+      if(process.platform!=='win32'){const d=fs.openSync(directory,fs.constants.O_RDONLY)
+      try{fs.fsyncSync(d)}finally{fs.closeSync(d)}}
     }finally{
       if(fd!==null)fs.closeSync(fd)
       if(fs.existsSync(tmp))fs.unlinkSync(tmp)

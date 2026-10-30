@@ -18,7 +18,7 @@ const chest={x:1,y:64,z:5}
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z)
 
 async function runRealSignedDeliveryQa({bot,session,authority,operatorKey,journalDir}){
-  if(!journalDir?.startsWith('/tmp/guiaia-fabric-bridge-qa-')||
+  if(!(/^[A-Za-z0-9_-]+[\\\/]journal$/.test(require('node:path').relative(require('node:os').tmpdir(),journalDir))||journalDir?.startsWith('/tmp/guiaia-fabric-bridge-qa-'))||
      authority?.worldId!=='qa:real-fabric:25593' ||
      authority?.botName!=='GuiaIA_QA' ||
      bot?.username!=='GuiaIA_QA')

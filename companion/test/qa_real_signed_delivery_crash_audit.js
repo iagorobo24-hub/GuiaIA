@@ -12,7 +12,7 @@ const {chestCount,validateJournal,openDepositJournal}=require('../src/deposit')
 const {validateState,openMission}=require('../src/mission')
 
 const root=process.env.GUIAIA_QA_CRASH_AUDIT_ROOT
-if(!root?.startsWith('/tmp/guiaia-fabric-bridge-qa-') ||
+if(!((typeof root==='string' && (root.startsWith('/tmp/guiaia-fabric-bridge-qa-') || /^guiaia-fabric-bridge-qa-[a-zA-Z0-9_-]+$/.test(path.relative(require('node:os').tmpdir(),root))))) ||
    root.includes('..') || !path.isAbsolute(root))
   throw Error('Read-only QA audit restricted to disposable Fabric root')
 const missionDir=path.join(root,'journal','delivery-mission')

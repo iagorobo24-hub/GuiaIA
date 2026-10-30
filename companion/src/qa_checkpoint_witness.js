@@ -20,7 +20,7 @@ function createQaCheckpointWitness({directory,worldId,operatorPublicKeyPem,
   if(!hadDirectory)fs.mkdirSync(directory,{mode:0o700})
   if(hadDirectory&&!fs.existsSync(path.join(directory,'head.json')))
     throw Error('Previously initialized witness missing checkpoint: fail closed')
-  if((fs.statSync(directory).mode&0o777)!==0o700)
+  if(process.platform!=='win32' && (fs.statSync(directory).mode&0o777)!==0o700)
     throw Error('Untrusted witness filesystem permissions')
   const operator=publicKey(operatorPublicKeyPem)
   if(!witnessPrivateKey||witnessPrivateKey.asymmetricKeyType!=='ed25519')
@@ -37,7 +37,7 @@ function createQaCheckpointWitness({directory,worldId,operatorPublicKeyPem,
     try{
       const stat=fs.fstatSync(fd)
       if(!stat.isFile()||stat.size<2||stat.size>MAX_FILE||
-         (stat.mode&0o777)!==0o600)
+         (process.platform!=='win32' && (stat.mode&0o777)!==0o600))
         throw Error('Unsafe persisted witness')
       const b=Buffer.alloc(stat.size)
       if(fs.readSync(fd,b,0,b.length,0)!==b.length)throw Error('Short witness read')
@@ -69,8 +69,8 @@ function createQaCheckpointWitness({directory,worldId,operatorPublicKeyPem,
       if(fs.existsSync(file)&&fs.lstatSync(file).isSymbolicLink())
         throw Error('Witness symlink denied')
       fs.renameSync(tmp,file)
-      const d=fs.openSync(directory,fs.constants.O_RDONLY)
-      try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
+      if(process.platform!=='win32'){const d=fs.openSync(directory,fs.constants.O_RDONLY)
+      try{fs.fsyncSync(d)}finally{fs.closeSync(d)}}
     }finally{
       if(fd!==undefined&&fd!==null)fs.closeSync(fd)
       if(fs.existsSync(tmp))fs.unlinkSync(tmp)

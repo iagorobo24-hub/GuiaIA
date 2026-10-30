@@ -18,6 +18,7 @@ function readDepositJournalPassive(directory) {
   const root=fs.lstatSync(directory)
   if(!root.isDirectory() || root.isSymbolicLink())throw Error('Unsafe QA directory')
   const file=path.join(directory,'deposit.json')
+  if(fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink())throw Error('Unsafe symlink QA journal')
   const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0))
   try {
     const stat=fs.fstatSync(fd)

@@ -58,8 +58,8 @@ test('valid signed one-chest operator capability permits exactly one real adapte
   assert.equal(f.mutations,1)
   const records=fs.readdirSync(f.authority.ledgerDirectory)
   assert.equal(records.length,1)
-  assert.equal(fs.statSync(f.authority.ledgerDirectory).mode&0o777,0o700)
-  assert.equal(fs.statSync(path.join(f.authority.ledgerDirectory,records[0])).mode&0o777,0o600)
+  if(process.platform!=='win32'){assert.equal(fs.statSync(f.authority.ledgerDirectory).mode&0o777,0o700)
+  assert.equal(fs.statSync(path.join(f.authority.ledgerDirectory,records[0])).mode&0o777,0o600)}
 })
 test('nickname-only command has no capability and never opens a chest',t=>{
   const f=setup(t)
