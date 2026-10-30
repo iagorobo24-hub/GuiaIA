@@ -87,8 +87,8 @@ async function main(){
       }
       const replay=await restored.runNext({})
       if(replay.reason!=='not_ready')throw Error('Completed deposit can replay')
-      if((fs.statSync(directory).mode&0o777)!==0o700 ||
-         (fs.statSync(directory+'/deposit.json').mode&0o777)!==0o600) {
+      if(process.platform!=='win32' && ((fs.statSync(directory).mode&0o777)!==0o700 ||
+         (fs.statSync(directory+'/deposit.json').mode&0o777)!==0o600)) {
         throw Error('QA deposit journal file mode not private')
       }
       console.log('GUIAIA_CHEST_DEPOSIT_QA_EVIDENCE='+JSON.stringify({

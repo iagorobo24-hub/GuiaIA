@@ -147,8 +147,8 @@ async function main(){
         block:'birch_log',gatherOne:async()=>{throw Error('FORBIDDEN_REPLAY')}
       })
       if(duplicate.reason!=='mission_not_ready')throw Error('Replay was allowed')
-      if((fs.statSync(dir).mode&0o777)!==0o700 ||
-         (fs.statSync(dir+'/mission.json').mode&0o777)!==0o600) {
+      if(process.platform!=='win32' && ((fs.statSync(dir).mode&0o777)!==0o700 ||
+         (fs.statSync(dir+'/mission.json').mode&0o777)!==0o600)) {
         throw Error('Typed journal permissions unsafe')
       }
       console.log('GUIAIA_MULTI_RESOURCE_QA_EVIDENCE='+JSON.stringify({

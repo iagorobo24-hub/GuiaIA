@@ -83,7 +83,8 @@ def main():
             )
             subprocess.run(["node","-e",js,str(private),str(public)],
                 cwd=ROOT,check=True,timeout=15)
-            assert private.stat().st_mode & 0o777==0o600
+            if os.name != 'nt':
+                assert private.stat().st_mode & 0o777==0o600
             (config/"guiaia-identity-bridge.properties").write_text(
                 "enabled=true\nqa_only=true\nworld_id=qa:real-fabric:25593\n",
                 encoding="ascii")

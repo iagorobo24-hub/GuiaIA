@@ -97,7 +97,7 @@ async function main() {
       if(shouldDeny.reason!=='mission_not_ready') throw Error('Duplicate execution possible')
       const mode=fs.statSync(dir).mode&0o777
       const fileMode=fs.statSync(dir+'/mission.json').mode&0o777
-      if(mode!==0o700 || fileMode!==0o600) throw Error('QA mission receipt permissions unsafe')
+      if(process.platform!=='win32' && (mode!==0o700 || fileMode!==0o600)) throw Error('QA mission receipt permissions unsafe')
       console.log('GUIAIA_MISSION_QA_EVIDENCE='+JSON.stringify({
         result:'pass',real_minecraft_login:true,steps:2,
         receipts:recovered.view().receipts.length,

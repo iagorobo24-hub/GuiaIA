@@ -7,8 +7,10 @@ const [file,keyFile]=process.argv.slice(2)
 if(!file||!keyFile)throw Error('Explicit disposable QA evidence and pinned public key required')
 const key=crypto.createPublicKey(fs.readFileSync(keyFile,'utf8'))
 assert.equal(key.asymmetricKeyType,'ed25519')
-assert.equal(fs.statSync(file).mode&0o777,0o600)
-assert.equal(fs.statSync(require('node:path').dirname(file)).mode&0o777,0o700)
+if(process.platform!=='win32'){
+  assert.equal(fs.statSync(file).mode&0o777,0o600)
+  assert.equal(fs.statSync(require('node:path').dirname(file)).mode&0o777,0o700)
+}
 const bytes=fs.readFileSync(file)
 if(bytes.length<2 || bytes.length>131072)throw Error('Bridge evidence out of bounds')
 const lines=bytes.toString('utf8').trim().split('\n')
