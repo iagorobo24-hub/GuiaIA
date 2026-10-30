@@ -160,3 +160,37 @@ docs/QA_DELIVERY_PLAN_ISSUER_HANDOFF.md,
 docs/QA_BOUNDED_NAVIGATION_V5_HANDOFF.md,
 docs/QA_DELIVERY_READOUT_V6_HANDOFF.md and
 docs/evidence/GUIAIA_DELIVERY_V6_PENGUIN_2026-10-29.json.
+
+## Local signed operator console (disposable QA only)
+
+The security runtime in `src/secure_delivery_runtime.js` now accepts an
+optional **independent operator-signed single-use follow grant** in addition to
+the signed gather and deposit grants. All grants must be tied to the same
+current signed connection and pre-enrolled principal; duplicate nonces are
+rejected before any action. Its `follow()`, `inventory()`, `status()`,
+`runNext()`, `runAll()`, and `stop()` methods share one cancellation and
+world-action coordination boundary.
+
+`src/trusted_local_operator_console.js` provides a deliberately small,
+same-process operator interface. After **a trusted bootstrap has constructed a
+signed secure runtime**, instantiate
+`createTrustedLocalOperatorConsole(runtime)` and optionally attach it with
+`attachTrustedLocalOperatorStdin(operator)` to a real local TTY. Piped stdin
+is rejected. Supported Spanish commands are `estado`, `inventario`,
+`sigueme`, `siguiente`, `mision`, `para`, `ayuda`, `salir`
+(English equivalents also accepted). Unknown commands, coordinates supplied
+by the user, multiline instructions and shell/game commands are rejected.
+The mission and chest are **preapproved**, not picked from chat or CLI text.
+
+`para` immediately cancels active navigation and records journal cancellation;
+it is not queued behind a slow remote check. EOF triggers the same fail-closed
+stop. Each follow permit can be attempted once and expires promptly.
+Interrupted or uncertain journal steps **cannot automatically resume**.
+
+**Security limit:** a local TTY does not authenticate a Minecraft account.
+The constructor requires independently obtained signed proofs, operator
+permissions, Fabric live presence, and the registry checkpoint witness.
+The current QA harness generates synthetic lab keys for these inputs;
+it does not provide an onboarding path for real users or a standalone
+public server configuration. `npm start` remains the deliberately restricted
+legacy QA CLI, and no production command surface is enabled.

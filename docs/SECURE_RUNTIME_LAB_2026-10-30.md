@@ -54,3 +54,63 @@ El ensayo crea mundo, credenciales y diarios temporales, usa conexión loopback,
 On 30 October 2026, the new signed delivery runtime passed an end-to-end test against an isolated, disposable Minecraft Fabric 1.21.1 server. It physically mined an approved oak log, picked up its drop, transferred one log into an approved chest, verified both inventory changes, saved separate gather/deposit receipts, consumed two signed Ed25519 one-use action grants and denied replay. Bot inventory was **1 → 2 → 1** and chest inventory **0 → 1**.
 
 This is an **isolated laboratory integration**, not a public or production-ready playable beta. Operator identity in this run used ephemeral laboratory keys and synthetic enrolment, not authenticated real users. A standalone interactive operator client, full clean installation, interruption/restart validations of the new runtime and deployable identity integration are still missing.
+
+## Consola local del operador añadida en la fase siguiente
+
+Existe una nueva interfaz **exclusivamente local y de laboratorio**:
+`companion/src/trusted_local_operator_console.js`. Acepta únicamente
+`estado`, `inventario`, `sigueme`, `siguiente`, `mision`,
+`para`, `ayuda` y `salir` (y equivalentes ingleses).
+Una entrada no reconocida, multilinea, inyección de instrucciones o
+entrada de tipo pipe se deniega. El terminal se conecta únicamente después
+de construir el runtime con las claves y los permisos ya verificados; la
+propia consola no emite privilegios.
+
+El mismo `createSecureDeliveryRuntime` ahora admite un permiso **follow**
+separado, firmado y de un solo uso; comprueba además que su nonce no se
+reutilice como permiso de recolección o depósito. El seguimiento y la misión
+comparten parada y barreras de concurrencia. `para` no espera a la
+autorización que está pendiente. Las operaciones detenidas conservan la
+decisión durable de los diarios.
+
+Evidencias de pruebas unitarias locales: **323 Node y 54 Python aprobadas**,
+incluidos rechazo de comandos, permiso de seguimiento falso, nonce duplicado,
+carrera entre misión y parada, revocación durante la misión y recibos durables.
+Estas pruebas no acreditan por sí mismas una identidad real de usuario, la
+resistencia a fallos en producción ni una interfaz de onboarding pública.
+
+La consola de este bloque se comprueba dentro de la prueba Fabric real
+`--secure-runtime` para validar que no se eludan las barreras existentes.
+La prueba en mundo desechable es distinta del funcionamiento en Teselia.
+
+## Validación final de la consola dentro de Fabric real — 30/10/2026
+
+Se ha ejecutado nuevamente la prueba con `--secure-runtime` tras
+integrar la consola y el permiso de seguimiento. **Salida 0** y
+`GUIAIA_REAL_SECURE_RUNTIME_QA_EVIDENCE.result = "pass"`:
+
+| Verificación | Resultado |
+| --- | --- |
+| Seguimiento del operador con permiso Ed25519 | Activado; segunda utilización rechazada |
+| Instrucción arbitraria del operador | Rechazada antes de cualquier acción |
+| Extracción de bloque en Fabric real | Confirmada |
+| Inventario del bot | 1 → 2 → 1 durante recolección y depósito |
+| Cofre real autorizado | 0 → 1 |
+| Recibo durable de recolección | 1 |
+| Recibo durable de depósito | 1 |
+| Nonces firmados consumidos | 3, sin reejecución |
+| Ruta de navegación real | 3 objetivos; 2,256 bloques de desplazamiento |
+| Autoridad | Fabric actual + testigo independiente |
+| Repetición de misión completada | Rechazada |
+| Puertos temporales 25593 y 25594 | Liberados al finalizar |
+| Mundo temporal `/tmp/guiaia-fabric-bridge-qa-*` | Limpiado automáticamente |
+
+El servidor de Minecraft original y los procesos de otros agentes
+permanecieron sin cambios. No hubo push, despliegue ni ejecución
+adicional de GitHub Actions.
+
+**Límite de evidencia:** no se ha demostrado todavía un enrolamiento real
+de jugadores o un cliente autónomo instalable. Tampoco queda demostrada
+por esta ejecución la recuperación tras caída abrupta **del nuevo runtime**
+o su instalación en Teselia. El puerto loopback con Minecraft offline-mode
+y las claves efímeras no deben exponerse a redes ni servidores públicos.

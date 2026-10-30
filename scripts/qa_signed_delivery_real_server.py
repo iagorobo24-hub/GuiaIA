@@ -158,7 +158,9 @@ def main():
                     evidence.get("deposit_receipts") != 1 or
                     evidence.get("verified_chest_after") != 1 or
                     evidence.get("replay_denied") is not True or
-                    evidence.get("spent_signed_nonces") != 2):
+                    evidence.get("signed_operator_follow") is not True or
+                    evidence.get("trusted_operator_console") is not True or
+                    evidence.get("spent_signed_nonces") != 3):
                     raise RuntimeError("Secure runtime did not provide complete Minecraft receipts")
                 print(marker + json.dumps(evidence))
             elif args.multi_resource:

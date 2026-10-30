@@ -6,15 +6,16 @@
 const { createSecureCompanionController } = require('./secure_companion_controller')
 const { createQaDeliveryPipeline } = require('./qa_delivery_pipeline')
 const {
-  verifySessionBundle, verifySessionGatherGrant, verifySessionDepositGrant
+  verifySessionBundle, verifySessionGatherGrant, verifySessionDepositGrant,
+  verifySessionFollowGrant
 } = require('./session_identity')
 
 const samePosition = (a, b) => Boolean(a && b) &&
   ['x', 'y', 'z'].every(k => Number.isInteger(a[k]) && a[k] === b[k])
 
 function createSecureDeliveryRuntime({
-  bot, authority, classes, session, grants, missionJournal, depositJournal,
-  approvedPlan
+  bot, authority, classes, session, grants, followGrant, missionJournal,
+  depositJournal, approvedPlan
 } = {}) {
   if (!Array.isArray(grants?.gather) || !Array.isArray(grants?.deposit) ||
       typeof missionJournal?.view !== 'function' ||
@@ -38,6 +39,15 @@ function createSecureDeliveryRuntime({
     throw Error('Signed steps do not match the durable mission')
   }
   const usedNonces = new Set()
+  const fixedFollowGrant = followGrant === undefined ? null : structuredClone(followGrant)
+  if (fixedFollowGrant !== null) {
+    if (typeof classes?.GoalFollow !== 'function' ||
+        typeof classes?.Movements !== 'function') {
+      throw Error('Signed follow requires bounded pathfinder classes')
+    }
+    const follow = verifySessionFollowGrant(fixedFollowGrant, principal, authority)
+    usedNonces.add(follow.nonce)
+  }
   function permit(kind, index) {
     const token = fixedGrants[kind]?.[index]
     if (!token) throw Error('Missing signed step permit')
@@ -98,14 +108,40 @@ function createSecureDeliveryRuntime({
       cancel: () => controller.emergencyStop('mission_cancelled')
     })
   })
+  // The UI cannot start a second follow or mission while a world operation
+  // is in flight. Stop is deliberately NOT queued behind an async action.
+  let missionRunning = false
+  let followAttempted = false
+  let stopped = false
+  async function missionAction(operation) {
+    if (stopped) return {ok: false, reason: 'operator_stopped'}
+    if (missionRunning) return {ok: false, reason: 'operator_busy'}
+    missionRunning = true
+    try {
+      controller.emergencyStop('switch_to_mission')
+      return await operation()
+    } finally { missionRunning = false }
+  }
+  async function follow() {
+    if (stopped) return {ok: false, reason: 'operator_stopped'}
+    if (missionRunning) return {ok: false, reason: 'operator_busy'}
+    if (!fixedFollowGrant) return {ok: false, reason: 'signed_follow_grant_required'}
+    if (followAttempted) return {ok: false, reason: 'follow_grant_already_attempted'}
+    followAttempted = true
+    return controller.follow(fixedSession, fixedFollowGrant)
+  }
   return Object.freeze({
     status: () => Object.freeze({
       ...pipeline.status(), companion: controller.status(),
-      inventory: controller.checkInventory()
+      inventory: controller.checkInventory(),
+      missionRunning, followAttempted, stopped
     }),
-    runNext: () => pipeline.runNext(),
-    runAll: () => pipeline.runAll(),
+    inventory: () => controller.checkInventory(),
+    follow,
+    runNext: () => missionAction(() => pipeline.runNext()),
+    runAll: () => missionAction(() => pipeline.runAll()),
     stop: () => {
+      stopped = true
       controller.emergencyStop('operator_stop')
       return pipeline.stop()
     }

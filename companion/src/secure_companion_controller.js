@@ -372,6 +372,14 @@ function createSecureCompanionController({ bot, authority, classes }) {
   }
 
   function status() {
+    // A follow lease can expire on its own timer. Reflect actual movement,
+    // never a stale cached 'following' flag in the operator UI.
+    if (mode === 'following' && activeFollow &&
+        activeFollow.status().mode !== 'following') {
+      lastReason = activeFollow.status().reason
+      activeFollow = null
+      mode = 'idle'
+    }
     return Object.freeze({
       mode,
       lastReason,

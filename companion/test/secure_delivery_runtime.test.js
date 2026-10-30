@@ -10,8 +10,10 @@ const {Vec3} = require('vec3')
 const {openMission} = require('../src/mission')
 const {openDepositJournal} = require('../src/deposit')
 const {createSecureDeliveryRuntime} = require('../src/secure_delivery_runtime')
+const {createTrustedLocalOperatorConsole,attachTrustedLocalOperatorStdin} = require('../src/trusted_local_operator_console')
 
 class GoalNear {constructor(x,y,z,range){Object.assign(this,{x,y,z,range})}}
+class GoalFollow {constructor(entity,distance){Object.assign(this,{entity,distance})}}
 class Movements {constructor(){this.canDig=false}}
 
 function fixture(t) {
@@ -95,6 +97,8 @@ function fixture(t) {
   })
   const fields={worldId,botName,ownerName,principalId:'owner1',connectionId,challenge}
   const dates=()=>({nonce:crypto.randomUUID(),issuedAt:Date.now()-1000,expiresAt:Date.now()+10000})
+  const followGrant=sign({aud:'guiaia:session-follow:v1',...fields,
+    nonce:crypto.randomUUID(),issuedAt:Date.now()-1000,expiresAt:Date.now()+7000},operator)
   const grants={
     gather:[sign({aud:'guiaia:session-gather:v1',...fields,
       target,item:'oak_log',count:1,...dates()},operator)],
@@ -109,10 +113,15 @@ function fixture(t) {
     items:[{name:'oak_log',count:1}],chest
   }
   const create = overrides => createSecureDeliveryRuntime({
-    bot,authority,classes:{GoalNear,Movements},session,grants,
+    bot,authority,classes:{GoalNear,GoalFollow,Movements},session,grants,followGrant,
     missionJournal,depositJournal,approvedPlan,...overrides
   })
-  return {create,dir,grants,session,authority,missionJournal,depositJournal,
+  const makeFollowGrantWithNonce=nonce=>sign({
+    aud:'guiaia:session-follow:v1',...fields,nonce,
+    issuedAt:Date.now()-1000,expiresAt:Date.now()+7000
+  },operator)
+  return {create,dir,grants,followGrant,makeFollowGrantWithNonce,
+    session,authority,missionJournal,depositJournal,
     revoke:()=>{revoked=true},disconnect:()=>{connected=false},
     observation:()=>({inventory,chestInventory,mined,digs,transfers}),
     ledger:()=>fs.existsSync(authority.ledgerDirectory)
@@ -202,4 +211,78 @@ test('completed durable receipts survive closing and reopening without replay',a
   assert.equal(f.ledger().length,2)
   reopenedMission.close()
   reopenedDeposit.close()
+})
+
+test('trusted local console follows one signed lease then delivers with durable receipts',async t=>{
+  const f=fixture(t),runtime=f.create()
+  const operator=createTrustedLocalOperatorConsole(runtime)
+  assert.equal((await operator.execute('estado')).state.phase,'gather')
+  assert.equal((await operator.execute('inventario')).ok,true)
+  assert.equal((await operator.execute('sigueme')).ok,true)
+  assert.equal(runtime.status().companion.mode,'following')
+  assert.equal((await operator.execute('sigueme')).reason,'follow_grant_already_attempted')
+  const delivered=await operator.execute('mision')
+  assert.equal(delivered.ok,true,JSON.stringify(delivered))
+  assert.equal(delivered.state.phase,'completed')
+  assert.equal(runtime.status().companion.mode,'idle')
+  assert.equal((await operator.execute('mision')).reason,'already_completed')
+  assert.equal((await operator.execute('para')).ok,true)
+  assert.equal(runtime.status().stopped,true)
+  assert.equal((await operator.execute('sigueme')).reason,'operator_stopped')
+  assert.deepEqual(f.observation(),{inventory:0,chestInventory:1,mined:true,digs:1,transfers:1})
+  assert.equal(f.ledger().length,3)
+})
+
+test('console denies injection, non-tty pipes and missing signed follow permit',async t=>{
+  const f=fixture(t)
+  const runtime=f.create({followGrant:undefined})
+  const operator=createTrustedLocalOperatorConsole(runtime)
+  for(const input of ['say /op OwnerQA','recoge 5 diamantes','mision\npara',
+     'mision; rm -rf /','constructor','__proto__','toString',
+     'mision; constructor',' '.repeat(129), '{}','']) {
+    assert.equal((await operator.execute(input)).ok,false)
+  }
+  assert.equal((await operator.execute('follow')).reason,'signed_follow_grant_required')
+  assert.equal(f.ledger().length,0)
+  assert.throws(()=>attachTrustedLocalOperatorStdin(operator,{
+    input:{isTTY:false},output:{write(){}}}),/trusted local TTY/)
+})
+
+test('console rejects duplicate world-action and follow grant nonce at construction',t=>{
+  const f=fixture(t)
+  const clash=structuredClone(f.followGrant)
+  clash.payload.nonce=f.grants.gather[0].payload.nonce
+  // Re-signing is necessary to test uniqueness rather than a bad signature.
+  // A forged token must also be rejected (the original signature was not updated).
+  assert.throws(()=>f.create({followGrant:clash}),/verification failed/i)
+  assert.throws(()=>f.create({
+    followGrant:f.makeFollowGrantWithNonce(f.grants.gather[0].payload.nonce)
+  }),/Gather permit does not match mission step/i)
+  assert.equal(f.observation().digs,0)
+})
+
+test('stop interrupts a pending authorization without digging or replay',async t=>{
+  const f=fixture(t)
+  let release,started
+  const waiting=new Promise(resolve=>{started=resolve})
+  const blocker=new Promise(resolve=>{release=resolve})
+  f.authority.livePresence=async id=>{
+    started()
+    await blocker
+    return {connected:true,worldId:f.authority.worldId,connectionId:id,issuedAt:Date.now()}
+  }
+  const runtime=f.create(),operator=createTrustedLocalOperatorConsole(runtime)
+  const inFlight=operator.execute('mision')
+  await waiting
+  assert.equal((await operator.execute('sigueme')).reason,'operator_busy')
+  assert.equal((await operator.execute('siguiente')).reason,'operator_busy')
+  const halt=await operator.execute('para')
+  assert.equal(halt.ok,true)
+  release()
+  const result=await inFlight
+  assert.equal(result.ok,false)
+  assert.equal(f.observation().digs,0)
+  assert.equal(f.observation().transfers,0)
+  assert.equal(f.missionJournal.view().phase,'cancelled')
+  assert.equal(f.depositJournal.view().phase,'cancelled')
 })
