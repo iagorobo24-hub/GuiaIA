@@ -71,7 +71,7 @@ function createQaBoundedNavigation({bot,GoalNear,Movements,ownerName,
     if(cancelled)throw Error('QA navigation previously cancelled')
     if(active)throw Error('Concurrent QA navigation denied')
     if(!approvedPosition(target) || !Number.isFinite(desiredDistance) ||
-       desiredDistance<1 || desiredDistance>4)
+       desiredDistance<0 || desiredDistance>4)
       throw Error('Unapproved QA navigation target')
     const current=bot.entity?.position
     const start=numericPosition(current)
@@ -86,7 +86,10 @@ function createQaBoundedNavigation({bot,GoalNear,Movements,ownerName,
       throw Error('QA navigation target beyond signed nearby operation')
     const unsafe=safety(goalTarget,start)
     if(unsafe)throw Error(unsafe)
-    if(distance(start,goalTarget)<=desiredDistance)
+    const isAtGoal=desiredDistance===0
+      ?(Math.floor(start.x)===goalTarget.x && Math.floor(start.z)===goalTarget.z)
+      :(distance(start,goalTarget)<=desiredDistance)
+    if(isAtGoal)
       return Object.freeze({ok:true,reason:'already_within_reach',moved:false})
     active=true
     let interval=null,timer=null,aborted=false
@@ -111,8 +114,8 @@ function createQaBoundedNavigation({bot,GoalNear,Movements,ownerName,
       moves.allowSprinting=false
       bot.pathfinder.setMovements(moves)
       // Explicitly scoped: no generic waypoint list and no pathfinder mining.
-      const goal=new GoalNear(goalTarget.x,goalTarget.y,goalTarget.z,
-        Math.max(1,Math.floor(desiredDistance)))
+      const goalRange=Math.floor(desiredDistance)
+      const goal=new GoalNear(goalTarget.x,goalTarget.y,goalTarget.z,goalRange)
       interval=setInterval(()=>{
         const reason=safety(goalTarget,start)
         if(reason || cancelled)abortWith(Error(reason||'QA navigation cancelled'))
@@ -124,7 +127,10 @@ function createQaBoundedNavigation({bot,GoalNear,Movements,ownerName,
       if(cancelled)throw Error('QA navigation cancelled')
       const finalUnsafe=safety(goalTarget,start)
       if(finalUnsafe)throw Error(finalUnsafe)
-      if(distance(bot.entity.position,goalTarget)>desiredDistance)
+      const reachedGoal=desiredDistance===0
+        ?((Math.floor(bot.entity.position.x)===goalTarget.x && Math.floor(bot.entity.position.z)===goalTarget.z) || distance(bot.entity.position,goalTarget)<=1.0)
+        :(distance(bot.entity.position,goalTarget)<=desiredDistance)
+      if(!reachedGoal)
         throw Error('QA pathfinder did not reach exact approved target')
       return Object.freeze({ok:true,reason:'approved_target_reached',moved:true})
     }finally{

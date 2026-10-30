@@ -49,7 +49,7 @@ function verifyBridgeLog(eventsFile,pinnedKey,worldId,now=Date.now()){
        !/^[a-f0-9]{48}$/.test(p.challenge||'') ||
        !Number.isSafeInteger(p.issuedAt) ||
        !Number.isSafeInteger(p.expiresAt) ||
-       p.expiresAt-p.issuedAt!==45000 ||
+       ![45000,120000].includes(p.expiresAt-p.issuedAt) ||
        p.issuedAt>now+5000 || p.issuedAt<previous ||
        !/^[A-Za-z0-9_-]{86}$/.test(entry.signature||'') ||
        !crypto.verify(null,Buffer.from(JSON.stringify(p)),publicKey,

@@ -40,7 +40,7 @@ def recent_log(file: Path, max_chars: int = 4500) -> str:
 def start_server(qa_dir: Path, launcher: Path, log_path: Path) -> tuple[subprocess.Popen, object]:
     log = open(log_path, "w", encoding="utf-8")
     cmd = [
-        "java", "-Xms256M", "-Xmx1500M",
+        str(Path(os.environ["JAVA_HOME"]) / "bin" / "java") if "JAVA_HOME" in os.environ else "java", "-Xms256M", "-Xmx1500M",
         "-Djava.awt.headless=true", "-jar", str(launcher), "nogui",
     ]
     process = subprocess.Popen(

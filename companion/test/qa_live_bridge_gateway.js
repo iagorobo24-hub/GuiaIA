@@ -51,11 +51,11 @@ async function main(){
     process.exitCode=1
     console.error('Real server bridge-to-companion QA timeout')
     owner.end();bot.end()
-  },70000)
+  },process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'?110000:70000)
   let journal,registry,registryRoot,witness,witnessRoot,following
   try {
     await Promise.all([spawn(owner),spawn(bot)])
-    let realProof,connectionId,ready=false
+    let realProof,connectionId,ready=false,lastErr=null,lastState=''
     for(let k=0;k<100;k++){
       try {
         const current=verifyBridgeLog(eventsFile,publicKey,worldId)
@@ -64,18 +64,20 @@ async function main(){
           connectionId=ownerLine.connectionId
           realProof=source.joinProof(connectionId)
         }
+        const hasOwner = !!bot.players?.OwnerQA?.entity
+        const dist = hasOwner ? finiteDistance(bot.entity?.position,bot.players.OwnerQA.entity.position) : 999
+        const hasChest = bot.blockAt(new Vec3(chest.x,chest.y,chest.z))?.name==='chest'
+        const oak = inventoryCount(bot,'oak_log')
+        const birch = inventoryCount(bot,'birch_log')
+        lastState = JSON.stringify({hasProof:!!realProof,connected:source.activeConnection(connectionId)?.connected,hasOwner,dist,hasChest,oak,birch})
         if(realProof && source.activeConnection(connectionId)?.connected &&
-           bot.players?.OwnerQA?.entity &&
-           finiteDistance(bot.entity?.position,bot.players.OwnerQA.entity.position)<=OWNER_MAX_DISTANCE &&
-           bot.blockAt(new Vec3(chest.x,chest.y,chest.z))?.name==='chest' &&
-           inventoryCount(bot,'oak_log')===1 &&
-           inventoryCount(bot,'birch_log')===1) {
+           hasOwner && dist<=OWNER_MAX_DISTANCE && hasChest && oak===1 && birch===1) {
           ready=true;break
         }
-      }catch{}
+      }catch(err){lastErr=err}
       await sleep(140)
     }
-    if(!ready)throw Error('Real signed JOIN or Minecraft inventories unavailable')
+    if(!ready)throw Error('Real signed JOIN or Minecraft inventories unavailable: '+(lastErr?.message||lastState))
     const liveProof=await live.livePresence(connectionId)
     if(liveProof.connected!==true)throw Error('Real server presence query was denied')
     const ownerKey=crypto.generateKeyPairSync('ed25519')
@@ -152,10 +154,10 @@ async function main(){
     }
     const ownerSession=(principalId='qa_pre_enrolled_user',key=ownerKey)=>{
       const now=Date.now()
+      const ttl = process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'?120000:30000
       const claim={aud:'guiaia:principal-proof:v1',worldId,connectionId,
         principalId,challenge:realProof.payload.challenge,
-        issuedAt:now-1000,expiresAt:now+
-          (process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'?120000:30000)}
+        issuedAt:now-1000,expiresAt:now-1000+ttl}
       return {bridge:realProof,owner:signed(claim,key)}
     }
     const scope=(item,principalId='qa_pre_enrolled_user')=>{

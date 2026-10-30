@@ -48,7 +48,7 @@ function createQaSignedMinecraftDelivery({bot,bundle,signedPlan,authority,
         pickupTimeoutMs,
         ...(navigation?{
           preDigApproach:point=>navigation.approach(point,{desiredDistance:3.2}),
-          pickupApproach:point=>navigation.approach(point,{desiredDistance:1.5})
+          pickupApproach:point=>navigation.approach(point,{desiredDistance:0})
         }:{})})
       return {sandboxOnly:true,ownerName,target:point,block:target.block,
         gatherOne:()=>operation.gatherOne(),cancel(){

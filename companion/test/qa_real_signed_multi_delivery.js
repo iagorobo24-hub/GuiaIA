@@ -58,12 +58,21 @@ async function runRealSignedMultiDeliveryQa({bot,session,authority,operatorKey,j
   const journalRunNext=mission.runNext.bind(mission)
   mission.runNext=action=>journalRunNext({...action,
     async gatherOne(){
+      const posBefore=bot.entity?.position?{...bot.entity.position}:null
+      const invBefore=inventoryCount(bot,action.block)
       const proof=await action.gatherOne()
+      const posAfter=bot.entity?.position?{...bot.entity.position}:null
+      const invAfter=inventoryCount(bot,action.block)
+      const blockAfter=bot.blockAt(new Vec3(action.target.x,action.target.y,action.target.z))?.name
+      const nearbyItems=Object.values(bot.entities||{})
+        .filter(e=>e.name==='item')
+        .map(e=>({pos:e.position}))
       console.error('GUIAIA_MULTI_GATHER_ACTION_QA_DIAGNOSTIC='+JSON.stringify({
         block:action.block,ok:proof?.ok,reason:proof?.reason,
         dig_attempted:proof?.dig_attempted,
         inventory_delta:proof?.inventory_delta,
-        navigation_used:proof?.navigation_used
+        navigation_used:proof?.navigation_used,
+        posBefore,posAfter,invBefore,invAfter,blockAfter,nearbyItems
       }))
       return proof
     }

@@ -36,7 +36,7 @@ def main():
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.4):
                 raise RuntimeError(f"QA port {port} already occupied")
-        except ConnectionRefusedError:
+        except (ConnectionRefusedError, TimeoutError, OSError):
             pass
 
     with tempfile.TemporaryDirectory(prefix="guiaia-fabric-bridge-qa-") as temp:
@@ -74,7 +74,7 @@ def main():
             cwd=ROOT, timeout=15, check=True,
         )
         (config / "guiaia-identity-bridge.properties").write_text(
-            "enabled=true\nqa_only=true\nworld_id=qa:real-fabric:25593\n",
+            f"enabled=true\nqa_only=true\nworld_id=qa:real-fabric:25593\nttl_ms={'120000' if args.multi_resource else '45000'}\n",
             encoding="ascii",
         )
         log = root / "real-signed-delivery.log"
@@ -130,7 +130,7 @@ def main():
             # times on a resource-limited QA server. The normal integration
             # test still verifies full navigation in both directions.
             setup_commands = ["tp OwnerQA 2 64 2"]
-            if args.crash_after_deposit or args.multi_resource:
+            if args.crash_after_deposit:
                 setup_commands.append("tp GuiaIA_QA 6 64 2")
             setup_commands.extend([
                 "give GuiaIA_QA minecraft:oak_log 1",

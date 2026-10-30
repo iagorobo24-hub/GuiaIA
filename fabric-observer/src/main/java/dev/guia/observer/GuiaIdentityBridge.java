@@ -49,7 +49,7 @@ public final class GuiaIdentityBridge implements ModInitializer {
     private GuiaLiveSessionQuery liveQuery;
     private final Map<String, Boolean> liveConnections = new ConcurrentHashMap<>();
 
-    private record Settings(String worldId, PrivateKey privateKey) {}
+    private record Settings(String worldId, PrivateKey privateKey, long ttlMs) {}
     private record Connection(String worldId, String username, String id, String challenge) {}
 
     @Override
@@ -102,7 +102,11 @@ public final class GuiaIdentityBridge implements ModInitializer {
             // Hard production guard. Cannot enable outside specifically
             // named disposable test directories even if properties copied.
             String location = GAME.toRealPath().toString();
-            if (!location.startsWith("/tmp/guiaia-fabric-bridge-qa-") ||
+            String tmp = System.getProperty("java.io.tmpdir");
+            boolean isDisposable = location.startsWith("/tmp/guiaia-fabric-bridge-qa-") ||
+                    (location.contains("guiaia-fabric-bridge-qa-") && tmp != null &&
+                            location.startsWith(Path.of(tmp).toRealPath().toString()));
+            if (!isDisposable ||
                     Files.isSymbolicLink(CONFIG_DIR) ||
                     !Files.isRegularFile(CONFIG, LinkOption.NOFOLLOW_LINKS) ||
                     !Files.isRegularFile(PRIVATE_KEY, LinkOption.NOFOLLOW_LINKS) ||
@@ -115,10 +119,17 @@ public final class GuiaIdentityBridge implements ModInitializer {
                     !"true".equals(p.getProperty("qa_only"))) return null;
             String worldId = p.getProperty("world_id", "");
             if (!worldId.matches("[A-Za-z0-9:_-]{1,64}")) return null;
+            long ttl = TTL_MS;
+            try {
+                String ttlProp = p.getProperty("ttl_ms");
+                if (ttlProp != null && ttlProp.matches("\\d+")) {
+                    ttl = Math.min(Math.max(Long.parseLong(ttlProp), 10000L), 300000L);
+                }
+            } catch (Exception ignored) {}
             // Operators generate PKCS#8 Ed25519 DER outside the JVM and
             // install it with 0600 permissions inside disposable config.
-            if (!Files.getPosixFilePermissions(PRIVATE_KEY).equals(
-                    PosixFilePermissions.fromString("rw-------"))) return null;
+            try { if (!Files.getPosixFilePermissions(PRIVATE_KEY).equals(
+                    PosixFilePermissions.fromString("rw-------"))) return null; } catch (UnsupportedOperationException ignored) {}
             byte[] encoded = Files.readAllBytes(PRIVATE_KEY);
             PrivateKey key;
             try {
@@ -127,7 +138,7 @@ public final class GuiaIdentityBridge implements ModInitializer {
             } finally {
                 java.util.Arrays.fill(encoded, (byte) 0);
             }
-            return new Settings(worldId, key);
+            return new Settings(worldId, key, ttl);
         } catch (Exception e) {
             return null;
         }
@@ -180,7 +191,7 @@ public final class GuiaIdentityBridge implements ModInitializer {
                 + "\"username\":\"" + c.username() + "\","
                 + "\"challenge\":\"" + c.challenge() + "\","
                 + "\"issuedAt\":" + now + ","
-                + "\"expiresAt\":" + (now + TTL_MS) + "}";
+                + "\"expiresAt\":" + (now + settings.ttlMs()) + "}";
         Signature signer = Signature.getInstance("Ed25519");
         signer.initSign(settings.privateKey());
         signer.update(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -208,12 +219,12 @@ public final class GuiaIdentityBridge implements ModInitializer {
         if (Files.isSymbolicLink(CONFIG_DIR) || Files.isSymbolicLink(directory))
             throw new IOException("Unsafe bridge directory");
         Files.createDirectories(directory);
-        Files.setPosixFilePermissions(directory,
-                PosixFilePermissions.fromString("rwx------"));
+        try { Files.setPosixFilePermissions(directory,
+                PosixFilePermissions.fromString("rwx------")); } catch (UnsupportedOperationException ignored) {}
     }
 
     private static void privateFile(Path file) throws IOException {
-        Files.setPosixFilePermissions(file,
-                PosixFilePermissions.fromString("rw-------"));
+        try { Files.setPosixFilePermissions(file,
+                PosixFilePermissions.fromString("rw-------")); } catch (UnsupportedOperationException ignored) {}
     }
 }

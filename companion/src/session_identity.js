@@ -68,8 +68,8 @@ function verifySessionBundle(bundle,authority){
      !challenge.test(bridge.challenge||'') || bridge.challenge!==owner.challenge ||
      !id.test(owner.principalId||'') ||
      !Object.hasOwn(authority.trustedPrincipals,owner.principalId) ||
-     !validWindow(bridge,Date.now(),60000) ||
-     !validWindow(owner,Date.now(),60000)) {
+     !validWindow(bridge,Date.now(),130000) ||
+     !validWindow(owner,Date.now(),130000)) {
     throw Error('Session identity or scope invalid')
   }
   verifySigned(bundle.bridge,authority.serverBridgePublicKeyPem)
