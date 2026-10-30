@@ -1,53 +1,78 @@
-# Architecture proposal — Companion + World Observer + Developer Agent
+# GuiaIA System Architecture
 
-## Boundaries
+## Boundaries & Component Overview
 
 ```text
-User/chat/agent client
-       |
-   Authenticated Tool Gateway (MCP optional, default localhost)
-       |       policy + budgets + audit + cancel
-       +--> Companion Planner -> typed goals -> safe skills -> Bot/Fabric
-       +--> World Observer -> server snapshots / bot perception / client vision
-       +--> Developer Planner -> diagnostics -> isolated QA / worktree -> validation
-                                  |
-                              approval-gated deployment, never automatic
+User / Operator / Chat UI / Agent
+               |
+               v
+   Authenticated Tool Gateway (MCP stdio, protocol 2025-11-25)
+               |
+               +--- [Priority 0: Emergency Halt] ---> Immediate Bot Stop (No nonce required)
+               |
+               +--- [Companion Planner / Controller]
+               |          |
+               |          v (Strict Security Gate)
+               |          * Ed25519 Session Attestation (Fabric Bridge)
+               |          * Live Presence Challenge (HTTP 25594)
+               |          * Time-bounded Single-Use Grant (10s expiry)
+               |          * Independent Witness Checkpoint
+               |          |
+               |          v
+               |    Mineflayer Bot Actions (Follow, Gather, Physical Chest Deposit)
+               |
+               +--- [World Observer]
+               |          |
+               |          v
+               |    Fabric 1.21.1 Observer Mod (GuiaWorldObserver)
+               |    * Bounded loaded chunk sampler (center_x, center_y, center_z)
+               |    * Max 16 block types, max 64 entities
+               |    * Privacy-safe: No player names, UUIDs, coordinates, or raw NBT
+               |
+               +--- [Developer Diagnostic Assistant & Sandbox]
+                          |
+                          v
+                    Isolated Disposable Fabric Sandbox (qa_diagnostic_sandbox.py)
+                    * Ephemeral temporary directories (guiaia-diagnostic-sandbox-*)
+                    * Loopback only (127.0.0.1:25595)
+                    * Guaranteed zero production mutation (production_changes: 0)
+                    * Structured Before / After Comparative Metric Reports
 ```
 
-## Data sources and limitations
+---
 
-- **Bot perspective:** Mineflayer knows nearby loaded blocks, entities, inventory, weather and game events; it does not know unobserved chunks or see the client screen.
-- **Server perspective:** dedicated Fabric mod can expose authoritative bounded snapshots of loaded worlds, player-presence and performance summaries. All Minecraft server API reads/actions must honor the game's main-thread contract.
-- **Client perspective:** optional client-side component can capture images and UI when explicitly activated. Do not describe NBT/world-state data as computer vision.
-- **Ops perspective:** read-only logs, tick timings, service health, mod/version manifest, selected redacted diagnostics.
-- **Persistence:** durable, append-only action/event ledger with idempotency keys and provenance; separate from world/player save files.
+## 1. Security Architecture & Trust Model
 
-## Tool groups (proposed contract, not implemented)
+### A. Priority 0 Emergency Stop
+When an emergency stop command is issued (`"¡Alto!"`, `"Stop"`, `"Detente"`), the controller intercepts it immediately:
+- Does **not** require cryptographic grants, session nonces, or witness consensus.
+- Immediately cancels Mineflayer pathfinding goals (`pathfinder.setGoal(null)`).
+- Stops active mining / block digging (`bot.stopDigging()`).
+- Halts following loops and marks active operations aborted.
 
-- `observe.status`, `observe.nearby`, `observe.region`, `observe.entities`, `observe.inventory`, `observe.events`, `observe.performance`: bounded/read-only, cursors and pagination.
-- `vision.capture`: requires a connected authorized Minecraft client; records capture source and timestamp.
-- `play.follow`, `play.navigate`, `play.gather`, `play.craft`, `play.build_preview`: narrow action schemas, hard time/radius/count limits.
-- `ops.diagnose`, `dev.inspect_project`, `dev.plan_change`, `dev.run_qa`, `dev.verify`: work against an isolated staging environment.
-- `world.apply_build`, `ops.restart`, `ops.restore`, `dev.promote`: privileged; disabled by default, authorization + preflight + rollback required.
-- `control.stop`, `control.pause`, `control.status`: available without model inference.
+### B. Two-Tier Zero-Trust State Execution
+Before executing any state-changing world interaction (mining blocks, traversing terrain, depositing items into containers), the companion controller verifies:
+1. **Server Session Bundle**: A valid, unexpired session signed with the server's Ed25519 private key.
+2. **Fresh Live Presence**: Direct query to the Fabric server's live HTTP session query endpoint (port 25594) verifying the player is actively connected on the server thread.
+3. **Single-Use Action Grant**: An Ed25519 grant issued specifically for the target block or region, expiring within 10 seconds.
+4. **External Witness Ledger**: Submission of a checkpoint to a durable witness to detect and prevent replay attacks.
 
-## Trust and permission rules
+---
 
-Policy uses principal identity, role, capability, world ID, target region, expiry, quota, current server state, and approval receipt. Two-tier control: the model only issues typed requests; an independent executor applies policy and verifies postconditions. No unrestricted RCON, code evaluation or shell. Emergency stop does not depend on the model. In offline-mode servers, a player name/UUID alone is not adequate identity proof.
+## 2. World Observer & Privacy Protection
 
-## Autonomous development workflow
+The Fabric 1.21.1 World Observer (`GuiaWorldObserver.java`) is designed with strict resource budgets and privacy boundaries:
+- **Sampling Interval**: Governed by `interval_ticks` (minimum 200 ticks = 10s).
+- **Spatial Scope**: Exactly 1 loaded chunk, `y` band of 17 blocks (`center_y - 8` to `center_y + 8`).
+- **Entity Cap**: Bounded at 64 non-player entities. Player identifiers and UUIDs are strictly stripped.
+- **Atomic Persistence**: Writes atomically via temporary files with cross-platform fallback for POSIX and Windows NTFS permissions.
 
-1. Create a read-only evidence bundle (version hashes, timing samples, game events, world snapshot provenance).
-2. Hypothesize root cause and produce a reproducible test in a **separate** test world.
-3. Modify only relevant code in an isolated repository checkout where necessary.
-4. Run build/tests, launch isolated Fabric + mods, test in-world, collect quantitative before/after metrics.
-5. Produce diff, evidence, risk, rollback and explicit approval request for production changes.
-6. Deploy only through a distinct operator action, after verified backup and safety gates.
+---
 
-## Lightweight resource strategy
+## 3. Developer Diagnostic Sandbox
 
-Run observation/event collection cheaply on Penguin; bound polling and entity scans, avoid chunk forcing and large image capture. Heavy model inference, build and expensive QA should use an external capable machine or on-demand service when authorized. Keep the production game thread responsive.
-
-## Compatibility
-
-First target: **Minecraft Java 1.21.1 / Fabric**, existing GuiaIA proof of concept and Cobblemon Teselia. Version adapters should make vanilla/other supported Fabric builds possible. Never assume third-party Fabric MCP mods that only advertise newer Minecraft versions can be used on 1.21.1.
+The diagnostic assistant automates investigation of server degradation and mod behavior:
+1. **Detection**: `guia_diagnose` evaluates MSPT budget (>50ms), TPS (<18), and entity accumulation/clustering.
+2. **Reproduction in Sandbox**: Spawns a completely isolated disposable Fabric instance on loopback (`127.0.0.1:25595`) with flat test worlds.
+3. **Production Guard**: `validate_sandbox_dir` prevents any path containing production markers (`Teselia`, `production`, `prod_server`) from being used.
+4. **Remediation & Comparative Diff**: Applies candidate fixes (e.g. entity culling, bounding simulation) exclusively within the sandbox and outputs structured deltas (`mspt_avg_delta`, `entities_loaded_delta`).
