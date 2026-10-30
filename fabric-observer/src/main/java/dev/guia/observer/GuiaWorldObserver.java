@@ -202,10 +202,16 @@ public final class GuiaWorldObserver implements ModInitializer {
                 || Files.isSymbolicLink(OUTPUT_DIR) || Files.isSymbolicLink(OUTPUT)) {
             throw new IOException("Output path invalid");
         }
-        Files.createDirectories(OUTPUT_DIR,
-                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+        try {
+            Files.createDirectories(OUTPUT_DIR,
+                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+        } catch (UnsupportedOperationException ignored) {
+            Files.createDirectories(OUTPUT_DIR);
+        }
         if (Files.isSymbolicLink(OUTPUT_DIR)) throw new IOException("Output directory invalid");
-        Files.setPosixFilePermissions(OUTPUT_DIR, PosixFilePermissions.fromString("rwx------"));
+        try {
+            Files.setPosixFilePermissions(OUTPUT_DIR, PosixFilePermissions.fromString("rwx------"));
+        } catch (UnsupportedOperationException ignored) {}
         Path temp = Files.createTempFile(OUTPUT_DIR, "snapshot-", ".tmp");
         try {
             try {
