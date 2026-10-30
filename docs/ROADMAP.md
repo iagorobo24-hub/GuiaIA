@@ -39,6 +39,11 @@ Updated: 2026-10-30
       externally prepared synthetic Ed25519 signers, TTY, signed grants,
       real oak gather and chest deposit, 2 durable receipts, 2 spent nonces,
       physical second-client verification; exit 0 (2026-10-30)
+- [x] Real Fabric QA: Ed25519 principal revoked after durable mission;
+      independent preflight process denies with exit 2, signed checkpoint
+      advances to sequence 2 and inventory/journals remain unchanged
+      (2026-10-30; synthetic offline identity and localhost witness)
 - [ ] Real independent-user credentials and a remote-hosted witness verified
       in an authenticated online-mode Minecraft server
+- [ ] Denial of in-flight operations on mid-mission revocation in isolated QA
 - [ ] Independent user-facing installation and controlled multiplayer beta

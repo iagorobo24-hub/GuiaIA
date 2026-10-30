@@ -141,3 +141,40 @@ online Microsoft, la identidad real del operador, una instalación
 reproducible en otro equipo, Cobblemon ni resistencia a fallos
 de producción. El mismo permiso no se reenvió en este ensayo específico;
 la protección de replay se verifica en otras pruebas automatizadas.
+
+## Revocación posterior a una misión real: comprobación negativa (30/10/2026)
+
+Se amplió el mismo ensayo de operador autónomo, sin modificar Teselia ni
+introducir una ruta de ejecución nueva. Tras acreditar una misión completa y
+verificar físicamente un roble dentro del cofre, el conductor:
+
+1. Cierra el operador y conserva una copia binaria de los dos diarios y el
+   recuento de los dos nonces consumidos.
+2. Reabre el registro de identidades persistido, aplica un **ticket Ed25519
+   de revocación** para el propietario QA y confirma `isRevoked=true`.
+3. Publica el nuevo checkpoint firmado al testigo existente y comprueba
+   por separado que la secuencia avanzó de 1 a **2**.
+4. Inicia un **segundo proceso Node**, `qa_operator.js --qa-preflight`,
+   utilizando exactamente las mismas credenciales sintéticas que antes
+   habían permitido la misión. Exige salida **2** y motivo explícito
+   `Principal revoked or registry unavailable`, sin sesión emitida.
+5. Compara los archivos de misión y depósito byte a byte, el recuento de
+   nonces consumidos y el contenido del cofre desde el otro cliente.
+
+**Resultado observado:** `GUIAIA_STANDALONE_OPERATOR_REAL_FABRIC_QA_EVIDENCE`
+con `result=pass`, `signed_revocation_durable=true`,
+`revocation_checkpoint_sequence=2`, `post_revocation_preflight_exit=2`,
+`post_revocation_preflight_denied=true`,
+`world_action_journals_unchanged_after_denial=true` y
+`chest_unchanged_after_denial=true`. El runner finalizó con **código 0**.
+La JVM de prueba se detuvo, sus directorios temporales se limpiaron y
+los puertos de QA 25593/25594 quedaron libres.
+
+El resultado demuestra el **rechazo de nuevas sesiones después de revocar**
+una identidad sintética previamente autorizada. No se ha probado en esta
+fase la revocación durante una acción ya iniciada, cuentas Minecraft online,
+ni un testigo alojado físicamente fuera del Chromebook. La prueba de
+replay de los mismos grants permanece cubierta por otras pruebas; este
+ensayo no reutilizó permisos.
+
+Log local de este ensayo: `/tmp/guiaia-revocation-real-fabric-20261030.log`.

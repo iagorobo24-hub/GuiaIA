@@ -223,6 +223,71 @@ async function main(){
         if(slot?.name==='oak_log')chestStock+=slot.count
     }finally{container.close()}
     if(chestStock!==1)throw Error('Real chest did not receive exactly one oak log')
+
+    // A separate-process negative test: after the real operation has fully
+    // finished, revoke the formerly valid principal, advance the signed
+    // witness and attempt the SAME preflight configuration again. It MUST
+    // reject the principal before reconnecting a bot or touching the world.
+    const missionBytes=fs.readFileSync(path.join(missionDir,'mission.json'))
+    const depositBytes=fs.readFileSync(path.join(depositDir,'deposit.json'))
+    const usedBefore=spent.length
+    registry=openQaPrincipalRegistry(path.join(registryRoot,'registry'),{
+      sandboxOnly:true,worldId,operatorPublicKeyPem:pub(operatorKey)})
+    const revBefore=registry.exportCheckpoint()
+    const revNow=Date.now()
+    const revokeTicket=signed({aud:'guiaia:principal-revocation:v1',
+      worldId,principalId,nonce:crypto.randomUUID(),
+      issuedAt:revNow-1000,expiresAt:revNow+30000},operatorKey)
+    const revoked=registry.applySignedChange(revokeTicket)
+    if(revoked.action!=='revoked'||registry.isRevoked(principalId)!==true)
+      throw Error('Revocation did not become durable')
+    const revAfter=registry.exportCheckpoint()
+    await advance(revBefore,revAfter)
+    if(await witnessClient.verifyLocal(revAfter)!==true)
+      throw Error('Witness did not confirm revocation')
+    registry.close();registry=null
+
+    const excluded=new Set(['missionDirectory','depositDirectory','spentDirectory',
+      'approvedPlanFile','grantsFile'])
+    const preflightConfig=Object.fromEntries(Object.entries(conf)
+      .filter(([name])=>!excluded.has(name)))
+    const preflightFile=privateFile('revoked-preflight.json',
+      JSON.stringify(preflightConfig))
+    const probe=spawn(process.execPath,[path.resolve(__dirname,'../qa_operator.js'),
+      '--qa-preflight',preflightFile],{
+      cwd:path.resolve(__dirname,'..'),
+      stdio:['ignore','pipe','pipe']})
+    let probeStdout='',probeStderr=''
+    for(const [stream,assign] of [[probe.stdout,x=>probeStdout+=x],
+      [probe.stderr,x=>probeStderr+=x]]){
+      stream.setEncoding('utf8')
+      stream.on('data',data=>{
+        assign(data)
+        if(probeStdout.length+probeStderr.length>4000)probe.kill('SIGKILL')
+      })
+    }
+    const exitCode=await new Promise((resolve,reject)=>{
+      const timeout=setTimeout(()=>{
+        probe.kill('SIGKILL');reject(Error('Revoked principal preflight hung'))
+      },12000)
+      probe.once('error',error=>{clearTimeout(timeout);reject(error)})
+      probe.once('close',code=>{clearTimeout(timeout);resolve(code)})
+    })
+    if(exitCode!==2||probeStdout.includes('qa_session_preflight_passed')||
+       !probeStderr.includes('Principal revoked or registry unavailable'))
+      throw Error('Previously enrolled principal was not denied on a new session')
+    if(!fs.readFileSync(path.join(missionDir,'mission.json')).equals(missionBytes)||
+       !fs.readFileSync(path.join(depositDir,'deposit.json')).equals(depositBytes)||
+       fs.readdirSync(path.join(qaRoot,'spent')).filter(x=>x.endsWith('.used')).length!==usedBefore)
+      throw Error('Revoked principal probe changed world-action journals')
+    const chestAgain=await owner.openContainer(chestBlock)
+    let afterRevokedStock=0
+    try{
+      for(const slot of chestAgain.slots.slice(0,chestAgain.inventoryStart))
+        if(slot?.name==='oak_log')afterRevokedStock+=slot.count
+    }finally{chestAgain.close()}
+    if(afterRevokedStock!==chestStock)
+      throw Error('Revoked preflight altered physical inventory')
     console.log('GUIAIA_STANDALONE_OPERATOR_REAL_FABRIC_QA_EVIDENCE='+JSON.stringify({
       result:'pass',production:false,real_fabric:true,offline_account_identity:false,
       standalone_tty:true,external_qa_signers:true,live_fabric_presence:true,
@@ -231,6 +296,10 @@ async function main(){
       gathered_oak_log_real:true,physical_chest_oak_log:chestStock,
       mission_receipts:missionResult.receipts.length,
       deposit_receipts:depositResult.receipts.length,
+      signed_revocation_durable:true,revocation_checkpoint_sequence:revAfter.sequence,
+      post_revocation_preflight_exit:exitCode,post_revocation_preflight_denied:true,
+      world_action_journals_unchanged_after_denial:true,
+      chest_unchanged_after_denial:afterRevokedStock===chestStock,
       replay_not_attempted:true,teselia_untouched:true
     }))
   }finally{

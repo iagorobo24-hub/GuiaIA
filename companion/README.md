@@ -253,7 +253,10 @@ No new principals, grants or worlds are created by the launcher.
 The integration passed signed TCP and HTTP checkpoint preflight as well
 as a **real disposable Fabric 1.21.1 gather/deposit from a local TTY**,
 with durable receipts, one-use grant spending, second-client chest
-verification and exit code 0. The operator and principal keys are still
-synthetic QA signers, and the witness still runs on loopback.
+verification and exit code 0. A follow-up in the same real Fabric QA world
+also revokes the enrolled principal, advances the signed checkpoint and
+confirms that a new, separate preflight process refuses the old credential
+without changing journals or chest contents. The operator and principal keys
+are still synthetic QA signers, and the witness still runs on loopback.
 See [QA_INTEGRATED_OPERATOR_BOOT_2026-10-30.md](../docs/QA_INTEGRATED_OPERATOR_BOOT_2026-10-30.md)
 and [the actual Fabric evidence](../docs/GUIAIA_STANDALONE_REAL_FABRIC_QA_2026-10-30.md).
