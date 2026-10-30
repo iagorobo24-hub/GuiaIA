@@ -107,18 +107,21 @@ firmado, presencia TCP realmente atendida por un socket, registro
 persistente abierto de nuevo y un testigo HTTP firmado real.
 Incluye negativas por desconexión, autoridad incorrecta y stdin no TTY.
 
-**No se ha comprobado aún `--qa-operate` contra una JVM Fabric real con
-credenciales humanas preinscritas y testigo realmente remoto.**
-El testigo local sigue siendo únicamente QA. Un evento firmado de un
-servidor offline tampoco demuestra identidad de cuenta oficial.
+**Validado el modo `--qa-operate` con Fabric 1.21.1 real en laboratorio
+el 30/10/2026:** comando `mision` en TTY, un roble físicamente excavado,
+un cofre con una unidad verificada por otro cliente, dos recibos durables,
+dos nonces consumidos y cierre con código 0. Ver
+[GUIAIA_STANDALONE_REAL_FABRIC_QA_2026-10-30.md](GUIAIA_STANDALONE_REAL_FABRIC_QA_2026-10-30.md).
+**Todavía NO hay credenciales humanas de Minecraft autenticadas ni un
+testigo realmente remoto:** el firmante y la identidad son sintéticos,
+el testigo está en loopback y el servidor usa offline-mode.
 Los grants caducan y la prueba de sesión dura un máximo de 20 segundos;
 si expiran, la ejecución debe denegarse y no reintentarse automáticamente.
 
-Próximos criterios: un arranque real `--qa-operate` en Fabric de
-laboratorio con credenciales fuera del proceso/host, generación externa
-controlada de grants ligados a una sesión activa, autenticación de
-cuenta oficial de jugador, testigo externo, instalación limpia en un
-segundo equipo y Cobblemon con permisos y pruebas específicos.
+Próximos criterios: alta de un propietario real fuera del laboratorio,
+prueba del testigo en otro host, autenticación oficial de la cuenta
+Minecraft, negativa de revocación en el lanzador real, instalación limpia
+en un segundo equipo y Cobblemon con permisos y pruebas específicos.
 
 ## Integración pendiente de la rama histórica
 

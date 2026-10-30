@@ -28,9 +28,10 @@ def main():
     parser.add_argument("--multi-resource", action="store_true")
     parser.add_argument("--secure-runtime", action="store_true")
     parser.add_argument("--secure-runtime-recovery", action="store_true")
+    parser.add_argument("--standalone-operator", action="store_true")
     args = parser.parse_args()
     if sum((args.crash_after_deposit, args.multi_resource, args.secure_runtime,
-            args.secure_runtime_recovery)) > 1:
+            args.secure_runtime_recovery, args.standalone_operator)) > 1:
         parser.error("Select only one isolated QA scenario")
     launcher = require_file(args.launcher, "QA Fabric server")
     fabric_api = require_file(args.fabric_api, "QA Fabric API")
@@ -51,8 +52,8 @@ def main():
             "enable-rcon=false\nenable-query=false\nmax-players=3\n"
             "spawn-protection=0\nspawn-monsters=false\n"
             "difficulty=peaceful\n"
-            f"view-distance={2 if args.multi_resource or args.secure_runtime_recovery else 4}\n"
-            f"simulation-distance={2 if args.multi_resource or args.secure_runtime_recovery else 4}\n"
+            f"view-distance={2 if args.multi_resource or args.secure_runtime_recovery or args.standalone_operator else 4}\n"
+            f"simulation-distance={2 if args.multi_resource or args.secure_runtime_recovery or args.standalone_operator else 4}\n"
             "level-type=minecraft:flat\nlevel-seed=20261029\n",
             encoding="ascii",
         )
@@ -77,7 +78,7 @@ def main():
             cwd=ROOT, timeout=15, check=True,
         )
         (config / "guiaia-identity-bridge.properties").write_text(
-            f"enabled=true\nqa_only=true\nworld_id=qa:real-fabric:25593\nttl_ms={'120000' if args.multi_resource else '45000'}\n",
+            f"enabled=true\nqa_only=true\nworld_id=qa:real-fabric:25593\nttl_ms={'120000' if args.multi_resource or args.standalone_operator else '45000'}\n",
             encoding="ascii",
         )
         log = root / "real-signed-delivery.log"
@@ -85,7 +86,8 @@ def main():
         client = None
         try:
             server, handle = start_server(root, launcher, log)
-            until(lambda: "Done (" in recent_log(log), 390,
+            until(lambda: "Done (" in recent_log(log),
+                  660 if args.standalone_operator else 390,
                   process=server, note="single-instance signed delivery QA ready")
             world_commands = [
                 "forceload add 0 0",
@@ -123,16 +125,27 @@ def main():
                 child_env["GUIAIA_QA_SECURE_RUNTIME"] = "1"
             if args.secure_runtime_recovery:
                 child_env["GUIAIA_QA_CRASH_SECURE_RUNTIME_DEPOSIT"] = "1"
+            driver = ("test/qa_standalone_operator_real_fabric.js" if args.standalone_operator
+                      else "test/qa_live_bridge_gateway.js")
+            client_args = (["node", driver, str(events), str(public),
+                            str(root / "journal"), str(root / "qa-operator-ready.flag")]
+                           if args.standalone_operator else
+                           ["node", driver, str(events), str(public), str(root / "journal")])
             client = subprocess.Popen(
-                ["node", "test/qa_live_bridge_gateway.js", str(events),
-                 str(public), str(root / "journal")],
+                client_args,
                 cwd=ROOT / "companion", env=child_env,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             )
-            until(lambda: (
-                "GuiaIA_QA joined the game" in recent_log(log) and
-                "OwnerQA joined the game" in recent_log(log)
-            ), 90 if args.secure_runtime_recovery else 30,
+            def clients_joined():
+                if args.standalone_operator and client.poll() is not None:
+                    out, err = client.communicate()
+                    raise RuntimeError("Standalone QA driver exited before bot login: " +
+                                       (out + "\n" + err)[-1800:])
+                return ("GuiaIA_QA joined the game" in recent_log(log) and
+                        "OwnerQA joined the game" in recent_log(log))
+
+            until(clients_joined,
+                  90 if args.secure_runtime_recovery or args.standalone_operator else 30,
                   process=server, note="two real QA clients joined")
             # Crash test isolates durable transfer recovery from long route
             # times on a resource-limited QA server. The normal integration
@@ -142,16 +155,35 @@ def main():
                 setup_commands.append("tp GuiaIA_QA 6 64 2")
             setup_commands.extend([
                 "give GuiaIA_QA minecraft:oak_log 1",
-                "give GuiaIA_QA minecraft:birch_log 1",
+                *([] if args.standalone_operator else ["give GuiaIA_QA minecraft:birch_log 1"]),
                 "say GUIAIA_BRIDGE_TEST_INVENTORY_READY",
             ])
             for command in setup_commands:
                 send(server, command)
             until(lambda: "GUIAIA_BRIDGE_TEST_INVENTORY_READY" in recent_log(log),
                   20, process=server, note="both QA inventories ready")
+            if args.standalone_operator:
+                (root / "qa-operator-ready.flag").write_text("inventory_prepared\\n", encoding="ascii")
             out, err = client.communicate(timeout=120)
             result = out + "\n" + err
-            if args.secure_runtime:
+            if args.standalone_operator:
+                marker = "GUIAIA_STANDALONE_OPERATOR_REAL_FABRIC_QA_EVIDENCE="
+                if client.returncode != 0 or marker not in result:
+                    raise RuntimeError("Standalone operator failed in real Fabric QA\\n" +
+                                       result[-2800:] + "\\n" + recent_log(log, 1500))
+                evidence = next(json.loads(line.split("=", 1)[1]) for line in result.splitlines()
+                                if line.startswith(marker))
+                if (evidence.get("result") != "pass" or
+                    evidence.get("real_fabric") is not True or
+                    evidence.get("physical_chest_oak_log") != 1 or
+                    evidence.get("mission_receipts") != 1 or
+                    evidence.get("deposit_receipts") != 1 or
+                    evidence.get("spent_nonces") != 2 or
+                    evidence.get("standalone_tty") is not True or
+                    evidence.get("production") is not False):
+                    raise RuntimeError("Incomplete standalone QA physical evidence")
+                print(marker + json.dumps(evidence))
+            elif args.secure_runtime:
                 marker = "GUIAIA_REAL_SECURE_RUNTIME_QA_EVIDENCE="
                 if client.returncode != 0 or marker not in result:
                     raise RuntimeError("Secure runtime failed in actual Fabric world\n" +

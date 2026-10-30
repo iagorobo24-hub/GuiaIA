@@ -221,7 +221,14 @@ async function main(){
   await run(mode,file)
 }
 if(require.main===module){
-  main().catch(error=>{
+  main().then(()=>{
+    // Completed operator cleanup is synchronous and has closed the bot,
+    // registry and journals. Some Mineflayer/plugin and PTY input handles
+    // otherwise keep a finished QA terminal process alive indefinitely.
+    // Flush the public completion output before explicit process exit.
+    process.stdin.pause()
+    process.stdout.write('',()=>process.exit(0))
+  }).catch(error=>{
     // Filesystem errors contain private paths. Never print raw source,
     // keys, signed grants, user input or filesystem identifiers.
     const message=String(error?.message||'qa_operator_denied')

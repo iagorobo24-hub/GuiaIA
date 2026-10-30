@@ -233,9 +233,9 @@ The output passes the existing `verifySessionBundle` checks.
 See [QA_PRINCIPAL_SESSION_BINDING_2026-10-30.md](../docs/QA_PRINCIPAL_SESSION_BINDING_2026-10-30.md)
 for the complete verified scope and negative tests. The local lab's
 offline-mode nickname/UUID cannot establish a Microsoft/Minecraft
-account identity. The new local-only QA operator launcher is not a
-general gameplay release. A real Fabric integration of its standalone
-operator mode is still mandatory before deployment.
+account identity. The local-only QA operator launcher has now passed
+real Fabric 1.21.1 integration, but remains a lab-only tool, not a
+general gameplay release. External identity and witness remain blocked.
 
 ## Pre-enrolled principal + standalone signed operator (QA only)
 
@@ -250,9 +250,10 @@ with previously approved journals and externally signed grants can be
 used with `--qa-operate`, which additionally requires a local TTY.
 No new principals, grants or worlds are created by the launcher.
 
-The integration is tested with a real signed TCP responder, an HTTP
-checkpoint witness, a durable registry re-open, and a simulated physical
-gather/deposit runtime; **real Fabric verification of the standalone
-operator mode is still pending**. Read the exact configuration and
-security limits in
-[QA_INTEGRATED_OPERATOR_BOOT_2026-10-30.md](../docs/QA_INTEGRATED_OPERATOR_BOOT_2026-10-30.md).
+The integration passed signed TCP and HTTP checkpoint preflight as well
+as a **real disposable Fabric 1.21.1 gather/deposit from a local TTY**,
+with durable receipts, one-use grant spending, second-client chest
+verification and exit code 0. The operator and principal keys are still
+synthetic QA signers, and the witness still runs on loopback.
+See [QA_INTEGRATED_OPERATOR_BOOT_2026-10-30.md](../docs/QA_INTEGRATED_OPERATOR_BOOT_2026-10-30.md)
+and [the actual Fabric evidence](../docs/GUIAIA_STANDALONE_REAL_FABRIC_QA_2026-10-30.md).

@@ -35,7 +35,10 @@ Updated: 2026-10-30
 - [x] Isolated QA integration: separately enrolled owner + live signed Fabric
       presence + checkpoint witness + signed journal runtime + terminal operator
       (library simulation and standalone TCP/HTTP preflight verified)
-- [ ] Real Fabric end-to-end using the new standalone --qa-operate entry point,
-      with independently provisioned keys and existing signed grants
-- [ ] Verifiable official account identity and witness on another trusted host
+- [x] Real Fabric 1.21.1 standalone --qa-operate end-to-end (QA):
+      externally prepared synthetic Ed25519 signers, TTY, signed grants,
+      real oak gather and chest deposit, 2 durable receipts, 2 spent nonces,
+      physical second-client verification; exit 0 (2026-10-30)
+- [ ] Real independent-user credentials and a remote-hosted witness verified
+      in an authenticated online-mode Minecraft server
 - [ ] Independent user-facing installation and controlled multiplayer beta
