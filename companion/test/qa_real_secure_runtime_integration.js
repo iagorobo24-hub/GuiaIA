@@ -6,7 +6,7 @@ const path=require('node:path')
 const {Vec3}=require('vec3')
 const {goals,Movements}=require('mineflayer-pathfinder')
 const {openMission}=require('../src/mission')
-const {openDepositJournal,chestCount}=require('../src/deposit')
+const {openDepositJournal,chestCount,chestPlayerCount}=require('../src/deposit')
 const {inventoryCount}=require('../src/gather')
 const {createSecureDeliveryRuntime}=require('../src/secure_delivery_runtime')
 const {createTrustedLocalOperatorConsole}=require('../src/trusted_local_operator_console')
@@ -70,6 +70,64 @@ async function runRealSecureRuntimeQa({bot,session,authority,operatorKey,journal
     if(follow.ok!==true || runtime.status().companion.mode!=='following' ||
        (await operator.execute('sigueme')).ok!==false)
       throw Error('Signed real Fabric operator follow not activated or replayed')
+    // Inject a hard process crash ONLY after Fabric has confirmed both sides
+    // of a real chest transfer. The new runtime's deposit journal must remain
+    // at its fsynced transferring barrier, with NO durable receipt.
+    if(process.env.GUIAIA_QA_CRASH_SECURE_RUNTIME_DEPOSIT==='1'){
+      const gathered=await operator.execute('siguiente')
+      if(!gathered.ok || gathered.state.phase!=='deposit' ||
+         mission.view().receipts.length!==1 || deposit.view().receipts.length!==0 ||
+         inventoryCount(bot,'oak_log')!==before+1 ||
+         bot.blockAt(new Vec3(target.x,target.y,target.z))?.name==='oak_log')
+        throw Error('Secure runtime crash setup lacked real verified gather receipt')
+      const openOriginal=bot.openContainer.bind(bot)
+      let targetOpened=false
+      bot.openContainer=async block=>{
+        const container=await openOriginal(block)
+        if(block?.position?.x===chest.x && block?.position?.y===chest.y &&
+           block?.position?.z===chest.z){
+          if(targetOpened)throw Error('Duplicate chest open before secure crash')
+          targetOpened=true
+          const beforeChest=chestCount(container,'oak_log')
+          const beforePlayer=chestPlayerCount(container,'oak_log')
+          if(beforeChest!==0 ||beforePlayer!==before+1)
+            throw Error('Secure crash needs exact starting real inventory')
+          const transferOriginal=container.deposit.bind(container)
+          container.deposit=async (...args)=>{
+            await transferOriginal(...args)
+            let confirmed=false
+            for(let i=0;i<30;i++){
+              if(chestCount(container,'oak_log')===beforeChest+1 &&
+                 chestPlayerCount(container,'oak_log')===beforePlayer-1){
+                confirmed=true;break
+              }
+              await new Promise(resolve=>setTimeout(resolve,100))
+            }
+            if(!confirmed)throw Error('Secure crash had no real two-sided transfer')
+            const spent=fs.readdirSync(path.join(journalDir,'spent'))
+              .filter(name=>name.endsWith('.used')).length
+            if(mission.view().phase!=='completed' ||
+               deposit.view().phase!=='transferring' ||
+               deposit.view().receipts.length!==0 ||
+               !deposit.view().operationId || spent!==3)
+              throw Error('Missing durable secure-runtime pre-crash barriers')
+            fs.writeSync(1,'GUIAIA_REAL_SECURE_RUNTIME_CRASH_POINT_QA_EVIDENCE='+
+              JSON.stringify({result:'pass',production:false,
+                exact_crash:'after_real_transfer_before_durable_receipt',
+                real_gather_receipts:mission.view().receipts.length,
+                real_deposit_receipts:deposit.view().receipts.length,
+                crash_phase:deposit.view().phase,
+                spent_signed_nonces:spent,
+                transfer_confirmed_by_both_inventories:true,process_exit:77})+'\n')
+            process.exit(77)
+          }
+        }
+        return container
+      }
+      const unexpected=await operator.execute('siguiente')
+      throw Error('Secure crash injection returned unexpectedly: '+
+        JSON.stringify(unexpected).slice(0,180))
+    }
     const state=await operator.execute('mision')
     const after={...bot.entity.position}
     const blockAfter=bot.blockAt(new Vec3(target.x,target.y,target.z))?.name

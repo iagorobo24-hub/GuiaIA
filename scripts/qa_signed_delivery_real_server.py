@@ -27,8 +27,10 @@ def main():
     parser.add_argument("--crash-after-deposit", action="store_true")
     parser.add_argument("--multi-resource", action="store_true")
     parser.add_argument("--secure-runtime", action="store_true")
+    parser.add_argument("--secure-runtime-recovery", action="store_true")
     args = parser.parse_args()
-    if sum((args.crash_after_deposit, args.multi_resource, args.secure_runtime)) > 1:
+    if sum((args.crash_after_deposit, args.multi_resource, args.secure_runtime,
+            args.secure_runtime_recovery)) > 1:
         parser.error("Select only one isolated QA scenario")
     launcher = require_file(args.launcher, "QA Fabric server")
     fabric_api = require_file(args.fabric_api, "QA Fabric API")
@@ -49,8 +51,8 @@ def main():
             "enable-rcon=false\nenable-query=false\nmax-players=3\n"
             "spawn-protection=0\nspawn-monsters=false\n"
             "difficulty=peaceful\n"
-            f"view-distance={2 if args.multi_resource else 4}\n"
-            f"simulation-distance={2 if args.multi_resource else 4}\n"
+            f"view-distance={2 if args.multi_resource or args.secure_runtime_recovery else 4}\n"
+            f"simulation-distance={2 if args.multi_resource or args.secure_runtime_recovery else 4}\n"
             "level-type=minecraft:flat\nlevel-seed=20261029\n",
             encoding="ascii",
         )
@@ -119,6 +121,8 @@ def main():
                 child_env["GUIAIA_QA_MULTI_RESOURCE_DELIVERY"] = "1"
             if args.secure_runtime:
                 child_env["GUIAIA_QA_SECURE_RUNTIME"] = "1"
+            if args.secure_runtime_recovery:
+                child_env["GUIAIA_QA_CRASH_SECURE_RUNTIME_DEPOSIT"] = "1"
             client = subprocess.Popen(
                 ["node", "test/qa_live_bridge_gateway.js", str(events),
                  str(public), str(root / "journal")],
@@ -128,12 +132,13 @@ def main():
             until(lambda: (
                 "GuiaIA_QA joined the game" in recent_log(log) and
                 "OwnerQA joined the game" in recent_log(log)
-            ), 30, process=server, note="two real QA clients joined")
+            ), 90 if args.secure_runtime_recovery else 30,
+                  process=server, note="two real QA clients joined")
             # Crash test isolates durable transfer recovery from long route
             # times on a resource-limited QA server. The normal integration
             # test still verifies full navigation in both directions.
             setup_commands = ["tp OwnerQA 2 64 2"]
-            if args.crash_after_deposit:
+            if args.crash_after_deposit or args.secure_runtime_recovery:
                 setup_commands.append("tp GuiaIA_QA 6 64 2")
             setup_commands.extend([
                 "give GuiaIA_QA minecraft:oak_log 1",
@@ -184,8 +189,10 @@ def main():
                         "already_completed"):
                     raise RuntimeError("Real multi-resource evidence is incomplete")
                 print(marker + json.dumps(evidence))
-            elif args.crash_after_deposit:
-                marker = "GUIAIA_REAL_SIGNED_DELIVERY_CRASH_POINT_QA_EVIDENCE="
+            elif args.crash_after_deposit or args.secure_runtime_recovery:
+                marker = ("GUIAIA_REAL_SECURE_RUNTIME_CRASH_POINT_QA_EVIDENCE="
+                          if args.secure_runtime_recovery else
+                          "GUIAIA_REAL_SIGNED_DELIVERY_CRASH_POINT_QA_EVIDENCE=")
                 if client.returncode != 77 or marker not in result:
                     raise RuntimeError(
                         "Real signed pipeline did not crash at the expected "
@@ -202,8 +209,9 @@ def main():
                     point.get("transfer_confirmed_by_both_inventories") is not True):
                     raise RuntimeError("Signed delivery crash injection lacked real evidence")
                 journal = root / "journal"
-                mission_path = journal / "delivery-mission" / "mission.json"
-                deposit_path = journal / "delivery-deposit" / "deposit.json"
+                prefix = "secure-runtime" if args.secure_runtime_recovery else "delivery"
+                mission_path = journal / (prefix + "-mission") / "mission.json"
+                deposit_path = journal / (prefix + "-deposit") / "deposit.json"
                 original_mission = mission_path.read_bytes()
                 original_deposit = deposit_path.read_bytes()
                 mission = json.loads(original_mission)
@@ -213,8 +221,8 @@ def main():
                     deposit["phase"] != "transferring" or
                     deposit["index"] != 0 or deposit["receipts"] or
                     not deposit["operationId"] or
-                    not (journal / "delivery-mission" / "mission.lock").is_file() or
-                    not (journal / "delivery-deposit" / "deposit.lock").is_file()):
+                    not (journal / (prefix + "-mission") / "mission.lock").is_file() or
+                    not (journal / (prefix + "-deposit") / "deposit.lock").is_file()):
                     raise RuntimeError("Signed pipeline did not durably record expected pre-crash progress")
                 until(lambda: "GuiaIA_QA lost connection" in recent_log(log),
                       30, process=server, note="crashed QA bot disconnected")
@@ -233,13 +241,18 @@ def main():
                       process=server, note="signed delivery crash world restarted")
                 audit_env = os.environ.copy()
                 audit_env["GUIAIA_QA_CRASH_AUDIT_ROOT"] = str(root)
+                audit_script = ("test/qa_real_secure_runtime_crash_audit.js"
+                                if args.secure_runtime_recovery else
+                                "test/qa_real_signed_delivery_crash_audit.js")
                 audit = subprocess.run(
-                    ["node", "test/qa_real_signed_delivery_crash_audit.js"],
+                    ["node", audit_script],
                     cwd=ROOT / "companion", env=audit_env,
                     capture_output=True, text=True, timeout=80, check=False,
                 )
                 audit_text = audit.stdout + "\n" + audit.stderr
-                marker2 = "GUIAIA_REAL_SIGNED_DELIVERY_CRASH_RECOVERY_QA_EVIDENCE="
+                marker2 = ("GUIAIA_REAL_SECURE_RUNTIME_RECOVERY_QA_EVIDENCE="
+                           if args.secure_runtime_recovery else
+                           "GUIAIA_REAL_SIGNED_DELIVERY_CRASH_RECOVERY_QA_EVIDENCE=")
                 if audit.returncode != 0 or marker2 not in audit_text:
                     raise RuntimeError(
                         "Real signed delivery passive recovery failed\n" +
@@ -250,7 +263,10 @@ def main():
                     raise RuntimeError("Read-only restart audit changed signed journal bytes")
                 print(marker + json.dumps(point))
                 print(audit.stdout.strip())
-                print("GUIAIA_SIGNED_DELIVERY_CRASH_E2E_QA_EVIDENCE=" +
+                e2e_marker = ("GUIAIA_SECURE_RUNTIME_CRASH_E2E_QA_EVIDENCE="
+                              if args.secure_runtime_recovery else
+                              "GUIAIA_SIGNED_DELIVERY_CRASH_E2E_QA_EVIDENCE=")
+                print(e2e_marker +
                       json.dumps({
                           "result": "pass", "production": False,
                           "client_exit": 77,

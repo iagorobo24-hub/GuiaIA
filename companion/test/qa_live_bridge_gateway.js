@@ -53,7 +53,8 @@ async function main(){
     console.error('Real server bridge-to-companion QA timeout')
     owner.end();bot.end()
   },(process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'||
-      process.env.GUIAIA_QA_SECURE_RUNTIME==='1')?110000:70000)
+      process.env.GUIAIA_QA_SECURE_RUNTIME==='1'||
+      process.env.GUIAIA_QA_CRASH_SECURE_RUNTIME_DEPOSIT==='1')?110000:70000)
   let journal,registry,registryRoot,witness,witnessRoot,following
   try {
     await Promise.all([spawn(owner),spawn(bot)])
@@ -180,9 +181,10 @@ async function main(){
       await runRealSignedMultiDeliveryQa({bot,session,authority,operatorKey,journalDir})
       return // Isolated multi-step mission; legacy revocation QA is separate.
     }
-    if(process.env.GUIAIA_QA_SECURE_RUNTIME==='1'){
+    if(process.env.GUIAIA_QA_SECURE_RUNTIME==='1' ||
+       process.env.GUIAIA_QA_CRASH_SECURE_RUNTIME_DEPOSIT==='1'){
       await runRealSecureRuntimeQa({bot,session,authority,operatorKey,journalDir})
-      return // The new secure controller and journals were tested end-to-end.
+      return // The secure controller uses the isolated Fabric QA runner.
     }
     await runRealSignedDeliveryQa({bot,session,authority,operatorKey,journalDir})
     const first=scope('oak_log')

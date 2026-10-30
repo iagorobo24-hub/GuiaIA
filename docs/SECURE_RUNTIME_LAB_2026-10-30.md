@@ -46,14 +46,14 @@ El ensayo crea mundo, credenciales y diarios temporales, usa conexión loopback,
 - Las acciones de recolección exigen un permiso firmado específico de bloque, material y conexión, además de presencia y testigo actuales.
 - Los diarios registran intención antes del efecto. Una operación incierta exige revisión manual, sin repetición automática.
 - El runtime nuevo conecta autorización, recolección y depósito reales. Los adaptadores QA históricos no se publican como API de acciones.
-- Pendiente para beta: interfaz de operador integrada y configuración de identidad, seguimiento/parada en el mismo flujo, pruebas reales de revocación y reinicio de este nuevo runtime, instalación independiente y distribución.
+- Pendiente para beta: interfaz de operador integrada y configuración de identidad, seguimiento/parada en el mismo flujo, pruebas adicionales de revocación, instalación independiente y distribución. El reinicio tras depósito incierto sí se validó en QA aislado (véase el ensayo de recuperación siguiente).
 - No habilitar esta configuración en Teselia, servidores públicos ni mundos compartidos.
 
 ## Verified status (EN)
 
 On 30 October 2026, the new signed delivery runtime passed an end-to-end test against an isolated, disposable Minecraft Fabric 1.21.1 server. It physically mined an approved oak log, picked up its drop, transferred one log into an approved chest, verified both inventory changes, saved separate gather/deposit receipts, consumed two signed Ed25519 one-use action grants and denied replay. Bot inventory was **1 → 2 → 1** and chest inventory **0 → 1**.
 
-This is an **isolated laboratory integration**, not a public or production-ready playable beta. Operator identity in this run used ephemeral laboratory keys and synthetic enrolment, not authenticated real users. A standalone interactive operator client, full clean installation, interruption/restart validations of the new runtime and deployable identity integration are still missing.
+This is an **isolated laboratory integration**, not a public or production-ready playable beta. Operator identity in this run used ephemeral laboratory keys and synthetic enrolment, not authenticated real users. A standalone authenticated operator launcher, full clean installation, and deployable identity integration are still missing. Isolated crash/restart recovery of a real uncertain deposit has now passed, but is not a production recovery guarantee.
 
 ## Consola local del operador añadida en la fase siguiente
 
@@ -73,7 +73,7 @@ comparten parada y barreras de concurrencia. `para` no espera a la
 autorización que está pendiente. Las operaciones detenidas conservan la
 decisión durable de los diarios.
 
-Evidencias de pruebas unitarias locales: **323 Node y 54 Python aprobadas**,
+Evidencias de pruebas unitarias locales: **324 Node y 54 Python aprobadas**,
 incluidos rechazo de comandos, permiso de seguimiento falso, nonce duplicado,
 carrera entre misión y parada, revocación durante la misión y recibos durables.
 Estas pruebas no acreditan por sí mismas una identidad real de usuario, la
@@ -110,7 +110,60 @@ permanecieron sin cambios. No hubo push, despliegue ni ejecución
 adicional de GitHub Actions.
 
 **Límite de evidencia:** no se ha demostrado todavía un enrolamiento real
-de jugadores o un cliente autónomo instalable. Tampoco queda demostrada
-por esta ejecución la recuperación tras caída abrupta **del nuevo runtime**
-o su instalación en Teselia. El puerto loopback con Minecraft offline-mode
+de jugadores o un cliente autónomo instalable. La prueba anterior de consola no demuestra por sí sola la recuperación.
+Esa recuperación se verificó posteriormente en el escenario aislado de
+caída y reinicio descrito a continuación; **no** demuestra instalación
+en Teselia ni recuperación de producción. El puerto loopback con Minecraft offline-mode
 y las claves efímeras no deben exponerse a redes ni servidores públicos.
+
+## Ensayo de caída y recuperación del runtime seguro
+
+Modo QA: `--secure-runtime-recovery` del lanzador
+`scripts/qa_signed_delivery_real_server.py`. Este modo **no se puede
+utilizar contra Teselia**: requiere su propio mundo Fabric desechable
+en loopback y claves Ed25519 efímeras. Se ejecuta con `PYTHONPATH=src`
+y Java 21 accesible desde `PATH`, además de los tres argumentos
+`--launcher`, `--fabric-api` y `--mod`.
+
+La prueba realiza una recolección firmada, navega al cofre y transfiere
+una unidad con Mineflayer. Tras comprobar **ambos lados** de la
+transferencia, termina intencionadamente el **proceso cliente de QA**
+con código 77, antes de escribir el recibo del depósito. El proceso
+Python exige ese código y las evidencias durables, guarda y reinicia el
+mismo mundo Fabric de laboratorio, sin reiniciar ni tocar otros servidores.
+
+La auditoría `companion/test/qa_real_secure_runtime_crash_audit.js`:
+comprueba el bloque y ambos inventarios tras el reinicio; exige los
+tres nonces firmados gastados; conserva los diarios originales y sus
+bloqueos exclusivos; y comprueba que la reapertura de una **copia
+aislada** cambie `transferring` a `needs_review` y deniegue reenvíos.
+La prueba nunca retira los bloqueos del original ni reautoriza acciones.
+La revisión de un estado incierto pertenece al operador; no debe
+automatizarse como si el diario equivaliera a prueba física del mundo.
+
+### Evidencia ejecutada — 30/10/2026
+
+El segundo intento (tras ajustar el plazo de espera de entrada de
+jugadores del laboratorio) **terminó con código 0**, con tres marcadores:
+
+- `GUIAIA_REAL_SECURE_RUNTIME_CRASH_POINT_QA_EVIDENCE`: proceso
+  cliente terminado deliberadamente con código 77, tras confirmación
+  bilateral de la transferencia y antes del recibo durable.
+- `GUIAIA_REAL_SECURE_RUNTIME_RECOVERY_QA_EVIDENCE`: mismo mundo
+  Fabric reiniciado, cofre de roble = 1, inventario del bot = 1,
+  bloque retirado, misión con 1 recibo, depósito con 0 recibos,
+  3 nonces utilizados; diarios y bloqueos originales sin cambios.
+- `GUIAIA_SECURE_RUNTIME_CRASH_E2E_QA_EVIDENCE`: conciliación
+  completa, ninguna reemisión/repetición y operación incierta
+  pendiente de revisión manual. Copia del diario reabierta en
+  `needs_review`, sin ejecutar otra transferencia.
+
+Pruebas de regresión ejecutadas en la misma sesión: **324/324 Node**,
+**54/54 Python**, validación sintáctica y `git diff --check`.
+El primer intento no alcanzó la prueba porque el segundo usuario del
+laboratorio entró al límite del plazo de 30 segundos; se corrigió
+ampliando ese plazo solo en el escenario de recuperación y reduciendo
+la distancia de simulación de ese mundo. La segunda ejecución terminó
+correctamente. Los puertos de prueba quedaron liberados y el directorio
+temporal fue eliminado. No se han ensayado todas las combinaciones
+posibles de caída, revocación ni un despliegue real.
