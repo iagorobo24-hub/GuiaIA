@@ -1,0 +1,45 @@
+name: QA Companion (Node)
+
+on:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'companion/**'
+      - '.github/workflows/companion.yml'
+  pull_request:
+    paths:
+      - 'companion/**'
+      - '.github/workflows/companion.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  companion-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: companion/package-lock.json
+      - name: Install pinned QA dependencies without scripts
+        working-directory: companion
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test bounded follow and emergency stop controller
+        working-directory: companion
+        run: npm test
+      - name: Validate sandbox-only launch guard
+        working-directory: companion
+        shell: bash
+        run: |
+          if node src/cli.js; then
+            echo "ERROR: companion accepted launch without QA-only flag"
+            exit 1
+          fi
+          if env -u GUIAIA_QA_OWNER node src/cli.js --qa-local-only; then
+            echo "ERROR: companion accepted missing QA owner"
+            exit 1
+          fi

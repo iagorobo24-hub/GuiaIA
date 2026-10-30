@@ -1,0 +1,49 @@
+name: QA offline session identity (simulated bridge)
+
+on:
+  push:
+    branches: ['feature/**']
+    paths:
+      - 'companion/src/session_identity.js'
+      - 'companion/test/session_identity.test.js'
+      - 'companion/test/qa_offline_session_server.js'
+      - 'scripts/qa_chest_server.py'
+      - '.github/workflows/session_identity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  session-identity-laboratory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: companion/package-lock.json
+      - name: Install pinned companion dependencies
+        working-directory: companion
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test independent bridge, owner proof and session-scoped grant
+        working-directory: companion
+        run: node --test test/session_identity.test.js
+      - name: Retrieve official pinned Fabric 1.21.1 launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://meta.fabricmc.net/v2/versions/loader/1.21.1/0.19.5/1.1.2/server/jar' \
+            -o "$RUNNER_TEMP/identity-lab-launcher.jar"
+          test -s "$RUNNER_TEMP/identity-lab-launcher.jar"
+      - name: Verify real inventory safety with SIMULATED server identity bridge
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/qa_chest_server.py --launcher "$RUNNER_TEMP/identity-lab-launcher.jar" --client qa_offline_session_server.js

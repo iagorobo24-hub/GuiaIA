@@ -1,0 +1,10 @@
+# Copy to server/config/guiaia-observer.properties in an isolated test server.
+# This mod is DISABLED if this exact file is missing.
+# It never auto-enables or writes to the world.
+enabled=false
+dimension=minecraft:overworld
+center_x=0
+center_y=64
+center_z=0
+interval_ticks=200
+# Sampling uses ONE currently loaded chunk, up to 16 blocks and 64 entities.

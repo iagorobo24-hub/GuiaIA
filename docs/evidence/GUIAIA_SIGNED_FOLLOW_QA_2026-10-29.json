@@ -1,0 +1,119 @@
+{
+  "base_commit": "14f9c92",
+  "branch": "feature/principal-enrollment-qa",
+  "date": "2026-10-29",
+  "fabric_markers": {
+    "GUIAIA_REAL_BRIDGE_CLIENTS_QA_EVIDENCE": {
+      "logins": 2,
+      "offline_login": true,
+      "production": false,
+      "reconnect_with_same_name": true,
+      "result": "pass",
+      "username": "OwnerQA"
+    },
+    "GUIAIA_REAL_BRIDGE_RESTART_QA_EVIDENCE": {
+      "no_offline_identity_authenticated": true,
+      "production": false,
+      "result": "pass",
+      "stale_connection_log_cleared": true
+    },
+    "GUIAIA_REAL_FABRIC_BRIDGE_QA_EVIDENCE": {
+      "all_sessions_inactive_after_disconnect": true,
+      "disconnect_count": 2,
+      "distinct_challenges": true,
+      "distinct_random_connection_ids": true,
+      "forged_payload_rejected": true,
+      "forged_signature_rejected": true,
+      "join_count": 2,
+      "player_identity_authenticated": false,
+      "private_file_modes": true,
+      "production": false,
+      "real_fabric_server_events": true,
+      "result": "pass",
+      "server_signed_ed25519": true,
+      "two_distinct_real_connections_same_offline_username": true
+    },
+    "GUIAIA_REAL_LIVE_PRESENCE_CRASH_QA_EVIDENCE": {
+      "fresh_challenge_failed_closed": true,
+      "nonce_spent": false,
+      "old_signed_join_still_active": true,
+      "production": false,
+      "real_fabric_process_killed": true,
+      "result": "pass",
+      "stale_join_replay_denied": true,
+      "world_operations": 0
+    },
+    "GUIAIA_REAL_SERVER_SESSION_GATE_QA_EVIDENCE": {
+      "chest_after": {
+        "birch_log": 0,
+        "oak_log": 1
+      },
+      "disconnected_session_denied_before_world_change": true,
+      "durable_receipts": 1,
+      "enrolled_registry_reopened_and_revocation_verified": true,
+      "exact_server_connection_id_bound": true,
+      "external_checkpoint_detected_coherent_registry_rollback": true,
+      "fresh_signed_live_query_before_deposit": true,
+      "independent_principal_possession_proof": true,
+      "joined_session_can_authorize": true,
+      "no_simulated_server_proof": true,
+      "operator_approved_enrollment_persisted": true,
+      "player_after": {
+        "birch_log": 1,
+        "oak_log": 0
+      },
+      "production": false,
+      "qa_witness_verified_at_real_deposit_and_follow": true,
+      "real_fabric_server_signs_disconnect": true,
+      "real_fabric_server_signs_join": true,
+      "real_fabric_signed_follow_revocation_stopped": true,
+      "real_friend_enrollment_implemented": false,
+      "result": "pass",
+      "signed_nonce_replay_denied": true,
+      "signed_revocation_denied_during_live_connection": true,
+      "synthetic_operator_grant": true,
+      "synthetic_pre_enrolled_user_proof": true
+    }
+  },
+  "fabric_real_test": "pass",
+  "limitations": [
+    "ephemeral operator and principal keys",
+    "witness not off-host",
+    "runnable CLI still denies follow",
+    "actual friend enrollment absent"
+  ],
+  "node_full": {
+    "cancelled": 0,
+    "fail": 0,
+    "pass": 176,
+    "skipped": 0,
+    "tests": 176
+  },
+  "production": false,
+  "proofs": [
+    "operator-specific signed follow grant",
+    "one-use durable nonce",
+    "Fabric live presence challenge and witness required",
+    "revocation stops follow",
+    "session expiry",
+    "stalled attestations stop after bounded lease",
+    "disconnect/loss of owner/health/range stop"
+  ],
+  "qa_harness_sha256": "47f5d97471020b5328bed079ade17d94846398e964936f8bac95814d167ebaf0",
+  "qa_startup_timeout_initial_attempt": "failed_at_240s_before_first_world_readiness",
+  "qa_startup_timeout_seconds": 390,
+  "result": "node_qa_pass",
+  "signed_follow_focused": {
+    "cancelled": 0,
+    "fail": 0,
+    "pass": 13,
+    "skipped": 0,
+    "tests": 13
+  },
+  "source_sha256": {
+    "companion/src/qa_authorized_follow.js": "a7d548a7d87bcede90be8ac051d17627c24a736eb6ac6a9af65aa99a591cc6eb",
+    "companion/src/session_identity.js": "56b7b3ec1d0128499411229c65d3a244e73419ee38445b82ee4841ce34564c55",
+    "companion/test/qa_authorized_follow.test.js": "80371a7fb852d532eff9e2d7e6cf390d251901566b7396941bfb2055ebe17440",
+    "companion/test/qa_live_bridge_gateway.js": "80242167c11f673f4fd570744c2f7379cd958f8a8e7409d2c47b434d158c9dec"
+  }
+}

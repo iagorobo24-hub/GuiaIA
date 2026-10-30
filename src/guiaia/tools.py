@@ -27,6 +27,13 @@ TOOL_DEFS = [
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
     {
+        "name": "guia_world_observe",
+        "title": "Read bounded Fabric world observation",
+        "description": "Read a recent, privacy-safe aggregate sample of one already-loaded chunk; no player identities or world changes.",
+        "annotations": {"readOnlyHint": True},
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
         "name": "guia_plan_gather",
         "title": "Propose a bounded companion mission",
         "description": "Parse a Spanish request into an explicit non-executing plan. No gameplay actions.",
@@ -63,6 +70,8 @@ class ToolRegistry:
             return self.observer.status()
         if name == "guia_performance":
             return self.observer.performance()
+        if name == "guia_world_observe":
+            return self.observer.world()
         if name == "guia_plan_gather":
             try:
                 return propose_gather(arguments.get("message"))
@@ -73,6 +82,7 @@ class ToolRegistry:
             mspt = metrics.get("mspt_avg")
             tps = metrics.get("tps")
             entities = metrics.get("entities_loaded")
+            sampled_entities = metrics.get("sampled_entities")
             findings = []
             if mspt is not None and mspt > 50:
                 findings.append("Average tick time is above the 50 ms budget for 20 TPS")
@@ -80,11 +90,32 @@ class ToolRegistry:
                 findings.append("Reported tick rate is below 18 TPS")
             if entities is not None and entities > 300:
                 findings.append("High loaded-entity count; investigate correlation, not proof of causality")
-            if all(val is None for val in (mspt, tps, entities)):
+            if sampled_entities is not None and sampled_entities >= 64:
+                findings.append("Sampled chunk reached maximum entity cap (64); potential entity clustering hotspot")
+            world_sample = None
+            try:
+                if hasattr(self.observer, "world"):
+                    w = self.observer.world()
+                    world_sample = {
+                        "chunks_loaded": w.get("chunks_loaded"),
+                        "entities_loaded": w.get("entities_loaded"),
+                        "entities_capped": w.get("entities_capped"),
+                    }
+                    if w.get("entities_capped"):
+                        findings.append("Fabric observer entity cap active: excessive entity concentration detected")
+            except Exception:
+                pass
+            if all(val is None for val in (mspt, tps, entities, sampled_entities)):
                 findings.append("Performance metrics unavailable: enable a trusted telemetry exporter")
             return {
                 "source": metrics.get("source"),
-                "evidence": {"mspt_avg": mspt, "tps": tps, "entities_loaded": entities},
+                "evidence": {
+                    "mspt_avg": mspt,
+                    "tps": tps,
+                    "entities_loaded": entities,
+                    "sampled_entities": sampled_entities,
+                    "world_sample": world_sample,
+                },
                 "findings": findings,
                 "recommendations": [
                     "Collect a bounded sampler profile in a separate QA world",

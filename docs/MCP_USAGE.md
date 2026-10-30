@@ -46,6 +46,10 @@ With an operator-owned Minecraft Java server, keep RCON bound to loopback. Confi
 
 RCON reports online player counts, max players and game ticks. It does not prove the health of Cobblemon, show the visible scene or expose real TPS/MSPT through this adapter.
 
+## Optional real Fabric World Observer (QA only)
+
+The fifth tool, `guia_world_observe`, reads an independently generated local JSON snapshot from the [Fabric observer prototype](../fabric-observer/README.md). It checks timestamp, schema and privacy restrictions and returns bounded aggregate counts from **one already loaded chunk**. Without a valid fresh Fabric snapshot it fails safely. This feature is not a live connection to every chunk and must not be installed on production before isolated QA.
+
 ## Unsupported
 
 - Arbitrary RCON or command execution.

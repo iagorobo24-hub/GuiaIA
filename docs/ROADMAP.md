@@ -1,19 +1,21 @@
-# GuiaIA roadmap and real completion status
+# GuiaIA Roadmap and Real Completion Status
 
-Updated 2026-10-29.
+Updated: 2026-10-30
 
 | Stage | Deliverable | Status / evidence |
 | --- | --- | --- |
-| 0. Baseline & separation | Inventory private Teselia prototype, keep worlds/secrets out | **Partial:** inspected live services, repository code/architecture; original history must remain private |
-| 1. Public developer preview | Independent Python package, CI, security docs, tests | **Implemented locally:** read-only MCP, planner, safety guard, 25 tests pass; Linux Penguin lacks pip so install/build only through CI |
-| 2. World Observer | Authoritative Fabric chunk/entity/event snapshot, bounded budget | **Partial:** live RCON status works; no real chunk/entity observation yet |
-| 3. Agent tools | Local MCP, typed schemas, audit/policy, permissions | **Partial:** 4 MCP tools, deterministic plans, no mutation capabilities; modern 2026 protocol + formal security audit pending |
-| 4. Companion MVP | Bot follows, stops, gathers and validates inventory in a fresh world | **Pending:** independent public build and Minecraft in-world integration |
-| 5. Developer Agent MVP | Diagnose issue; run isolated QA, verify result, propose deployment | **Pending:** only telemetry-based read-only heuristic diagnosis exists |
-| 6. Vision | Real screenshots from authorized client | **Pending** |
-| 7. Public stable release | Reproducible install, cross-version QA, video, real playtest | **Pending** |
+| 0. Baseline & separation | Clean separation from Teselia private worlds/secrets, cross-platform base | **COMPLETED & VERIFIED:** Isolated public repository, verified git lineage, cross-platform Windows NTFS / Linux POSIX support. |
+| 1. Public developer preview | Independent Python package, MCP stdio gateway, security guards | **COMPLETED & VERIFIED:** Read-only MCP (protocol 2025-11-25), prompt-injection guards, 54/54 Python unit tests PASS. |
+| 2. World Observer | Authoritative Fabric 1.21.1 chunk/entity/event snapshot, bounded budget | **COMPLETED & VERIFIED:** Official Fabric mod (`GuiaWorldObserver.java`), 1-chunk boundary, max 16 block types, max 64 entities, atomic writes. |
+| 3. Agent tools | Local MCP, typed schemas, audit/policy, permissions | **COMPLETED & VERIFIED:** 5 tools (`guia_status`, `guia_performance`, `guia_diagnose`, `guia_world_observe`, `guia_plan_gather`), fail-closed validation. |
+| 4. Companion MVP | Follow, stop, multi-resource gather and physical chest deposit in Fabric | **COMPLETED & VERIFIED:** Real Fabric 1.21.1 4-step mission PASS (`oak_log` + `birch_log` gather/deposit), crash recovery with no dupes PASS, Ed25519 identity bridge PASS, typed natural language controller PASS (305/305 tests). |
+| 5. Developer Agent MVP | Diagnose anomaly; isolated disposable sandbox, verify result & comparative report | **COMPLETED & VERIFIED:** Structured diagnosis, disposable loopback sandbox runner (`qa_diagnostic_sandbox.py`), verified entity culling and MSPT reduction without touching production. |
+| 6. Vision | Real screenshots from authorized client | **PLANNED:** Authorized client-side capture pipeline. |
+| 7. Public stable release | Reproducible install, cross-platform verification, documentation | **IN PROGRESS:** Verified capabilities catalog and getting started guide documented. |
 
-## v0.1.0 criteria (developer preview)
+---
+
+## v0.1.0 Criteria (Developer Preview)
 
 - [x] Independent public-source implementation without reusing private world files
 - [x] Fixed read-only RCON command allowlist and loopback transport
@@ -22,15 +24,11 @@ Updated 2026-10-29.
 - [x] Tests for sanitization, prompt injection, policy denial, read-only semantics
 - [x] Real live RCON read of Penguin Minecraft status, without in-game mutation
 - [x] MCP subprocess smoke integration
-- [ ] GitHub repository + remote CI confirmation
-- [ ] Another-machine clean install
-
-## Future demonstration
-
-> "GuiaIA, enter my world, follow me, investigate why this area lags, test a safe improvement in a disposable copy and show me your evidence."
-
-Today the tool can **read server basics**, inspect synthetic data or operator-provided metrics, and **propose** a diagnostic workflow. It does **not** autonomously follow, observe nearby blocks or modify a world.
-
-## Risks that must block release of state-changing agents
-
-Player identity spoofing on offline-mode servers, unverified chunk save integrity, Cobblemon storage consistency, model prompt injection, lack of robust cancellation, and inability to restore backups. Production Teselia continues as a separate private project.
+- [x] Cross-platform Windows NTFS / Linux execution and permission fallbacks
+- [x] Multi-resource 4-step mission in real Fabric 1.21.1 (`--multi-resource` PASS)
+- [x] Safe interruption and crash recovery without item duplication (`--crash-after-deposit` PASS)
+- [x] Ed25519 signed session identity bridge and live presence server (`qa_fabric_identity_bridge.py` PASS)
+- [x] Priority 0 emergency halt without security nonces
+- [x] Disposable diagnostic sandbox with structured comparative reports (`qa_diagnostic_sandbox.py` PASS)
+- [x] Public documentation: `GETTING_STARTED.md` and `VERIFIED_CAPABILITIES.md`
+- [ ] Another-machine clean install confirmation

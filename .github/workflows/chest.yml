@@ -1,0 +1,63 @@
+name: Chest QA (disposable Minecraft)
+
+on:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'companion/src/deposit.js'
+      - 'companion/src/recovery.js'
+      - 'companion/test/deposit.test.js'
+      - 'companion/test/recovery.test.js'
+      - 'companion/test/qa_restart_snapshot_server.js'
+      - 'companion/test/qa_chest_server.js'
+      - 'scripts/qa_chest_server.py'
+      - 'scripts/qa_chest_restart_server.py'
+      - 'scripts/qa_chest_inflight_server.py'
+      - 'companion/test/qa_inflight_deposit_crash.js'
+      - '.github/workflows/chest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chest-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: companion/package-lock.json
+      - name: Install fixed QA dependencies
+        working-directory: companion
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify chest unit contracts
+        working-directory: companion
+        run: node --test test/deposit.test.js test/recovery.test.js
+      - name: Retrieve official pinned Fabric 1.21.1 server
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://meta.fabricmc.net/v2/versions/loader/1.21.1/0.19.5/1.1.2/server/jar' \
+            -o "$RUNNER_TEMP/chest-launcher.jar"
+          test -s "$RUNNER_TEMP/chest-launcher.jar"
+      - name: Verify real two-sided chest transfer and durable reopen
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/qa_chest_server.py --launcher "$RUNNER_TEMP/chest-launcher.jar"
+      - name: Restart persisted Minecraft world and forensically verify chest and journal
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/qa_chest_restart_server.py --launcher "$RUNNER_TEMP/chest-launcher.jar"
+      - name: Crash QA bot after world transfer before journal receipt and verify no replay
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/qa_chest_inflight_server.py --launcher "$RUNNER_TEMP/chest-launcher.jar"

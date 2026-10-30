@@ -1,0 +1,29 @@
+plugins {
+    id 'fabric-loom' version '1.8.13'
+}
+group = 'dev.guia'
+version = '0.1.0-alpha.1'
+base { archivesName = 'guiaia-world-observer' }
+
+repositories {
+    maven { url = 'https://maven.fabricmc.net/' }
+    mavenCentral()
+}
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.1'
+    mappings 'net.fabricmc:yarn:1.21.1+build.3:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.19.5'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.116.17+1.21.1'
+}
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand 'version': project.version }
+}
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.encoding = 'UTF-8'
+}
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}

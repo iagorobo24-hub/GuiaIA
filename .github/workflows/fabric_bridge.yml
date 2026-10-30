@@ -1,0 +1,79 @@
+name: Fabric real connection attestation (isolated QA)
+
+on:
+  push:
+    branches: ['feature/**']
+    paths:
+      - 'fabric-observer/**'
+      - 'companion/test/qa_real_bridge_clients.js'
+      - 'companion/test/qa_verify_real_bridge.js'
+      - 'companion/test/qa_live_bridge_gateway.js'
+      - 'companion/src/principal_enrollment.js'
+      - 'companion/src/principal_checkpoint.js'
+      - 'companion/src/session_identity.js'
+      - 'companion/src/qa_authorized_follow.js'
+      - 'companion/test/qa_authorized_follow.test.js'
+      - 'companion/src/qa_checkpoint_witness.js'
+      - 'companion/src/remote_checkpoint.js'
+      - 'companion/test/remote_checkpoint.test.js'
+      - 'companion/test/qa_checkpoint_witness_process.js'
+      - 'companion/src/live_presence.js'
+      - 'companion/test/live_presence.test.js'
+      - 'companion/test/qa_live_presence_crash_client.js'
+      - 'companion/test/qa_live_presence_after_crash.js'
+      - 'companion/test/principal_enrollment.test.js'
+      - 'companion/src/fabric_bridge_reader.js'
+      - 'companion/test/fabric_bridge_reader.test.js'
+      - 'scripts/qa_fabric_identity_bridge.py'
+      - '.github/workflows/fabric_bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-server-bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: companion/package-lock.json
+      - name: Build opt-in Fabric server identity module
+        working-directory: fabric-observer
+        run: gradle --no-daemon build
+      - name: Install pinned synthetic player clients
+        working-directory: companion
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Reject stale, forged and disconnected bridge evidence
+        working-directory: companion
+        run: node --test test/fabric_bridge_reader.test.js
+      - name: Fetch pinned official Fabric and API JARs
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://meta.fabricmc.net/v2/versions/loader/1.21.1/0.19.5/1.1.2/server/jar' \
+            -o "$RUNNER_TEMP/fabric-qa-server.jar"
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/0.116.17+1.21.1/fabric-api-0.116.17+1.21.1.jar' \
+            -o "$RUNNER_TEMP/fabric-qa-api.jar"
+      - name: Verify real server-signed login, disconnect, replay and fail-closed default
+        env:
+          PYTHONPATH: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          mod="$(find fabric-observer/build/libs -maxdepth 1 -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' | head -n 1)"
+          test -n "$mod"
+          python3 scripts/qa_fabric_identity_bridge.py --launcher "$RUNNER_TEMP/fabric-qa-server.jar" --fabric-api "$RUNNER_TEMP/fabric-qa-api.jar" --mod "$mod"

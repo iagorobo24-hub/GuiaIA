@@ -1,0 +1,38 @@
+{
+  "added_modules_sha256": {
+    "companion/src/qa_bounded_navigation.js": "a6a3a9996b3ee5c0b152e8d98a4689e8a4e1cf11c377d3577a20e72d32f34a87",
+    "companion/src/qa_delivery_minecraft.js": "f6aa56608ec8b1ed3f6ea3e630339d5bf05b6652c234bd1d851b513dd415c71e",
+    "companion/src/qa_delivery_pipeline.js": "7f4905364fc4a2f583493819189d63120ccb965987d661741a2a1d212ab9c289",
+    "companion/src/qa_delivery_plan_issuer.js": "4869444e621888ff6e7f0fcd5f22c9bc8586b46479a58cdbe4323e7f80ebcc83",
+    "companion/src/qa_delivery_readout.js": "3291fd4fbc3fbb000d8c15fe653385dc5478bfdf6646b27a720c07728c0162b6",
+    "companion/src/qa_signed_delivery.js": "368fe98d296b199b1018f1d7bfb3a4ff7258183d120079d0902bfe80410f10d1",
+    "companion/test/qa_bounded_navigation.test.js": "e6e8dd847fa9aabc46a365e8c921ebcc4c6e3d09b7a42bf5afe87ca281d612da",
+    "companion/test/qa_delivery_minecraft_guard.test.js": "29201bda07c1fdd5b7580db50fa4fa9829be4a7b234897bd41d30533b80b2e1c",
+    "companion/test/qa_delivery_navigation_integration.test.js": "27b616e509981b41c4f35a0ebac2dd9efd01f10b29a78506717b64c7423881bd",
+    "companion/test/qa_delivery_pipeline.test.js": "a055ea45ed34d4f5d9ca3a2602d38e72323a861f9a3fed71548793235e087bd4",
+    "companion/test/qa_delivery_plan_issuer.test.js": "1f672f71311fce46c65aed5e81428d19cf4e985484733ad68152702eefb9785e",
+    "companion/test/qa_delivery_readout.test.js": "5d743fee90bc5e0cb40fe22def34454cb846bfd494e0584f7570d46925612d97",
+    "companion/test/qa_delivery_real_journals.test.js": "c9edaf7e560f26d0764efe6e6b79c424305a1e84de122b5a3c7e5c1912f1b1e2",
+    "companion/test/qa_signed_delivery.test.js": "aeb324e37a122e677632ff0d1d735c7116aa4868a3c22322a5e79db8f408f3db"
+  },
+  "base_commit": "cc4ce3d",
+  "branch": "feature/principal-enrollment-qa",
+  "date": "2026-10-29",
+  "full_node_suite": {
+    "cancelled": 0,
+    "fail": 0,
+    "pass": 297,
+    "skipped": 0,
+    "tests": 297
+  },
+  "independent_off_host_witness": "not_implemented",
+  "log_file": "/tmp/guiaia-v6-penguin-all-tests-20261029.log",
+  "no_push_or_deploy": true,
+  "package": "GuiaIA signed delivery pipeline v6",
+  "patch_check": "pass",
+  "patch_sha256": "d67b95a5aa651ccfc5a9905629724f2dff010b4b9318692733365f29bf5a43be",
+  "real_fabric_end_to_end_v6": "not_tested",
+  "real_friend_onboarding": "not_implemented",
+  "runtime_cli_delivery_enabled": false,
+  "syntax_checks": "pass"
+}

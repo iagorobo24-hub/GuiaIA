@@ -1,0 +1,49 @@
+name: QA signed operator chest permissions
+
+on:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'companion/src/operator_authorization.js'
+      - 'companion/test/operator_authorization.test.js'
+      - 'companion/test/qa_operator_auth_server.js'
+      - 'scripts/qa_chest_server.py'
+      - '.github/workflows/operator_auth.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-operator-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: companion/package-lock.json
+      - name: Install reproducible QA dependencies
+        working-directory: companion
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify signed authorization and no replay
+        working-directory: companion
+        run: node --test test/operator_authorization.test.js
+      - name: Retrieve pinned official Fabric 1.21.1 launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://meta.fabricmc.net/v2/versions/loader/1.21.1/0.19.5/1.1.2/server/jar' \
+            -o "$RUNNER_TEMP/qa-operator-launcher.jar"
+          test -s "$RUNNER_TEMP/qa-operator-launcher.jar"
+      - name: Reject unsigned and wrong-chest attempts in Minecraft and accept exact signed grants
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/qa_chest_server.py --launcher "$RUNNER_TEMP/qa-operator-launcher.jar" --client qa_operator_auth_server.js

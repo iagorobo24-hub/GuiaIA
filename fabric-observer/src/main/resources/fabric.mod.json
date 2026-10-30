@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "guiaia_world_observer",
+  "version": "${version}",
+  "name": "GuiaIA World Observer",
+  "description": "Opt-in, bounded, aggregate world telemetry for local AI clients",
+  "environment": "server",
+  "entrypoints": {
+    "main": ["dev.guia.observer.GuiaWorldObserver", "dev.guia.observer.GuiaIdentityBridge"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
