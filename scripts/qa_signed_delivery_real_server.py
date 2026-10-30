@@ -26,9 +26,10 @@ def main():
     parser.add_argument("--mod", required=True)
     parser.add_argument("--crash-after-deposit", action="store_true")
     parser.add_argument("--multi-resource", action="store_true")
+    parser.add_argument("--secure-runtime", action="store_true")
     args = parser.parse_args()
-    if args.crash_after_deposit and args.multi_resource:
-        parser.error("--multi-resource and --crash-after-deposit are exclusive")
+    if sum((args.crash_after_deposit, args.multi_resource, args.secure_runtime)) > 1:
+        parser.error("Select only one isolated QA scenario")
     launcher = require_file(args.launcher, "QA Fabric server")
     fabric_api = require_file(args.fabric_api, "QA Fabric API")
     observer = require_file(args.mod, "QA bridge mod")
@@ -116,6 +117,8 @@ def main():
                 child_env["GUIAIA_QA_CRASH_DURING_SIGNED_DEPOSIT"] = "1"
             if args.multi_resource:
                 child_env["GUIAIA_QA_MULTI_RESOURCE_DELIVERY"] = "1"
+            if args.secure_runtime:
+                child_env["GUIAIA_QA_SECURE_RUNTIME"] = "1"
             client = subprocess.Popen(
                 ["node", "test/qa_live_bridge_gateway.js", str(events),
                  str(public), str(root / "journal")],
@@ -143,7 +146,22 @@ def main():
                   20, process=server, note="both QA inventories ready")
             out, err = client.communicate(timeout=120)
             result = out + "\n" + err
-            if args.multi_resource:
+            if args.secure_runtime:
+                marker = "GUIAIA_REAL_SECURE_RUNTIME_QA_EVIDENCE="
+                if client.returncode != 0 or marker not in result:
+                    raise RuntimeError("Secure runtime failed in actual Fabric world\n" +
+                                       result[-3800:] + "\n" + recent_log(log, 1800))
+                evidence = next(json.loads(line.split("=", 1)[1])
+                                for line in result.splitlines() if line.startswith(marker))
+                if (evidence.get("result") != "pass" or
+                    evidence.get("mission_receipts") != 1 or
+                    evidence.get("deposit_receipts") != 1 or
+                    evidence.get("verified_chest_after") != 1 or
+                    evidence.get("replay_denied") is not True or
+                    evidence.get("spent_signed_nonces") != 2):
+                    raise RuntimeError("Secure runtime did not provide complete Minecraft receipts")
+                print(marker + json.dumps(evidence))
+            elif args.multi_resource:
                 marker = "GUIAIA_REAL_SIGNED_MULTI_DELIVERY_QA_EVIDENCE="
                 if client.returncode != 0 or marker not in result:
                     raise RuntimeError(

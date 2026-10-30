@@ -118,6 +118,16 @@ function createTestFixture(t) {
     expiresAt: Date.now() + 7000
   }, operatorKey)
 
+  const makeGatherGrant = (item = 'oak_log', target = { x: 7, y: 64, z: 2 }) => sign({
+    aud: 'guiaia:session-gather:v1',
+    worldId, botName, ownerName,
+    principalId: 'trusted_owner_1',
+    connectionId, challenge, target, item, count: 1,
+    nonce: crypto.randomUUID(),
+    issuedAt: Date.now() - 1000,
+    expiresAt: Date.now() + 10000
+  }, operatorKey)
+
   const makeDepositGrant = (item = 'oak_log', count = 1, chest = { x: 4, y: 64, z: 3 }) => sign({
     aud: 'guiaia:session-deposit:v1',
     worldId,
@@ -140,6 +150,7 @@ function createTestFixture(t) {
     authority,
     session,
     makeFollowGrant,
+    makeGatherGrant,
     makeDepositGrant,
     revoke: () => { revoked = true },
     disconnect: () => { online = false },
@@ -291,7 +302,7 @@ test('gather requires signed session and allowlisted resource, checks inventory 
   // 1. Gather without session is denied
   const res1 = await controller.dispatchInstruction('recoge 1 tronco de roble en 7 64 2')
   assert.equal(res1.ok, false)
-  assert.equal(res1.reason, 'signed_session_required')
+  assert.equal(res1.reason, 'signed_session_and_grant_required')
 
   // 2. Mock block & dig for gather
   fix.bot.blockAt = pt => {
@@ -307,6 +318,7 @@ test('gather requires signed session and allowlisted resource, checks inventory 
 
   const gatherProof = await controller.dispatchInstruction('recoge 1 tronco de roble en 7 64 2', {
     session: fix.session,
+    grant: fix.makeGatherGrant(),
     pickupTimeoutMs: 1500
   })
   assert.equal(gatherProof.ok, true)
@@ -329,16 +341,20 @@ test('deposit requires signed grant, reserves nonce, and verifies two-sided inve
 
   // 2. Mock chest block and container
   const slots = new Array(63).fill(null)
+  slots[27] = { name: 'oak_log', count: 1, type: 101 }
+  fix.bot.registry = { itemsByName: { oak_log: { id: 101 } } }
   fix.bot.blockAt = pt => {
     if (pt.x === 4 && pt.y === 64 && pt.z === 3) return { name: 'chest' }
     return { name: 'stone' }
   }
   fix.bot.openContainer = async () => ({
     inventoryStart: 27,
+    inventoryEnd: 63,
     slots,
     items: () => [{ name: 'oak_log', count: 1, type: 101 }],
     deposit: async (type, meta, count) => {
       slots[0] = { name: 'oak_log', count }
+      slots[27] = null
       fix.bot.inventory.items = () => [] // bot lost the item
     },
     close: () => {}
@@ -350,7 +366,7 @@ test('deposit requires signed grant, reserves nonce, and verifies two-sided inve
     grant
   })
   assert.equal(depositProof.ok, true)
-  assert.equal(depositProof.reason, 'deposit_verified')
+  assert.equal(depositProof.reason, 'both_inventory_deltas_verified')
   assert.equal(depositProof.transferAttempted, true)
   assert.equal(depositProof.chestAfter, 1)
   assert.equal(depositProof.playerAfter, 0)
@@ -363,4 +379,173 @@ test('deposit requires signed grant, reserves nonce, and verifies two-sided inve
     }),
     /EEXIST|already/
   )
+})
+
+
+test('gather rejects absent, forged and wrong-target action grants without mining', async t => {
+  const fix = createTestFixture(t)
+  const controller = createSecureCompanionController({
+    bot: fix.bot, authority: fix.authority, classes: fix.classes
+  })
+  let digs = 0
+  fix.bot.dig = async () => { digs += 1 }
+  const command = 'recoge 1 tronco de roble en 7 64 2'
+  const missing = await controller.dispatchInstruction(command, { session: fix.session })
+  assert.equal(missing.reason, 'signed_session_and_grant_required')
+  const grant = fix.makeGatherGrant()
+  await assert.rejects(controller.dispatchInstruction(command, {
+    session: fix.session, grant: { ...grant, signature: 'A'.repeat(86) }
+  }), /signature|evidence/)
+  await assert.rejects(controller.dispatchInstruction(command, {
+    session: fix.session, grant: fix.makeGatherGrant('oak_log', {x: 8, y: 64, z: 2})
+  }), /signed permit/)
+  assert.equal(digs, 0)
+  assert.equal(fs.existsSync(fix.authority.ledgerDirectory), false)
+})
+
+test('gather refuses revoked owner after asynchronous witness check with no nonce spent', async t => {
+  const fix = createTestFixture(t)
+  const controller = createSecureCompanionController({
+    bot: fix.bot, authority: fix.authority, classes: fix.classes
+  })
+  fix.authority.remoteCheckpointMatch = async () => { fix.revoke(); return true }
+  fix.bot.dig = async () => { throw Error('world mutation should not occur') }
+  await assert.rejects(controller.dispatchInstruction('recoge 1 roble en 7 64 2', {
+    session: fix.session, grant: fix.makeGatherGrant()
+  }), /revoked/)
+  assert.equal(fs.existsSync(fix.authority.ledgerDirectory), false)
+})
+
+test('gather rechecks independent authority immediately before dig after navigation', async t => {
+  const fix = createTestFixture(t)
+  const controller = createSecureCompanionController({
+    bot: fix.bot, authority: fix.authority, classes: fix.classes
+  })
+  let checks = 0, digs = 0
+  fix.authority.remoteCheckpointMatch = async () => ++checks === 1
+  fix.bot.blockAt = pt => pt.x === 7 && pt.y === 64 && pt.z === 2
+    ? { name: 'oak_log' } : { name: 'air' }
+  fix.bot.dig = async () => { digs += 1 }
+  const result = await controller.dispatchInstruction('recoge 1 roble en 7 64 2', {
+    session: fix.session, grant: fix.makeGatherGrant()
+  })
+  assert.equal(result.ok, false)
+  assert.equal(result.reason, 'authorization_denied')
+  assert.equal(result.dig_attempted, false)
+  assert.equal(digs, 0)
+  assert.equal(checks, 2)
+})
+
+test('emergency stop while live attestation is pending cannot dispatch dig', async t => {
+  const fix = createTestFixture(t)
+  const controller = createSecureCompanionController({
+    bot: fix.bot, authority: fix.authority, classes: fix.classes
+  })
+  let release, started
+  const waiting = new Promise(resolve => { started = resolve })
+  fix.authority.livePresence = async id => {
+    started()
+    await new Promise(resolve => { release = resolve })
+    return {connected: true, worldId: fix.authority.worldId,
+      connectionId: id, issuedAt: Date.now()}
+  }
+  let digs = 0
+  fix.bot.dig = async () => { digs++ }
+  const work = controller.dispatchInstruction('recoge 1 roble en 7 64 2', {
+    session: fix.session, grant: fix.makeGatherGrant()
+  })
+  await waiting
+  controller.emergencyStop('operator_stop')
+  release()
+  const result = await work
+  assert.equal(result.reason, 'cancelled')
+  assert.equal(digs, 0)
+  assert.equal(fs.existsSync(fix.authority.ledgerDirectory), false)
+})
+
+test('deposit refuses unsigned destination overrides and mismatched typed instructions', async t => {
+  const fix = createTestFixture(t)
+  const controller = createSecureCompanionController({
+    bot: fix.bot, authority: fix.authority, classes: fix.classes
+  })
+  let chestOpens = 0
+  fix.bot.openContainer = async () => { chestOpens++; throw Error('must not open chest') }
+  const grant = fix.makeDepositGrant()
+  const mismatch = await controller.dispatchInstruction('deposita 1 abedul en cofre en 4 64 3', {
+    session: fix.session, grant
+  })
+  assert.equal(mismatch.reason, 'deposit_instruction_scope_mismatch')
+  await assert.rejects(controller.dispatchInstruction('deposita 1 roble en cofre en 5 64 3', {
+    session: fix.session, grant
+  }), /signed deposit permit/)
+  assert.equal(chestOpens, 0)
+  assert.equal(fs.existsSync(fix.authority.ledgerDirectory), false)
+})
+
+
+test('the exact language parser rejects added instructions and incomplete coordinates', () => {
+  assert.throws(() => parseNaturalInstruction('sigueme y rompe la casa'), /unsupported/)
+  assert.throws(() => parseNaturalInstruction('recoge 1 roble en 7 64 2 y extrae oro'), /unsupported/)
+  assert.throws(() => parseNaturalInstruction('deposita 1 roble en cofre en 4 64'), /unsupported/)
+  assert.deepEqual(parseNaturalInstruction('recoge 1 roble en la posicion 7 64 2').target,
+    {x:7,y:64,z:2})
+})
+
+test('gather keeps the signed block fixed when a caller mutates the target while awaiting authority', async t => {
+  const fix = createTestFixture(t)
+  const controller = createSecureCompanionController({
+    bot: fix.bot, authority: fix.authority, classes: fix.classes
+  })
+  let release, started
+  const ready = new Promise(resolve => { started = resolve })
+  fix.authority.livePresence = async id => {
+    if (!release) {
+      started()
+      await new Promise(resolve => { release = resolve })
+    }
+    return {connected:true, worldId:fix.authority.worldId,
+      connectionId:id, issuedAt:Date.now()}
+  }
+  const target = {x:7,y:64,z:2}
+  let broke = false, digs = 0
+  fix.bot.blockAt = pt => pt.x === 7 && pt.y === 64 && pt.z === 2 && !broke
+    ? {name:'oak_log'} : {name:'air'}
+  fix.bot.canDigBlock = () => true
+  fix.bot.dig = async () => {
+    digs++
+    broke = true
+    fix.bot.inventory.items = () => [{name:'oak_log',count:2,type:101}]
+  }
+  const work = controller.gather(fix.session, fix.makeGatherGrant(), target, 'oak_log', 1500)
+  await ready
+  target.x = 8
+  release()
+  const result = await work
+  assert.equal(result.ok, true)
+  assert.equal(digs, 1)
+  assert.equal(result.block, 'oak_log')
+})
+
+test('successful signed gather consumes its nonce and cannot be replayed', async t => {
+  const fix = createTestFixture(t)
+  const controller = createSecureCompanionController({
+    bot:fix.bot,authority:fix.authority,classes:fix.classes
+  })
+  let digs = 0
+  fix.bot.blockAt = pt => pt.x === 7 && pt.y === 64 && pt.z === 2 && digs === 0
+    ? {name:'oak_log'} : {name:'air'}
+  fix.bot.canDigBlock = () => true
+  fix.bot.dig = async () => {
+    digs++
+    fix.bot.inventory.items = () => [{name:'oak_log',count:2,type:101}]
+  }
+  const grant = fix.makeGatherGrant()
+  const first = await controller.dispatchInstruction('recoge 1 roble en 7 64 2', {
+    session:fix.session,grant
+  })
+  assert.equal(first.ok,true)
+  await assert.rejects(controller.dispatchInstruction('recoge 1 roble en 7 64 2', {
+    session:fix.session,grant
+  }), /EEXIST/)
+  assert.equal(digs,1)
 })

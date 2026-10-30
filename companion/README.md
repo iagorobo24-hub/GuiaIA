@@ -2,6 +2,22 @@
 
 **Not a player-ready or secure multiplayer release.** This experiment uses upstream Mineflayer + mineflayer-pathfinder in **Minecraft Java 1.21.1**, but currently connects **only to a local, disposable offline-mode QA server on 127.0.0.1:25598**.
 
+## Secure signed delivery — verified isolated Minecraft integration (2026-10-30)
+
+The new [secure delivery laboratory runtime](../docs/SECURE_RUNTIME_LAB_2026-10-30.md)
+combines per-action signed Ed25519 permissions, live Fabric session evidence,
+independent checkpoint verification, approved bounded gathering, real chest
+transfers and durable no-replay mission/deposit journals. The updated end-to-end
+runner passed on a fresh disposable Fabric 1.21.1 server: mined oak log,
+Mineflayer inventory **1 → 2 → 1**, chest inventory **0 → 1**, one signed
+gather receipt, one signed deposit receipt, two spent nonces, and replay denied.
+All **319 Node tests** and **54 Python unittest tests** passed locally.
+
+**This is still an isolated QA runtime, not a public playable beta.** The
+regular CLI does not expose the signed delivery operation and there is no
+standalone real-operator credential bootstrap or integrated interactive UI.
+Neither offline usernames nor synthetic QA enrollment authenticate real users.
+
 ## What works in this initial prototype
 
 - Real Minecraft Java bot connection/respawn, via a separately installable Node.js process.

@@ -14,6 +14,8 @@ const GRANT_FIELDS=['aud','worldId','botName','ownerName','principalId','connect
   'challenge','chest','item','count','nonce','issuedAt','expiresAt']
 const FOLLOW_FIELDS=['aud','worldId','botName','ownerName','principalId',
   'connectionId','challenge','nonce','issuedAt','expiresAt']
+const GATHER_FIELDS=['aud','worldId','botName','ownerName','principalId',
+  'connectionId','challenge','target','item','count','nonce','issuedAt','expiresAt']
 const EXACT_SESSION = ['bridge','owner']
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const name=/^[A-Za-z0-9_]{3,16}$/
@@ -115,6 +117,21 @@ function verifySessionFollowGrant(token,session,authority){
   verifySigned(token,authority.operatorPublicKeyPem)
   return p
 }
+// One signed, single-block permit; a valid connection alone cannot authorize mining.
+function verifySessionGatherGrant(token,session,authority){
+  const p=token?.payload
+  if(!exact(p,GATHER_FIELDS) || p.aud!=='guiaia:session-gather:v1' ||
+     p.worldId!==session.worldId || p.principalId!==session.principalId ||
+     p.connectionId!==session.connectionId || p.challenge!==session.challenge ||
+     p.ownerName!==session.username || p.botName!==authority.botName ||
+     !validChest(p.target) || !Object.hasOwn(RESOURCE_ITEMS,p.item) ||
+     p.count!==1 || !uuid.test(p.nonce||'') ||
+     !validWindow(p,Date.now(),120000)){
+    throw Error('Session-scoped gather capability invalid')
+  }
+  verifySigned(token,authority.operatorPublicKeyPem)
+  return p
+}
 // Only public entrypoint offered by this security prototype.
 // Raw createQaChestDeposit is a historical sandbox test adapter, and must
 // NEVER be exported by any future production command/chat API.
@@ -203,5 +220,6 @@ function createQaStrictSessionActionGateway(bot,authority){
   return createQaSessionActionGateway(bot,Object.freeze({...authority}))
 }
 module.exports={verifySessionBundle,verifySessionDepositGrant,verifySessionFollowGrant,
+  verifySessionGatherGrant,
   createSessionAuthorizedQaDeposit,createQaSessionActionGateway,
   createQaStrictSessionActionGateway}

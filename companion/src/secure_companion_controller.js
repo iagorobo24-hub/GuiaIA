@@ -14,9 +14,9 @@ const { createController, OWNER_MAX_DISTANCE, finiteDistance } = require('./cont
 const { createQaAuthorizedFollow } = require('./qa_authorized_follow')
 const { createQaGather, RESOURCE_ITEMS, inventoryCount } = require('./gather')
 const { createQaBoundedNavigation } = require('./qa_bounded_navigation')
-const { verifySessionBundle, verifySessionFollowGrant, verifySessionDepositGrant } = require('./session_identity')
+const { verifySessionBundle, verifySessionFollowGrant, verifySessionDepositGrant, verifySessionGatherGrant,
+  createSessionAuthorizedQaDeposit } = require('./session_identity')
 const { reserveGrantOnce } = require('./operator_authorization')
-const { chestCount } = require('./deposit')
 
 const ALLOWED_RESOURCES = Object.freeze({
   oak_log: 'oak_log',
@@ -44,23 +44,23 @@ function parseNaturalInstruction(input) {
     .trim()
 
   // 1. Emergency Stop / Halt
-  if (/^(?:para|alto|detente|stop|quieto|espera)(?:[\s!.,]|$)/i.test(clean)) {
+  if (/^(?:para|alto|detente|stop|quieto|espera)[\s!.,]*$/i.test(clean)) {
     return Object.freeze({ kind: 'stop', raw: input })
   }
 
   // 2. Follow
-  if (/^(?:sigueme|ven(?:\s+conmigo)?|acompaname|follow)(?:[\s!.,]|$)/i.test(clean)) {
+  if (/^(?:sigueme|ven(?:\s+conmigo)?|acompaname|follow)[\s!.,]*$/i.test(clean)) {
     return Object.freeze({ kind: 'follow', raw: input })
   }
 
   // 3. Inventory / Status
-  if (/^(?:inventario|estado|status|inventory)(?:[\s!.,]|$)/i.test(clean)) {
+  if (/^(?:inventario|estado|status|inventory)[\s!.,]*$/i.test(clean)) {
     return Object.freeze({ kind: 'inventory', raw: input })
   }
 
   // 4. Gather
   const gatherMatch = clean.match(
-    /^(?:recoge|consigue|recolecta|mina|trae)\s+(\d{1,2})\s+(troncos?\s+de\s+roble|troncos?\s+de\s+abedul|roble|abedul|oak_log|birch_log)(?:\s+(?:en|en\s+la\s+posicion)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+))?/i
+    /^(?:recoge|consigue|recolecta|mina|trae)\s+(\d{1,2})\s+(troncos?\s+de\s+roble|troncos?\s+de\s+abedul|roble|abedul|oak_log|birch_log)(?:\s+(?:en\s+la\s+posicion|en)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+))?\s*$/i
   )
   if (gatherMatch) {
     const count = parseInt(gatherMatch[1], 10)
@@ -82,7 +82,7 @@ function parseNaturalInstruction(input) {
 
   // 5. Deposit
   const depositMatch = clean.match(
-    /^(?:deposita|guarda|pon)\s+(\d{1,2})\s+(troncos?\s+de\s+roble|troncos?\s+de\s+abedul|roble|abedul|oak_log|birch_log)(?:\s+en\s+(?:el\s+)?cofre)?(?:\s+(?:en|en\s+la\s+posicion)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+))?/i
+    /^(?:deposita|guarda|pon)\s+(\d{1,2})\s+(troncos?\s+de\s+roble|troncos?\s+de\s+abedul|roble|abedul|oak_log|birch_log)(?:\s+en\s+(?:el\s+)?cofre)?(?:\s+(?:en\s+la\s+posicion|en)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+))?\s*$/i
   )
   if (depositMatch) {
     const count = parseInt(depositMatch[1], 10)
@@ -117,8 +117,10 @@ function createSecureCompanionController({ bot, authority, classes }) {
   let activeOperation = null
   let mode = 'idle'
   let lastReason = 'initialized'
+  let generation = 0
 
   function emergencyStop(reason = 'operator_stop') {
+    generation += 1
     // 1. Cancel active follow lease if any
     if (activeFollow) {
       try { activeFollow.stop(reason) } catch {}
@@ -198,22 +200,64 @@ function createSecureCompanionController({ bot, authority, classes }) {
     return result
   }
 
-  async function gather(session, target, resource = 'oak_log', pickupTimeoutMs = 12000) {
-    emergencyStop('switch_to_gather')
+  function samePosition(a, b) {
+    return a && b && ['x', 'y', 'z'].every(k =>
+      Number.isInteger(a[k]) && a[k] === b[k])
+  }
+
+  // No world-modifying command may rely on a signed JOIN alone. Both live
+  // server presence and an independent checkpoint are mandatory in this lab.
+  async function freshActionAuthority(session, grant, verifyGrant) {
+    if (authority.requireLivePresence !== true ||
+        authority.requireRemoteCheckpoint !== true ||
+        typeof authority.livePresence !== 'function' ||
+        typeof authority.remoteCheckpointMatch !== 'function' ||
+        typeof authority.currentRegistryCheckpoint !== 'function') {
+      throw Error('Independent live authority required before world modification')
+    }
+    const initial = verifySessionBundle(session, authority)
+    verifyGrant(grant, initial, authority)
+    const live = await authority.livePresence(initial.connectionId)
+    const now = Date.now()
+    if (!live || live.connected !== true || live.worldId !== initial.worldId ||
+        live.connectionId !== initial.connectionId ||
+        !Number.isSafeInteger(live.issuedAt) ||
+        live.issuedAt > now + 1000 || now - live.issuedAt > 1500) {
+      throw Error('Fresh signed Fabric presence unavailable')
+    }
+    if (await authority.remoteCheckpointMatch(authority.currentRegistryCheckpoint()) !== true) {
+      throw Error('Independent authority checkpoint unavailable')
+    }
+    const current = verifySessionBundle(session, authority)
+    verifyGrant(grant, current, authority)
+    return current
+  }
+
+  async function gather(session, grant, target, resource = 'oak_log', pickupTimeoutMs = 12000) {
     const verifiedSession = verifySessionBundle(session, authority)
-    if (!Object.hasOwn(ALLOWED_RESOURCES, resource)) {
-      throw new Error('Unauthorized resource for gather')
+    const verifiedGrant = verifySessionGatherGrant(grant, verifiedSession, authority)
+    const approvedTarget = Object.freeze({ ...verifiedGrant.target })
+    if (!Object.hasOwn(ALLOWED_RESOURCES, resource) ||
+        !samePosition(target, approvedTarget) ||
+        resource !== verifiedGrant.item) {
+      throw Error('Gather target or resource does not match signed permit')
     }
-    if (!target || !['x', 'y', 'z'].every(k => Number.isInteger(target[k]))) {
-      throw new Error('Target block position must have integer coordinates')
+    if (typeof authority.ledgerDirectory !== 'string') {
+      throw Error('Durable one-time action ledger required')
     }
+    emergencyStop('switch_to_gather')
+    const ticket = generation
+    await freshActionAuthority(session, grant, verifySessionGatherGrant)
+    if (generation !== ticket) return { ok: false, reason: 'cancelled', dig_attempted: false }
 
     const inv = checkInventory()
-    if (!inv.ok || inv.freeSlots <= 0) {
-      return Object.freeze({ ok: false, reason: 'inventory_capacity_exceeded' })
+    if (!inv.ok || inv.freeSlots <= 0 || inv.hasUnauthorizedItems) {
+      return Object.freeze({ ok: false, reason: 'unsafe_inventory' })
     }
+    // A lost result or process crash cannot authorize a second dig.
+    reserveGrantOnce(authority.ledgerDirectory, verifiedGrant.nonce)
 
-    const point = new Vec3(target.x, target.y, target.z)
+    const point = new Vec3(approvedTarget.x, approvedTarget.y, approvedTarget.z)
     const nav = (classes?.GoalNear && classes?.Movements) ? createQaBoundedNavigation({
       bot,
       GoalNear: classes.GoalNear,
@@ -221,13 +265,17 @@ function createSecureCompanionController({ bot, authority, classes }) {
       ownerName: verifiedSession.username,
       sandboxOnly: true
     }) : null
-
     const operation = createQaGather(bot, {
       sandboxOnly: true,
       ownerName: verifiedSession.username,
       target: point,
       resource,
       pickupTimeoutMs,
+      authorizeBeforeDig: async () => {
+        if (generation !== ticket) return false
+        await freshActionAuthority(session, grant, verifySessionGatherGrant)
+        return generation === ticket
+      },
       ...(nav ? {
         preDigApproach: pt => nav.approach(pt, { desiredDistance: 3.2 }),
         pickupApproach: pt => nav.approach(pt, { desiredDistance: 0 })
@@ -236,75 +284,46 @@ function createSecureCompanionController({ bot, authority, classes }) {
 
     activeOperation = operation
     try {
-      const proof = await operation.gatherOne()
-      return proof
+      return await operation.gatherOne()
     } finally {
-      activeOperation = null
+      if (activeOperation === operation) activeOperation = null
     }
   }
 
   async function deposit(session, grant, chestTarget) {
-    emergencyStop('switch_to_deposit')
     const verifiedSession = verifySessionBundle(session, authority)
     const verifiedGrant = verifySessionDepositGrant(grant, verifiedSession, authority)
-
-    const chestCoord = chestTarget || verifiedGrant.chest
-    if (!chestCoord || !['x', 'y', 'z'].every(k => Number.isInteger(chestCoord[k]))) {
-      throw new Error('Chest coordinates required')
+    const chestCoord = Object.freeze({ ...verifiedGrant.chest })
+    if (chestTarget && !samePosition(chestTarget, chestCoord)) {
+      throw Error('Chest coordinates do not match signed deposit permit')
     }
+    emergencyStop('switch_to_deposit')
+    const ticket = generation
+    await freshActionAuthority(session, grant, verifySessionDepositGrant)
+    if (generation !== ticket) return { ok: false, reason: 'cancelled', transferAttempted: false }
 
-    // Reserve operator nonce atomically before touching chest
-    reserveGrantOnce(authority.ledgerDirectory, verifiedGrant.nonce)
-
-    // Bounded approach to chest
-    if (classes?.GoalNear && classes?.Movements) {
-      const nav = createQaBoundedNavigation({
-        bot,
-        GoalNear: classes.GoalNear,
-        Movements: classes.Movements,
-        ownerName: verifiedSession.username,
-        sandboxOnly: true
-      })
-      await nav.approach(chestCoord, { desiredDistance: 3.2 })
-    }
-
-    const playerBefore = inventoryCount(bot, verifiedGrant.item)
-    if (playerBefore === null || playerBefore < verifiedGrant.count) {
-      return Object.freeze({ ok: false, transferAttempted: false, reason: 'missing_item_to_deposit' })
-    }
-
-    const chestBlock = bot.blockAt(new Vec3(chestCoord.x, chestCoord.y, chestCoord.z))
-    if (!chestBlock || chestBlock.name !== 'chest') {
-      return Object.freeze({ ok: false, transferAttempted: false, reason: 'chest_unavailable' })
-    }
-
-    const container = await bot.openContainer(chestBlock)
-    let chestBefore, chestAfter, playerAfter
+    // Reuse the already hardened adapter: real player/chest slots, bounds,
+    // two-sided inventory deltas and atomic one-use nonce consumption.
+    const operation = createSessionAuthorizedQaDeposit(bot, session, grant, authority)
+    activeOperation = operation
     try {
-      chestBefore = chestCount(container, verifiedGrant.item)
-      const itemToDeposit = container.items().find(i => i.name === verifiedGrant.item)
-      if (!itemToDeposit) {
-        return Object.freeze({ ok: false, transferAttempted: false, reason: 'item_not_in_container_slots' })
+      if (classes?.GoalNear && classes?.Movements) {
+        const nav = createQaBoundedNavigation({
+          bot,
+          GoalNear: classes.GoalNear,
+          Movements: classes.Movements,
+          ownerName: verifiedSession.username,
+          sandboxOnly: true
+        })
+        await nav.approach(chestCoord, { desiredDistance: 3.2 })
       }
-      await container.deposit(itemToDeposit.type, null, verifiedGrant.count)
-      chestAfter = chestCount(container, verifiedGrant.item)
+      if (generation !== ticket) {
+        return { ok: false, reason: 'cancelled', transferAttempted: false }
+      }
+      return await operation.depositOne()
     } finally {
-      container.close()
+      if (activeOperation === operation) activeOperation = null
     }
-
-    playerAfter = inventoryCount(bot, verifiedGrant.item)
-    const verified = (chestAfter === chestBefore + verifiedGrant.count) &&
-                     (playerAfter === playerBefore - verifiedGrant.count)
-
-    return Object.freeze({
-      ok: verified,
-      reason: verified ? 'deposit_verified' : 'inventory_delta_mismatch',
-      transferAttempted: true,
-      item: verifiedGrant.item,
-      count: verifiedGrant.count,
-      playerBefore, playerAfter,
-      chestBefore, chestAfter
-    })
   }
 
   async function dispatchInstruction(input, context = {}) {
@@ -330,16 +349,21 @@ function createSecureCompanionController({ bot, authority, classes }) {
     }
 
     if (parsed.kind === 'gather') {
-      if (!context.session) {
-        return Object.freeze({ ok: false, reason: 'signed_session_required' })
+      if (!context.session || !context.grant) {
+        return Object.freeze({ ok: false, reason: 'signed_session_and_grant_required' })
       }
+      if (parsed.count !== 1) return { ok: false, reason: 'invalid_gather_count' }
       const target = parsed.target || context.target
-      return gather(context.session, target, parsed.resource, context.pickupTimeoutMs)
+      return gather(context.session, context.grant, target, parsed.resource, context.pickupTimeoutMs)
     }
 
     if (parsed.kind === 'deposit') {
       if (!context.session || !context.grant) {
         return Object.freeze({ ok: false, reason: 'signed_session_and_grant_required' })
+      }
+      if (parsed.count !== context.grant.payload?.count ||
+          parsed.resource !== context.grant.payload?.item) {
+        return { ok: false, reason: 'deposit_instruction_scope_mismatch' }
       }
       return deposit(context.session, context.grant, parsed.chest || context.chest)
     }
@@ -358,6 +382,11 @@ function createSecureCompanionController({ bot, authority, classes }) {
 
   return Object.freeze({
     dispatchInstruction,
+    authorizeAction: (session, grant, kind) => {
+      if (kind === 'gather') return freshActionAuthority(session, grant, verifySessionGatherGrant)
+      if (kind === 'deposit') return freshActionAuthority(session, grant, verifySessionDepositGrant)
+      throw Error('Only exact signed world actions may be authorized')
+    },
     emergencyStop,
     checkInventory,
     follow,

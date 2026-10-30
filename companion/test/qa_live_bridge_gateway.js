@@ -16,6 +16,7 @@ const {verifyBridgeLog,createPinnedQaServerBridgeAuthority}=
 const {createQaStrictSessionActionGateway}=require('../src/session_identity')
 const {createQaAuthorizedFollow}=require('../src/qa_authorized_follow')
 const {runRealSignedDeliveryQa}=require('./qa_real_signed_delivery_integration')
+const {runRealSecureRuntimeQa}=require('./qa_real_secure_runtime_integration')
 const {runRealSignedMultiDeliveryQa}=require('./qa_real_signed_multi_delivery')
 const {createQaCheckpointWitness}=require('../src/qa_checkpoint_witness')
 const {createPinnedQaRemoteCheckpointClient}=require('../src/remote_checkpoint')
@@ -51,7 +52,8 @@ async function main(){
     process.exitCode=1
     console.error('Real server bridge-to-companion QA timeout')
     owner.end();bot.end()
-  },process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'?110000:70000)
+  },(process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'||
+      process.env.GUIAIA_QA_SECURE_RUNTIME==='1')?110000:70000)
   let journal,registry,registryRoot,witness,witnessRoot,following
   try {
     await Promise.all([spawn(owner),spawn(bot)])
@@ -177,6 +179,10 @@ async function main(){
     if(process.env.GUIAIA_QA_MULTI_RESOURCE_DELIVERY==='1'){
       await runRealSignedMultiDeliveryQa({bot,session,authority,operatorKey,journalDir})
       return // Isolated multi-step mission; legacy revocation QA is separate.
+    }
+    if(process.env.GUIAIA_QA_SECURE_RUNTIME==='1'){
+      await runRealSecureRuntimeQa({bot,session,authority,operatorKey,journalDir})
+      return // The new secure controller and journals were tested end-to-end.
     }
     await runRealSignedDeliveryQa({bot,session,authority,operatorKey,journalDir})
     const first=scope('oak_log')

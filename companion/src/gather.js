@@ -22,7 +22,8 @@ function validPosition(position) {
 }
 function createQaGather(bot, options) {
   const { ownerName, target, sandboxOnly, pickupTimeoutMs = 12000,
-    pickupApproach, resource = ALLOWED_BLOCK, preDigApproach } = options || {}
+    pickupApproach, resource = ALLOWED_BLOCK, preDigApproach,
+    authorizeBeforeDig } = options || {}
   if (sandboxOnly !== true || !/^[a-zA-Z0-9_]{3,16}$/.test(ownerName || '') ||
       !validPosition(target) || !Object.hasOwn(RESOURCE_ITEMS, resource) ||
       pickupTimeoutMs < 1 || pickupTimeoutMs > 30000) {
@@ -105,6 +106,13 @@ function createQaGather(bot, options) {
       if (!current || current.name !== resource) return finish(false, 'block_not_allowlisted')
       if (typeof bot.canDigBlock === 'function' && !bot.canDigBlock(current)) {
         return finish(false, 'block_not_diggable')
+      }
+      if (cancelled) return finish(false, 'cancelled')
+      // The trusted caller revalidates the signed action and live session
+      // after any asynchronous navigation and immediately before digging.
+      if (typeof authorizeBeforeDig === 'function') {
+        try { if (await authorizeBeforeDig() !== true) return finish(false, 'authorization_denied') }
+        catch { return finish(false, 'authorization_denied') }
       }
       if (cancelled) return finish(false, 'cancelled')
       digAttempted = true
