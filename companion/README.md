@@ -269,5 +269,11 @@ transfer**. Gather already rechecks after movement. Three deterministic
 integration tests cover signed revocation during chest opening or movement and
 witness withdrawal: no extra world mutation, no fake receipt or automatic
 nonce reuse. See [QA_INFLIGHT_REVOCATION_2026-10-30.md](../docs/QA_INFLIGHT_REVOCATION_2026-10-30.md).
-These tests inject a simulated bot; live remote revocation delivery while the
-registry is locked remains unimplemented and is not claimed as verified.
+These race tests inject a simulated bot. **Separately**, the standalone QA
+operator has now passed an actual Fabric 1.21.1 integration: a second Node
+process submitted a signed revocation while its registry lock was held;
+the running operator cancelled the undelivered chest step, advanced the
+locally hosted signed witness and refused another step. The chest contained
+zero deposited logs. See
+[QA_EXTERNAL_LIVE_REVOCATION_2026-10-31.md](../docs/QA_EXTERNAL_LIVE_REVOCATION_2026-10-31.md).
+This remains offline, localhost QA—not remote-host or account authentication.

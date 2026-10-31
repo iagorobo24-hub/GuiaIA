@@ -201,6 +201,22 @@ function openQaPrincipalRegistry(directory,{
       }
       return Object.freeze(result)
     },
+    // Exact read-only projection for an independently signed checkpoint
+    // advancement. The externally signed bundle is compared against this
+    // state before any mutation, while THIS process still owns the lock.
+    previewSignedRevocation(ticket){
+      assertConsistent()
+      const p=verifyTicket(ticket,operatorKey,worldId,Date.now())
+      if(p.aud!=='guiaia:principal-revocation:v1')
+        throw Error('Only signed principal revocation may use the live inbox')
+      const sealed=JSON.parse(JSON.stringify(ticket))
+      const proposed={...state,events:[...state.events,{ticket:sealed,consent:null}]}
+      derive(proposed.events,operatorKey,worldId,Date.now(),{freshLast:true})
+      return Object.freeze({version:1,worldId,operatorFingerprint:fingerprint,
+        sequence:proposed.events.length,
+        registrySha256:crypto.createHash('sha256')
+          .update(JSON.stringify(proposed)+'\n').digest('hex')})
+    },
     applySignedChange(ticket,consent=null){
       assertConsistent()
       const p=verifyTicket(ticket,operatorKey,worldId,Date.now())

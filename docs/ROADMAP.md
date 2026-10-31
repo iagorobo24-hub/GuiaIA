@@ -43,12 +43,15 @@ Updated: 2026-10-30
       independent preflight process denies with exit 2, signed checkpoint
       advances to sequence 2 and inventory/journals remain unchanged
       (2026-10-30; synthetic offline identity and localhost witness)
-- [ ] Real independent-user credentials and a remote-hosted witness verified
-      in an authenticated online-mode Minecraft server
 - [x] In-process mid-mission revocation: Ed25519 enrolled principal revoked
       during chest opening or gather navigation; fresh signed presence and
       witness checked before transfer/dig, with no unauthorized world action
       (isolated runtime QA, 2026-10-30)
-- [ ] Independently deliver signed revocations while a running operator owns
-      the registry lock; then verify live Fabric mid-mission revocation
+- [x] Independently signed QA revocation while running operator owns exclusive
+      registry lock; real Fabric 1.21.1 interrupted after physical gather,
+      before deposit: 1 gather receipt, 0 deposit receipts, 0 chest stock,
+      1 spent nonce, durable cancellation, signed witness sequence 2,
+      denied next step and clean TTY exit (2026-10-31)
+- [ ] Remote-hosted witness, independent trust host and online-mode account
+      authentication before any controlled multiplayer beta
 - [ ] Independent user-facing installation and controlled multiplayer beta

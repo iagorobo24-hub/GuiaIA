@@ -18,6 +18,7 @@ const {openMission}=require('../src/mission')
 const {openDepositJournal}=require('../src/deposit')
 
 const [eventsFile,serverPubFile,journalRoot,readyFlag]=process.argv.slice(2)
+const liveRevocation=process.env.GUIAIA_QA_LIVE_REVOCATION==='1'
 const worldId='qa:real-fabric:25593',botName='GuiaIA_QA',username='OwnerQA'
 const principalId='qa_external_preapproved_owner'
 const key=()=>crypto.generateKeyPairSync('ed25519')
@@ -195,6 +196,100 @@ async function main(){
     },20000,'operator real TTY bootstrap')
     await waitUntil(()=>fs.existsSync(readyFlag),
       25000,'Minecraft inventory prepared by independent Python driver')
+    if(liveRevocation){
+      // Separate process signs without opening the currently locked registry.
+      // Revocation is submitted between physical gather and chest deposit.
+      cli.stdin.write('siguiente\n')
+      await waitUntil(()=>{
+        const f=path.join(missionDir,'mission.json')
+        if(!fs.existsSync(f))return false
+        const m=JSON.parse(fs.readFileSync(f,'utf8'))
+        return m.phase==='completed'&&m.receipts.length===1&&
+          operatorOutput.includes('"phase":"deposit"')
+      },45000,'real gather and operator step completed before external revocation')
+      const depositBefore=JSON.parse(fs.readFileSync(path.join(depositDir,'deposit.json')))
+      if(depositBefore.phase!=='ready'||depositBefore.receipts.length!==0)
+        throw Error('Signed deposit already dispatched before independent revocation')
+      const signerKey=privateFile('independent-operator-private.pem',privatePem(operatorKey))
+      const signerConfig=privateFile('independent-operator.json',JSON.stringify({
+        version:1,sandboxOnly:true,worldId,principalId,
+        registryDirectory:conf.registryDirectory,operatorPrivateKeyFile:signerKey}))
+      if(!fs.existsSync(path.join(registryRoot,'registry','principals.lock')))
+        throw Error('QA operator registry lock was not held')
+      const sender=spawn(process.execPath,[
+        path.resolve(__dirname,'../qa_revoke.js'),'--qa-submit',signerConfig],{
+        cwd:path.resolve(__dirname,'..'),stdio:['ignore','pipe','pipe']})
+      let senderOutput=''
+      sender.stdout.on('data',part=>{senderOutput+=part.toString('utf8')})
+      sender.stderr.on('data',part=>{senderOutput+=part.toString('utf8')})
+      const senderExit=await new Promise((resolve,reject)=>{
+        const timeout=setTimeout(()=>{sender.kill('SIGKILL')
+          reject(Error('External signer blocked on registry lock'))},9000)
+        sender.once('error',error=>{clearTimeout(timeout);reject(error)})
+        sender.once('close',code=>{clearTimeout(timeout);resolve(code)})
+      })
+      if(senderExit!==0||!senderOutput.includes('signed_qa_revocation_queued'))
+        throw Error('External QA signer failed while operator held registry lock')
+      await waitUntil(()=>operatorOutput.includes(
+        '"result":"qa_signed_live_revocation_applied"'),
+        12000,'signed live revocation receipt from running operator')
+      const cancelledBytes=fs.readFileSync(path.join(depositDir,'deposit.json'))
+      const cancelledState=JSON.parse(cancelledBytes)
+      if(cancelledState.phase!=='cancelled'||cancelledState.receipts.length!==0)
+        throw Error('Live revocation failed to cancel unattempted deposit')
+      cli.stdin.write('siguiente\n')
+      await waitUntil(()=>operatorOutput.includes('"reason":"operator_stopped"'),
+        6000,'revoked operator refuses next transfer')
+      if(!fs.readFileSync(path.join(depositDir,'deposit.json')).equals(cancelledBytes))
+        throw Error('Revoked next step modified durable cancelled deposit')
+      cli.stdin.write('salir\n')
+      await new Promise((resolve,reject)=>{
+        const timeout=setTimeout(()=>reject(Error('Revoked operator did not shut down')),10000)
+        cli.once('exit',code=>{clearTimeout(timeout);code===0
+          ?resolve():reject(Error('Revoked operator exit '+code))})
+      })
+      cli=null
+      const m=JSON.parse(fs.readFileSync(path.join(missionDir,'mission.json')))
+      const d=JSON.parse(fs.readFileSync(path.join(depositDir,'deposit.json')))
+      const spent=fs.readdirSync(path.join(qaRoot,'spent'))
+        .filter(x=>x.endsWith('.used'))
+      if(m.phase!=='completed'||m.receipts.length!==1||
+         d.phase!=='cancelled'||d.receipts.length!==0||spent.length!==1)
+        throw Error('Live revocation failed durable partial-mission checks')
+      if(owner.blockAt(new Vec3(7,64,2))?.name!=='air')
+        throw Error('Real signed first gather not performed')
+      const block=owner.blockAt(new Vec3(4,64,3))
+      if(block?.name!=='chest')throw Error('QA chest missing')
+      const window=await owner.openContainer(block)
+      let stock=0
+      try{
+        for(const slot of window.slots.slice(0,window.inventoryStart))
+          if(slot?.name==='oak_log')stock+=slot.count
+      }finally{window.close()}
+      if(stock!==0)throw Error('Revoked QA operator altered chest')
+      registry=openQaPrincipalRegistry(conf.registryDirectory,{
+        sandboxOnly:true,worldId,operatorPublicKeyPem:pub(operatorKey)})
+      const head=registry.exportCheckpoint()
+      if(head.sequence!==2||registry.isRevoked(principalId)!==true||
+         await witnessClient.verifyLocal(head)!==true)
+        throw Error('Externally signed revocation checkpoint not durable')
+      registry.close();registry=null
+      if(!fs.existsSync(path.join(registryRoot,'processed-revocation.json'))||
+         fs.existsSync(path.join(registryRoot,'pending-revocation.json')))
+        throw Error('QA revocation receipt not persisted')
+      console.log('GUIAIA_STANDALONE_OPERATOR_LIVE_REVOCATION_QA_EVIDENCE='+JSON.stringify({
+        result:'pass',production:false,real_fabric:true,offline_account_identity:false,
+        operator_registry_lock_held_during_external_submit:true,
+        independent_signer_process_exit:senderExit,live_inbox_processed:true,
+        signed_checkpoint_sequence:head.sequence,
+        real_gather_receipts:m.receipts.length,real_deposit_receipts:d.receipts.length,
+        physical_mined_block:true,physical_chest_oak_log:stock,
+        spent_nonces:spent.length,deposit_durably_cancelled:true,
+        revoked_next_step_denied:true,operator_tty_exit:0,
+        teselia_untouched:true
+      }))
+      return
+    }
     cli.stdin.write('mision\n')
     await waitUntil(()=>{
       if(cli.exitCode!==null)throw Error('Standalone QA operator stopped mid-mission: '+operatorOutput.slice(-1000))

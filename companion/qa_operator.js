@@ -10,6 +10,8 @@ const path=require('node:path')
 const os=require('node:os')
 const readline=require('node:readline')
 const {openQaPrincipalRegistry}=require('./src/principal_enrollment')
+const {createQaLiveRevocationReceiver,
+  assertQaNoPendingRevocation}=require('./src/qa_live_revocation')
 const {createPinnedQaServerBridgeAuthority}=require('./src/fabric_bridge_reader')
 const {createPinnedQaLivePresenceAuthority}=require('./src/live_presence')
 const {createPinnedQaRemoteCheckpointClient}=require('./src/remote_checkpoint')
@@ -133,7 +135,7 @@ async function run(mode,file){
     operatorPublicKeyPem,witnessPublicKeyPem})
   const registry=openQaPrincipalRegistry(conf.registryDirectory,{
     worldId:conf.worldId,sandboxOnly:true,operatorPublicKeyPem})
-  let bot=null,mission=null,deposit=null,runtime=null,tty=null
+  let bot=null,mission=null,deposit=null,runtime=null,tty=null,revocation=null
   let closed=false
   const clean=()=>{
     if(closed)return
@@ -146,6 +148,7 @@ async function run(mode,file){
     registry.close()
   }
   try{
+    assertQaNoPendingRevocation(conf.registryDirectory)
     const identity={
       sandboxOnly:true,identityMode:'trusted_server_bridge_lab',
       worldId:conf.worldId,botName:conf.botName,
@@ -193,6 +196,14 @@ async function run(mode,file){
       ...(grants.followGrant===null?{}:{followGrant:grants.followGrant})
     })
     runtime=sessionBound.runtime
+    revocation=createQaLiveRevocationReceiver({
+      registryDirectory:conf.registryDirectory,registry,witness,
+      operatorPublicKeyPem,worldId:conf.worldId,
+      stopRuntime:()=>runtime.stop(),
+      onProcessed:head=>console.log(JSON.stringify({
+        result:'qa_signed_live_revocation_applied',sequence:head.sequence}))
+    })
+    revocation.start()
     console.log(JSON.stringify({result:'qa_operator_ready',
       ...sessionBound.scope,
       requiresSignedGrants:true,operatorInput:'local_tty_only'}))
@@ -211,7 +222,10 @@ async function run(mode,file){
       process.once('SIGINT',()=>{tty.close()})
       process.once('SIGTERM',()=>{tty.close()})
     })
-  }finally{clean()}
+  }finally{
+    if(revocation)await revocation.close()
+    clean()
+  }
 }
 async function main(){
   const [mode,file]=process.argv.slice(2)
