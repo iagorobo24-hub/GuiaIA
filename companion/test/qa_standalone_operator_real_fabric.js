@@ -19,6 +19,7 @@ const {openDepositJournal}=require('../src/deposit')
 
 const [eventsFile,serverPubFile,journalRoot,readyFlag]=process.argv.slice(2)
 const liveRevocation=process.env.GUIAIA_QA_LIVE_REVOCATION==='1'
+const separateWitness=process.env.GUIAIA_QA_STANDALONE_WITNESS==='1'
 const worldId='qa:real-fabric:25593',botName='GuiaIA_QA',username='OwnerQA'
 const principalId='qa_external_preapproved_owner'
 const key=()=>crypto.generateKeyPairSync('ed25519')
@@ -53,7 +54,10 @@ async function main(){
   const live=createPinnedQaLivePresenceAuthority({
     port:25594,worldId,serverBridgePublicKeyPem:serverPub})
   const ownerKey=key(),operatorKey=key(),witnessKey=key()
-  const witness=createQaCheckpointWitness({
+  const witnessChildConfig=separateWitness?createChildWitness(
+    witnessRoot,worldId,operatorKey,witnessKey):null
+  const witnessConfigRoot=witnessChildConfig?.configRoot||null
+  const witness=witnessChildConfig?.witness||createQaCheckpointWitness({
     directory:witnessRoot,worldId,
     operatorPublicKeyPem:pub(operatorKey),witnessPrivateKey:witnessKey.privateKey})
   let owner=null,cli=null,registry=null,mission=null,deposit=null
@@ -280,6 +284,7 @@ async function main(){
       console.log('GUIAIA_STANDALONE_OPERATOR_LIVE_REVOCATION_QA_EVIDENCE='+JSON.stringify({
         result:'pass',production:false,real_fabric:true,offline_account_identity:false,
         operator_registry_lock_held_during_external_submit:true,
+        standalone_witness_process:separateWitness,
         independent_signer_process_exit:senderExit,live_inbox_processed:true,
         signed_checkpoint_sequence:head.sequence,
         real_gather_receipts:m.receipts.length,real_deposit_receipts:d.receipts.length,
@@ -387,6 +392,7 @@ async function main(){
       result:'pass',production:false,real_fabric:true,offline_account_identity:false,
       standalone_tty:true,external_qa_signers:true,live_fabric_presence:true,
       signed_remote_witness_on_loopback:true,
+      standalone_witness_process:separateWitness,
       independently_signed_grants:2,spent_nonces:spent.length,
       gathered_oak_log_real:true,physical_chest_oak_log:chestStock,
       mission_receipts:missionResult.receipts.length,
@@ -408,7 +414,7 @@ async function main(){
     try{deposit?.close()}catch{}
     try{registry?.close()}catch{}
     try{await witness.close()}catch{}
-    for(const file of [qaRoot,registryRoot,witnessRoot]){
+    for(const file of [qaRoot,registryRoot,witnessRoot,witnessConfigRoot].filter(Boolean)){
       if(fs.existsSync(file))fs.rmSync(file,{recursive:true,force:true})
     }
   }
@@ -417,3 +423,53 @@ main().catch(error=>{
   console.error('Standalone real Fabric QA failed: '+String(error?.message||'unknown').slice(0,1000))
   process.exitCode=1
 })
+
+function createChildWitness(witnessRoot,worldId,operatorKey,witnessKey){
+  const configRoot=fs.mkdtempSync(path.join(os.tmpdir(),'guiaia-witness-config-qa-'))
+  function save(name,data){
+    const file=path.join(configRoot,name)
+    fs.writeFileSync(file,data,{mode:0o600,flag:'wx'})
+    return file
+  }
+  const operatorPublicKeyFile=save('operator-public.pem',pub(operatorKey))
+  const witnessPrivateKeyFile=save('witness-private.pem',privatePem(witnessKey))
+  const configFile=save('witness-config.json',JSON.stringify({version:1,
+    sandboxOnly:true,worldId,directory:witnessRoot,
+    operatorPublicKeyFile,witnessPrivateKeyFile}))
+  let child=null
+  const witness=Object.freeze({
+    async start(){
+      child=spawn(process.execPath,[
+        path.resolve(__dirname,'../qa_witness.js'),'--qa-serve',configFile],{
+        cwd:path.resolve(__dirname,'..'),stdio:['ignore','pipe','pipe']})
+      let stdout='',stderr='',failure=null
+      child.stdout.on('data',part=>{stdout+=part.toString('utf8')})
+      child.stderr.on('data',part=>{stderr+=part.toString('utf8')})
+      child.on('error',error=>{failure=error})
+      await waitUntil(()=>{
+        if(failure||child.exitCode!==null)
+          throw Error('Independent QA witness failed during startup')
+        if(stdout.length>2000||stderr.length>1500)
+          throw Error('Unbounded independent witness diagnostic')
+        return stdout.includes('"result":"qa_witness_ready"')
+      },9000,'standalone QA checkpoint witness')
+      const line=stdout.split('\n').find(s=>s.includes('"result":"qa_witness_ready"'))
+      const ready=JSON.parse(line)
+      if(ready.worldId!==worldId||ready.sandboxOnly!==true||
+         !/^http:\/\/127\.0\.0\.1:\d+\/$/.test(ready.url))
+        throw Error('Unexpected independent witness authority')
+      return ready.url
+    },
+    async close(){
+      if(!child||child.exitCode!==null||child.signalCode!==null)return
+      child.kill('SIGTERM')
+      await new Promise((resolve,reject)=>{
+        const timeout=setTimeout(()=>{child.kill('SIGKILL');
+          reject(Error('Independent QA witness shutdown timeout'))},4500)
+        child.once('close',code=>{clearTimeout(timeout)
+          code===0?resolve():reject(Error('Independent QA witness failed to stop'))})
+      })
+    }
+  })
+  return {witness,configRoot}
+}

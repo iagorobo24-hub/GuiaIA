@@ -52,6 +52,11 @@ Updated: 2026-10-30
       before deposit: 1 gather receipt, 0 deposit receipts, 0 chest stock,
       1 spent nonce, durable cancellation, signed witness sequence 2,
       denied next step and clean TTY exit (2026-10-31)
-- [ ] Remote-hosted witness, independent trust host and online-mode account
-      authentication before any controlled multiplayer beta
+- [x] Standalone Ed25519 witness CLI in a separate local process: signed CAS,
+      independent private credential files, restart persistence, deny on
+      invalid/stale state, and full Fabric 1.21.1 standalone operator QA PASS
+      with physical deposit and subsequent revocation (2026-10-31)
+- [ ] Witness on a physically different host, securely tunneled transport and
+      independent operational trust root; not yet validated
+- [ ] Official online-mode Minecraft account identity and consent before beta
 - [ ] Independent user-facing installation and controlled multiplayer beta

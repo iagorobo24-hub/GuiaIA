@@ -209,6 +209,8 @@ def main():
                     evidence.get("spent_nonces") != 2 or
                     evidence.get("standalone_tty") is not True or
                     evidence.get("signed_revocation_durable") is not True or
+                    (os.environ.get("GUIAIA_QA_STANDALONE_WITNESS") == "1" and
+                     evidence.get("standalone_witness_process") is not True) or
                     evidence.get("revocation_checkpoint_sequence") != 2 or
                     evidence.get("post_revocation_preflight_exit") != 2 or
                     evidence.get("post_revocation_preflight_denied") is not True or

@@ -277,3 +277,18 @@ locally hosted signed witness and refused another step. The chest contained
 zero deposited logs. See
 [QA_EXTERNAL_LIVE_REVOCATION_2026-10-31.md](../docs/QA_EXTERNAL_LIVE_REVOCATION_2026-10-31.md).
 This remains offline, localhost QA—not remote-host or account authentication.
+
+### Standalone checkpoint witness (QA only)
+
+`node companion/qa_witness.js --qa-serve /tmp/guiaia-witness-config-qa-EXAMPLE/config.json`
+starts an isolated **separate Node process** holding its own Ed25519
+witness private key. The JSON config requires version `1`, `sandboxOnly: true`,
+`worldId`, disposable `directory`, `operatorPublicKeyFile` and
+`witnessPrivateKeyFile`. It must be private (0700 parent, 0600 files).
+The service binds only `127.0.0.1` and accepts only signed checkpoint CAS;
+it does **not** have the operator or principal private keys and must not
+be exposed directly over a network. The launcher's actual real-Fabric QA
+mode was retested using `GUIAIA_QA_STANDALONE_WITNESS=1`, with physical
+chest verification, durable receipts, signed revocation and code 0.
+Read [the evidence and limitations](../docs/QA_STANDALONE_WITNESS_2026-10-31.md).
+A different *process* is verified; a different *computer* is not yet verified.
