@@ -320,3 +320,16 @@ The witness-in-another-host test is **not complete**: TCP/443 from the
 Chromebook to Durán's tailnet HTTPS listener timed out despite Tailscale
 ping and file transfer success. See
 [the cross-host acceptance report](../docs/QA_CROSS_HOST_DURAN_WINDOWS_WSL_2026-11-02.md).
+
+### Physically separate QA witness: signed cross-host checkpoint verified
+
+On 2026-11-02, an Ed25519 signing witness ran in Durán Ubuntu WSL2 while
+the operator's separate signing key stayed on the Chromebook. With Tailscale
+Serve **HTTPS tailnet-only** and `tailscale nc` (Chromebook user-space
+networking), the standard pinned checkpoint client verified signed CAS
+bootstrap (sequence 0), update (sequence 1), forged/replayed ticket denial,
+wrong witness key denial, rollback denial, outage fail-closed and recovery.
+The HTTPS certificate was validated without bypass and no public Funnel was
+enabled. **This is synthetic QA, not a live multiplayer Minecraft session**.
+See [the cross-host signed witness report](../docs/QA_SIGNED_WITNESS_PHYSICAL_HOST_2026-11-02.md).
+The one-off tunnel and signing secrets must not be deployed as a product.

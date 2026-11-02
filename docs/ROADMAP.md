@@ -68,10 +68,13 @@ Updated: 2026-10-30
 - [x] Offline-only SSH transport preflight: pinned host-key fingerprint,
       Ed25519 identity, exact host/port and strict local-forward arguments;
       5 negative/positive QA tests without network use (2026-11-02)
-- [ ] Witness on a physically different host, securely tunneled transport and
-      independent operational trust root; isolated witness private signing key
-      provisioned in Durán WSL2, public key checked on Chromebook, Tailscale
-      HTTPS local to Durán verified, but Chromebook TCP/443 timed out; no
-      cross-host signed checkpoint accepted (2026-11-02)
+- [x] Independent QA witness on Durán WSL2 and operator on Chromebook:
+      Tailscale Serve HTTPS + userspace tailscale nc, verified TLS certificate,
+      Ed25519 pinned remote signer, signed checkpoint CAS sequence 0 -> 1,
+      forged/replay/rollback denial, disconnect fail-closed and signed recovery;
+      no public endpoint and no real Minecraft session (2026-11-02)
+- [ ] Operationalize authenticated remote witness for a real isolated
+      Fabric/Cobblemon world: deployment hardening, restart and crash tests,
+      host authorization, account identity and controlled multiplayer beta
 - [ ] Official online-mode Minecraft account identity and consent before beta
 - [ ] Independent user-facing installation and controlled multiplayer beta
