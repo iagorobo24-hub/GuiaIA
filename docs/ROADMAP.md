@@ -118,6 +118,11 @@ Updated: 2026-11-02
       1 spent nonce, durable cancellation, signed checkpoint seq1 recovery
       without replay; QA exit0. **Local second process**, not physical Durán
       (2026-11-02; QA_COBBLEMON_SIGNED_OPERATOR_2026-11-02.md)
+- [x] QA-only read-only remote witness transport preflight: bound six GET
+      probes, exact 403 required, three consecutive sub-750ms responses,
+      fail-closed before login, no signed POST/CAS retry and no change to
+      the 1500ms authorization deadline. Optional metadata-only TLS proxy
+      diagnostics (2026-11-02; QA_COBBLEMON_REMOTE_WITNESS_BLOCKER_2026-11-02.md)
 - [ ] Repeat Cobblemon world-action failure test with physically remote
       Durán WSL2 witness, independent credentials and network outage.
       Attempt on 2026-11-02 failed **before bot login**: signed initial

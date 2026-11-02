@@ -182,9 +182,23 @@ def main():
                            if operator_mode else
                            ["node", driver, str(events), str(public), str(root / "journal")])
             if args.physical_witness_outage:
-                # Let the disposable JVM finish chunk/world warmup before
-                # starting the two-host sub-1500ms signed checkpoint ceremony.
+                # Warm ONLY an unauthenticated read-only GET route before any
+                # signature ceremony. A 403 is the required pre-bootstrap
+                # state; 200/redirect/502/timeouts fail closed. This does
+                # not extend the 1500ms authorization deadline, grant a
+                # capability or retry a signed compare-and-swap.
                 time.sleep(12)
+                preflight = subprocess.run(
+                    ["node", "qa_physical_witness_preflight.js",
+                     "--qa-readonly-preflight"],
+                    cwd=ROOT / "companion", env=child_env,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, timeout=30,
+                )
+                if preflight.returncode != 0 or not preflight.stdout.startswith(
+                    "GUIAIA_PHYSICAL_WITNESS_READONLY_PREFLIGHT="):
+                    raise RuntimeError("Physical QA witness read-only transport not ready")
+                print(preflight.stdout.strip(), flush=True)
             client = subprocess.Popen(
                 client_args,
                 cwd=ROOT / "companion", env=child_env,

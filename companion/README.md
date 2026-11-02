@@ -368,6 +368,20 @@ proxies and temporary Tailscale Serve were removed afterwards. This was
 **not** a real Fabric mission or a Durán/WSL reboot. See
 [the physical witness restart evidence](../docs/QA_REMOTE_WITNESS_PROCESS_RESTART_2026-11-02.md).
 
+A later isolated **Cobblemon + physical Durán WSL2 witness** attempt failed
+closed **before bot login** because the initial independent checkpoint was
+not confirmed. No initial signed head was persisted on Durán; no gather or
+deposit was authorized. To distinguish cold tunnel setup from signed CAS
+failure, `qa_physical_witness_preflight.js --qa-readonly-preflight` now
+requires three consecutive fast **read-only 403 responses** before opening
+the physical QA session (no authorization and no retry of signed tickets).
+The proxy may emit method/status/timing-only diagnostics when explicitly
+started with `GUIAIA_QA_TRANSPORT_DIAGNOSTICS=1`. Its HTTPS verification and
+the checkpoint client's **1.5 second deadline remain unchanged**. This is
+**not** a completed remote-Cobblemon mission; see
+[the blocked attempt and next checks](../docs/QA_COBBLEMON_REMOTE_WITNESS_BLOCKER_2026-11-02.md).
+
+
 ### Cobblemon 1.8.2 / Minecraft Fabric 1.21.1 (isolated QA)
 
 The disposable `scripts/qa_fabric_server.py --cobblemon <jar> --cobblemon-smoke`

@@ -7,6 +7,15 @@ const os=require('node:os')
 const path=require('node:path')
 const http=require('node:http')
 const https=require('node:https')
+const {performance}=require('node:perf_hooks')
+// Strictly opt-in QA metadata. Never log URLs, bodies, keys, UUIDs or headers.
+const diagnostics=process.env.GUIAIA_QA_TRANSPORT_DIAGNOSTICS==='1'
+function trace(method,stage,status,started){
+  if(!diagnostics)return
+  process.stderr.write('GUIAIA_PHYSICAL_TLS_TRANSPORT='+JSON.stringify({
+    method:method==='POST'?'POST':'GET',stage,status,
+    elapsed_ms:Math.round(performance.now()-started)})+'\n')
+}
 function main(){
   const dir=process.env.GUIAIA_QA_PHYSICAL_WITNESS_DIRECTORY
   const host=process.env.GUIAIA_QA_REMOTE_WITNESS_HOST
@@ -18,6 +27,7 @@ function main(){
   const denied=()=>fs.existsSync(path.join(dir,'outage-requested'))&&
     !fs.existsSync(path.join(dir,'restore-requested'))
   const server=http.createServer((req,res)=>{
+    const started=performance.now()
     if(req.socket.remoteAddress!=='127.0.0.1'){
       req.socket.destroy();return
     }
@@ -27,6 +37,8 @@ function main(){
     const upstream=https.request({hostname:'127.0.0.1',port:24119,
       servername:host,rejectUnauthorized:true,method:req.method,path:req.url,
       headers:{...req.headers,host},timeout:1250},reply=>{
+        trace(req.method,'headers',reply.statusCode||502,started)
+        reply.once('end',()=>trace(req.method,'complete',reply.statusCode||502,started))
         if(reply.socket.authorized!==true){
           if(!res.headersSent)res.writeHead(502)
           res.end();return
@@ -34,8 +46,12 @@ function main(){
         res.writeHead(reply.statusCode||502,reply.headers)
         reply.pipe(res)
       })
-    upstream.on('timeout',()=>upstream.destroy())
+    upstream.on('timeout',()=>{
+      trace(req.method,'upstream_timeout',0,started)
+      upstream.destroy()
+    })
     upstream.on('error',()=>{
+      trace(req.method,'upstream_error',0,started)
       if(!res.headersSent)res.writeHead(502)
       res.end()
     })

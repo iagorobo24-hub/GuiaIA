@@ -34,3 +34,13 @@ La inspección directa en WSL verificó que el almacenamiento del testigo **no c
 - **Pendiente imprescindible:** aislar la latencia/semántica del POST firmado con instrumentación segura y reproducible en un laboratorio autorizado; validar arranque, publicación inicial y reconciliación sin ampliar plazos ni reenvío ciego; repetir después la misión Fabric+Cobblemon con el testigo físico, pérdida de ruta, cofre vacío, cancelación durable y recuperación sin replay. Solo entonces marcar la fase como PASS.
 
 **Esta nota documenta un resultado negativo verificable, no un cierre funcional de la integración remota.**
+
+## Continuación: preflight seguro y trazabilidad (2026-11-02)
+
+Se añadió el programa **únicamente QA** `companion/qa_physical_witness_preflight.js`, activado solo mediante `--qa-readonly-preflight` y un directorio privado `guiaia-crosshost-fabric-qa-*` verificado. Antes de iniciar los clientes del ensayo «physical-witness-outage», el runner efectúa **hasta seis consultas GET de solo lectura** a `127.0.0.1:24121/checkpoint` con nonces UUID nuevos. **Solo** una respuesta HTTP `403` (head todavía sin inicializar) puede contar como sonda válida; para avanzar exige **tres respuestas consecutivas inferiores a 750 ms**. Cada consulta tiene un límite de **3 segundos exclusivamente de diagnóstico** para no confundir arranque en frío con autorización. Ese límite **no cambia** el plazo de **1.500 ms** del cliente de checkpoint, el de **1.250 ms** del proxy HTTPS ni sus validaciones Ed25519/CAS. Si el transporte no se estabiliza, falta el fixture o cambia el estado del testigo, el controlador **rechaza antes del login**.
+
+Pruebas locales: únicamente GET, conteo de arranque lento no aceptado como estable, rechazo de `200`/`302`/`502`, respuesta que nunca llega, parámetros fuera de límite y fixture inseguro; **5/5 PASS**. Este preflight puede descartar una parte de los fallos de calentamiento pero **no garantiza** que el POST firmado se complete, y tampoco verifica por sí mismo la identidad del testigo: las firmas originales y el TLS autenticado siguen siendo imprescindibles.
+
+Se añadió además trazabilidad **opcional** al proxy físico, activada solo con `GUIAIA_QA_TRANSPORT_DIAGNOSTICS=1`: método GET/POST, etapa (cabeceras/respuesta terminada/timeout/error), estado HTTP y tiempo redondeado. Nunca registra URL, cuerpo, firmas, claves, UUID, cabeceras o datos del jugador. Su objetivo es distinguir retraso TCP/TLS de respuesta HTTP incompleta sin alterar las decisiones de autorización.
+
+**Resultado de esta continuación:** avance local de diagnóstico/infraestructura; la misión con testigo físico Durán **sigue pendiente** hasta una nueva ejecución end-to-end con prueba POST Ed25519 completa y el ensayo fail-closed de Cobblemon.
