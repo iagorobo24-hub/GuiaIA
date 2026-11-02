@@ -181,3 +181,30 @@ test('independent witness keeps an exclusive lock and requires external private 
   await assert.rejects(f.start(),/Witness exited|did not start/)
   assert.equal(fs.existsSync(file),false)
 })
+
+// A deliberately incomplete POST with frequent body bytes must not hold the
+// witness HTTP handler open beyond its absolute request deadline.
+test('standalone witness closes slow-trickle POST bodies without applying state',async t=>{
+  const f=setup(t)
+  if(process.platform==='win32')return assertNativeWindowsDenied(f)
+  const {child,url}=await f.start()
+  const http=require('node:http')
+  const began=Date.now()
+  const elapsed=await new Promise((resolve,reject)=>{
+    const req=http.request(new URL('/advance',url),{
+      method:'POST',headers:{'content-type':'application/json'}
+    })
+    req.on('error',()=>{})
+    req.on('response',res=>res.resume())
+    const drip=setInterval(()=>req.write(' '),150)
+    const safety=setTimeout(()=>req.end(),3400)
+    req.once('close',()=>{
+      clearInterval(drip);clearTimeout(safety)
+      resolve(Date.now()-began)
+    })
+    req.write('{')
+  })
+  assert.ok(elapsed<2700,'dripping HTTP request exceeded QA deadline')
+  assert.equal(fs.existsSync(path.join(f.witnessRoot,'head.json')),false)
+  await f.stop(child)
+})

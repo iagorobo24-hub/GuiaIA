@@ -106,6 +106,12 @@ function createQaCheckpointWitness({directory,worldId,operatorPublicKeyPem,
   async function start(){
     if(closed||server)throw Error('Witness not available or already running')
     server=http.createServer(async(req,res)=>{
+      // A slow, continuously dripping POST must not occupy a handler forever.
+      // Destroy the socket on an absolute deadline, without raising an
+      // unhandled IncomingMessage error for an early GET or failed POST.
+      const deadline=setTimeout(()=>req.socket.destroy(),1500)
+      deadline.unref()
+      res.once('close',()=>clearTimeout(deadline))
       req.setTimeout(1500,()=>req.destroy())
       const deny=()=>{res.writeHead(403);res.end('denied')}
       try{

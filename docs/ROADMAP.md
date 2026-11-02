@@ -1,6 +1,6 @@
 # GuiaIA Roadmap and Real Completion Status
 
-Updated: 2026-10-30
+Updated: 2026-11-02
 
 | Stage | Deliverable | Status / evidence |
 | --- | --- | --- |
@@ -73,6 +73,9 @@ Updated: 2026-10-30
       Ed25519 pinned remote signer, signed checkpoint CAS sequence 0 -> 1,
       forged/replay/rollback denial, disconnect fail-closed and signed recovery;
       no public endpoint and no real Minecraft session (2026-11-02)
+- [x] Local QA witness/remote client absolute HTTP deadlines of 1500 ms:
+      slow-trickle attacks bounded, 14/14 focused, Node 366/366 and Python
+      58/58 PASS; no live cross-host Minecraft rerun (2026-11-02)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: deployment hardening, restart and crash tests,
       host authorization, account identity and controlled multiplayer beta

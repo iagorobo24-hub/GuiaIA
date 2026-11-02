@@ -96,6 +96,11 @@ function createPinnedQaRemoteCheckpointClient({url,worldId,operatorPublicKeyPem,
           catch{reject(Error('Malformed witness reply'))}
         })
       })
+      // Socket inactivity is not a complete deadline: a peer can trickle
+      // bytes indefinitely. Bound the whole authorization request as well.
+      const deadline=setTimeout(()=>req.destroy(Error('Remote witness deadline exceeded')),1500)
+      deadline.unref()
+      req.once('close',()=>clearTimeout(deadline))
       req.setTimeout(1500,()=>req.destroy(Error('Remote witness timed out')))
       req.on('error',()=>reject(Error('Remote checkpoint witness unavailable')))
       if(raw)req.write(raw)

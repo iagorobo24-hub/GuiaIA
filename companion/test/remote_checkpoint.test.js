@@ -210,3 +210,21 @@ test('an attacker with the witness data directory can restore its own old signed
   assert.equal(await rolledBack.verifyLocal(base),true)
   await assert.rejects(rolledBack.verifyLocal(next),/disagreement/)
 })
+
+// A byte-dripping proxy must not extend an authorization check indefinitely.
+test('remote checkpoint client rejects slow-trickle replies within a total deadline',async t=>{
+  const http=require('node:http')
+  const x=fixture(t)
+  const server=http.createServer((_req,res)=>{
+    res.writeHead(200,{'content-type':'application/json'})
+    const drip=setInterval(()=>res.write(' '),150)
+    const safety=setTimeout(()=>res.end(),3400)
+    res.on('close',()=>{clearInterval(drip);clearTimeout(safety)})
+  })
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve))
+  t.after(()=>{server.closeAllConnections();server.close()})
+  const client=x.makeClient('http://127.0.0.1:'+server.address().port+'/')
+  const start=Date.now()
+  await assert.rejects(client.latest(),/unavailable|timed out/i)
+  assert.ok(Date.now()-start<2700,'dripping HTTP response exceeded QA deadline')
+})
