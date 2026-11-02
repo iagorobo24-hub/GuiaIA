@@ -76,6 +76,11 @@ Updated: 2026-11-02
 - [x] Local QA witness/remote client absolute HTTP deadlines of 1500 ms:
       slow-trickle attacks bounded, 14/14 focused, Node 366/366 and Python
       58/58 PASS; no live cross-host Minecraft rerun (2026-11-02)
+- [x] Real disposable Fabric 1.21.1 witness-outage test: physical gather,
+      independent witness shutdown before deposit, zero chest transfer,
+      no journal/nonce mutation, durable cancellation and signed witness
+      restart with independent preflight; offline identities, same Chromebook
+      (2026-11-02; see QA_REAL_FABRIC_WITNESS_OUTAGE_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: deployment hardening, restart and crash tests,
       host authorization, account identity and controlled multiplayer beta

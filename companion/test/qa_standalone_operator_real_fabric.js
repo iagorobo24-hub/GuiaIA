@@ -20,6 +20,7 @@ const {openDepositJournal}=require('../src/deposit')
 const [eventsFile,serverPubFile,journalRoot,readyFlag]=process.argv.slice(2)
 const liveRevocation=process.env.GUIAIA_QA_LIVE_REVOCATION==='1'
 const separateWitness=process.env.GUIAIA_QA_STANDALONE_WITNESS==='1'
+const witnessOutage=process.env.GUIAIA_QA_WITNESS_OUTAGE==='1'
 const worldId='qa:real-fabric:25593',botName='GuiaIA_QA',username='OwnerQA'
 const principalId='qa_external_preapproved_owner'
 const key=()=>crypto.generateKeyPairSync('ed25519')
@@ -40,6 +41,8 @@ function safeTemp(file,marker){
      !rel.includes(marker))throw Error('Refuse non-disposable test paths')
 }
 async function main(){
+  if(witnessOutage&&(!separateWitness||liveRevocation))
+    throw Error('Witness outage QA requires a separate test witness only')
   safeTemp(eventsFile,'events.jsonl')
   safeTemp(serverPubFile,'qa-public.pem')
   safeTemp(journalRoot,'journal')
@@ -200,6 +203,108 @@ async function main(){
     },20000,'operator real TTY bootstrap')
     await waitUntil(()=>fs.existsSync(readyFlag),
       25000,'Minecraft inventory prepared by independent Python driver')
+    if(witnessOutage){
+      // Exercise a REAL Fabric gather before losing the separately running
+      // witness. Never attempt an action on Teselia or an existing world.
+      cli.stdin.write('siguiente\n')
+      const missionFile=path.join(missionDir,'mission.json')
+      const depositFile=path.join(depositDir,'deposit.json')
+      await waitUntil(()=>{
+        if(cli.exitCode!==null)throw Error('Operator ended before QA outage')
+        if(!fs.existsSync(missionFile))return false
+        const m=JSON.parse(fs.readFileSync(missionFile,'utf8'))
+        return m.phase==='completed'&&m.receipts.length===1&&
+          operatorOutput.includes('"phase":"deposit"')
+      },45000,'real gather completed before witness outage')
+      await waitUntil(()=>owner.blockAt(new Vec3(7,64,2))?.name==='air',
+        7000,'physical QA log mined before witness outage')
+      const missionBefore=fs.readFileSync(missionFile)
+      const depositBefore=fs.readFileSync(depositFile)
+      const prepared=JSON.parse(depositBefore)
+      if(prepared.phase!=='ready'||prepared.receipts.length!==0)
+        throw Error('QA deposit already changed before witness outage')
+      const chestBlock=owner.blockAt(new Vec3(4,64,3))
+      if(chestBlock?.name!=='chest')throw Error('Disposable QA chest missing')
+      const chestStock=async()=>{
+        const container=await owner.openContainer(chestBlock)
+        try{return container.slots.slice(0,container.inventoryStart)
+          .filter(slot=>slot?.name==='oak_log')
+          .reduce((sum,slot)=>sum+slot.count,0)}
+        finally{container.close()}
+      }
+      if(await chestStock()!==0)throw Error('QA chest not empty before outage')
+      await witness.close()
+      let witnessDenied=false
+      try{await witnessClient.verifyLocal(after)}
+      catch(error){witnessDenied=/unavailable/.test(String(error?.message))}
+      if(!witnessDenied)throw Error('Offline checkpoint failed to deny access')
+      cli.stdin.write('siguiente\n')
+      await waitUntil(()=>operatorOutput.includes('"reason":"authorization_unavailable"'),
+        10000,'witness loss blocked real deposit')
+      if(!fs.readFileSync(missionFile).equals(missionBefore)||
+         !fs.readFileSync(depositFile).equals(depositBefore)||
+         await chestStock()!==0)
+        throw Error('Witness outage mutated the real QA world or journals')
+      const spent=fs.readdirSync(path.join(qaRoot,'spent'))
+        .filter(name=>name.endsWith('.used'))
+      if(spent.length!==1)throw Error('Witness outage spent deposit permit')
+      cli.stdin.write('salir\n')
+      await new Promise((resolve,reject)=>{
+        const timeout=setTimeout(()=>reject(Error('QA operator outage exit timeout')),10000)
+        cli.once('exit',code=>{clearTimeout(timeout)
+          code===0?resolve():reject(Error('QA outage operator exit '+code))})
+      })
+      cli=null
+      const cancelled=JSON.parse(fs.readFileSync(depositFile,'utf8'))
+      if(cancelled.phase!=='cancelled'||cancelled.receipts.length!==0)
+        throw Error('QA outage stop did not persist safe cancellation')
+      // Same signed checkpoint must survive a complete witness restart.
+      const restartedUrl=await witness.start()
+      const recovered=createPinnedQaRemoteCheckpointClient({
+        url:restartedUrl,worldId,operatorPublicKeyPem:pub(operatorKey),
+        witnessPublicKeyPem:pub(witnessKey)})
+      if(await recovered.verifyLocal(after)!==true)
+        throw Error('Restarted external witness did not recover signed head')
+      const exclusions=new Set(['missionDirectory','depositDirectory',
+        'spentDirectory','approvedPlanFile','grantsFile'])
+      const preflightConf=Object.fromEntries(Object.entries(conf)
+        .filter(([name])=>!exclusions.has(name)))
+      preflightConf.witnessUrl=restartedUrl
+      const preflightFile=privateFile('witness-recovery-preflight.json',
+        JSON.stringify(preflightConf))
+      const probe=spawn(process.execPath,[
+        path.resolve(__dirname,'../qa_operator.js'),
+        '--qa-preflight',preflightFile
+      ],{cwd:path.resolve(__dirname,'..'),stdio:['ignore','pipe','pipe']})
+      let stdout='',stderr=''
+      probe.stdout.on('data',part=>{stdout+=part.toString('utf8')})
+      probe.stderr.on('data',part=>{stderr+=part.toString('utf8')})
+      const probeExit=await new Promise((resolve,reject)=>{
+        const timeout=setTimeout(()=>{probe.kill('SIGKILL')
+          reject(Error('QA witness recovery preflight timed out'))},12000)
+        probe.once('error',error=>{clearTimeout(timeout);reject(error)})
+        probe.once('close',code=>{clearTimeout(timeout);resolve(code)})
+      })
+      if(probeExit!==0||!stdout.includes('qa_session_preflight_passed')||
+         stderr.length>0||await chestStock()!==0)
+        throw Error('Signed session preflight failed after witness recovery')
+      const finalSpent=fs.readdirSync(path.join(qaRoot,'spent'))
+        .filter(name=>name.endsWith('.used'))
+      if(finalSpent.length!==1)
+        throw Error('Recovery unexpectedly reused signed permits')
+      console.log('GUIAIA_STANDALONE_WITNESS_OUTAGE_REAL_FABRIC_QA_EVIDENCE='+
+        JSON.stringify({result:'pass',production:false,real_fabric:true,
+          standalone_witness_process:true,offline_account_identity:false,
+          real_gather_receipts:1,real_deposit_receipts:0,
+          physical_mined_block:true,physical_chest_oak_log:0,
+          witness_disconnection_denied:witnessDenied,
+          deposit_authorization_denied:true,journals_unchanged_during_outage:true,
+          spent_nonces:finalSpent.length,durable_deposit_cancellation:true,
+          persisted_signed_sequence:after.sequence,
+          restarted_witness_verified:true,recovery_preflight_exit:probeExit,
+          no_automatic_world_action_replay:true,teselia_untouched:true}))
+      return
+    }
     if(liveRevocation){
       // Separate process signs without opening the currently locked registry.
       // Revocation is submitted between physical gather and chest deposit.

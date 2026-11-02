@@ -305,6 +305,18 @@ the witness available on another machine. See
 [QA_SSH_TUNNEL_OFFLINE_PREFLIGHT_2026-11-02.md](../docs/QA_SSH_TUNNEL_OFFLINE_PREFLIGHT_2026-11-02.md).
 An actual second host, authenticated transport and failure tests are pending.
 
+### Real Fabric witness-outage and restart QA
+
+The disposable `scripts/qa_signed_delivery_real_server.py --standalone-witness-outage`
+scenario shuts down the independently running, loopback-only QA checkpoint
+witness **after one physically confirmed gather** and before the signed chest
+deposit. It demands an authorization denial with no inventory mutation or
+false deposit receipt. A clean witness restart must recover its signed
+checkpoint and allow a new identity-only preflight, without automatically
+replaying the cancelled world action. This test passed against real Fabric
+1.21.1 with synthetic offline identities. It is **not** a cross-host witness
+outage test. See [the evidence](../docs/QA_REAL_FABRIC_WITNESS_OUTAGE_2026-11-02.md).
+
 ### Windows native vs Ubuntu WSL2 credential safety (QA)
 
 Native Windows supports the dependency installation, most Node tests and

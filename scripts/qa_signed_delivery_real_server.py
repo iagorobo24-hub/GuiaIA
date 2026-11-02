@@ -30,11 +30,13 @@ def main():
     parser.add_argument("--secure-runtime-recovery", action="store_true")
     parser.add_argument("--standalone-operator", action="store_true")
     parser.add_argument("--standalone-live-revocation", action="store_true")
+    parser.add_argument("--standalone-witness-outage", action="store_true")
     args = parser.parse_args()
-    operator_mode = args.standalone_operator or args.standalone_live_revocation
+    operator_mode = (args.standalone_operator or args.standalone_live_revocation
+                     or args.standalone_witness_outage)
     if sum((args.crash_after_deposit, args.multi_resource, args.secure_runtime,
             args.secure_runtime_recovery, args.standalone_operator,
-            args.standalone_live_revocation)) > 1:
+            args.standalone_live_revocation, args.standalone_witness_outage)) > 1:
         parser.error("Select only one isolated QA scenario")
     launcher = require_file(args.launcher, "QA Fabric server")
     fabric_api = require_file(args.fabric_api, "QA Fabric API")
@@ -130,6 +132,9 @@ def main():
                 child_env["GUIAIA_QA_CRASH_SECURE_RUNTIME_DEPOSIT"] = "1"
             if args.standalone_live_revocation:
                 child_env["GUIAIA_QA_LIVE_REVOCATION"] = "1"
+            if args.standalone_witness_outage:
+                child_env["GUIAIA_QA_WITNESS_OUTAGE"] = "1"
+                child_env["GUIAIA_QA_STANDALONE_WITNESS"] = "1"
             driver = ("test/qa_standalone_operator_real_fabric.js" if operator_mode
                       else "test/qa_live_bridge_gateway.js")
             client_args = (["node", driver, str(events), str(public),
@@ -171,7 +176,33 @@ def main():
                 (root / "qa-operator-ready.flag").write_text("inventory_prepared\\n", encoding="ascii")
             out, err = client.communicate(timeout=120)
             result = out + "\n" + err
-            if args.standalone_live_revocation:
+            if args.standalone_witness_outage:
+                marker = "GUIAIA_STANDALONE_WITNESS_OUTAGE_REAL_FABRIC_QA_EVIDENCE="
+                if client.returncode != 0 or marker not in result:
+                    raise RuntimeError("Real Fabric witness outage QA failed\n" +
+                                       result[-2500:] + "\n" + recent_log(log, 1400))
+                evidence = next(json.loads(line.split("=", 1)[1])
+                                for line in result.splitlines() if line.startswith(marker))
+                if (evidence.get("result") != "pass" or
+                    evidence.get("real_fabric") is not True or
+                    evidence.get("standalone_witness_process") is not True or
+                    evidence.get("real_gather_receipts") != 1 or
+                    evidence.get("real_deposit_receipts") != 0 or
+                    evidence.get("physical_mined_block") is not True or
+                    evidence.get("physical_chest_oak_log") != 0 or
+                    evidence.get("witness_disconnection_denied") is not True or
+                    evidence.get("deposit_authorization_denied") is not True or
+                    evidence.get("journals_unchanged_during_outage") is not True or
+                    evidence.get("spent_nonces") != 1 or
+                    evidence.get("durable_deposit_cancellation") is not True or
+                    evidence.get("persisted_signed_sequence") != 1 or
+                    evidence.get("restarted_witness_verified") is not True or
+                    evidence.get("recovery_preflight_exit") != 0 or
+                    evidence.get("no_automatic_world_action_replay") is not True or
+                    evidence.get("teselia_untouched") is not True):
+                    raise RuntimeError("Incomplete real Fabric witness outage evidence")
+                print(marker + json.dumps(evidence))
+            elif args.standalone_live_revocation:
                 marker = "GUIAIA_STANDALONE_OPERATOR_LIVE_REVOCATION_QA_EVIDENCE="
                 if client.returncode != 0 or marker not in result:
                     raise RuntimeError("Real Fabric hot QA revocation failed\n" +
