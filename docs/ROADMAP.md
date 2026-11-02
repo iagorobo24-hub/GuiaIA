@@ -119,7 +119,11 @@ Updated: 2026-11-02
       without replay; QA exit0. **Local second process**, not physical Durán
       (2026-11-02; QA_COBBLEMON_SIGNED_OPERATOR_2026-11-02.md)
 - [ ] Repeat Cobblemon world-action failure test with physically remote
-      Durán WSL2 witness, independent credentials and network outage
+      Durán WSL2 witness, independent credentials and network outage.
+      Attempt on 2026-11-02 failed **before bot login**: signed initial
+      checkpoint unconfirmed within strict deadline, no head persisted,
+      no world actions; all temporary services and keys cleaned. Do not
+      mark PASS (QA_COBBLEMON_REMOTE_WITNESS_BLOCKER_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: deployment hardening, restart and crash tests,
       host authorization, account identity and controlled multiplayer beta
