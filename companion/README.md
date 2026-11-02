@@ -345,3 +345,10 @@ The HTTPS certificate was validated without bypass and no public Funnel was
 enabled. **This is synthetic QA, not a live multiplayer Minecraft session**.
 See [the cross-host signed witness report](../docs/QA_SIGNED_WITNESS_PHYSICAL_HOST_2026-11-02.md).
 The one-off tunnel and signing secrets must not be deployed as a product.
+A subsequent physical two-host test also restarted the **Durán witness process**
+with its existing signed head and the same private signer after shutting off
+and restoring the tailnet HTTPS link. The Chromebook verified sequence 1,
+rejected replay, and denied access during the outage in 1566 ms. All QA keys,
+proxies and temporary Tailscale Serve were removed afterwards. This was
+**not** a real Fabric mission or a Durán/WSL reboot. See
+[the physical witness restart evidence](../docs/QA_REMOTE_WITNESS_PROCESS_RESTART_2026-11-02.md).

@@ -81,6 +81,11 @@ Updated: 2026-11-02
       no journal/nonce mutation, durable cancellation and signed witness
       restart with independent preflight; offline identities, same Chromebook
       (2026-11-02; see QA_REAL_FABRIC_WITNESS_OUTAGE_2026-11-02.md)
+- [x] Physical two-host QA witness process restart (Durán WSL2, Chromebook):
+      verified HTTPS/TLS, signed CAS sequence 0 -> 1, forgery/replay/rollback
+      denial, link outage fail-closed in 1566 ms, independent process SIGTERM,
+      persisted signed head and recovery without key rotation; ephemeral
+      secrets/Serve cleaned (2026-11-02; QA_REMOTE_WITNESS_PROCESS_RESTART_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: deployment hardening, restart and crash tests,
       host authorization, account identity and controlled multiplayer beta
