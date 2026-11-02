@@ -46,17 +46,35 @@ export PYTHONPATH="src:scripts"
 
 ## 3. Running Unit & Integration Tests
 
-### Companion Test Suite (305 Tests)
-Runs complete unit tests covering Mineflayer navigation, inventory verification, signed journals, and the typed companion controller:
+### Companion Test Suite
+Runs the current Node test suite (the exact test count is reported by the runner) covering Mineflayer navigation, inventory verification, signed journals, and the typed companion controller:
 ```bash
 npm test --prefix companion
 ```
 
-### Python MCP & Diagnostics Suite (54 Tests)
+### Python MCP & Diagnostics Suite
 Runs JSON-RPC 2.0 handshake, tool schema validation, prompt-injection defense, and diagnostic sandbox tests:
 ```bash
 python -m unittest discover -s tests -p "*.py"
 ```
+
+### Disposable clean-checkout acceptance (local QA)
+
+From a **clean GuiaIA repository**, this command exports tracked Git files from
+`HEAD` into a temporary directory, runs a new cached npm installation with
+network access disabled and dependency scripts disabled, then runs both complete
+test suites and checks that the companion refuses to start without a configured
+QA owner. The temporary checkout is automatically removed on exit:
+
+```bash
+python3 scripts/qa_clean_checkout.py
+```
+
+The command requires Node 22+, Python 3.11+, a complete local npm cache, and
+a clean Git worktree. A first installation on a genuinely new machine may
+need an approved network-enabled dependency download instead. This is a
+**separate local checkout**, not an independent-machine or playable-beta test.
+See [clean-checkout evidence](QA_CLEAN_CHECKOUT_2026-11-02.md).
 
 ---
 

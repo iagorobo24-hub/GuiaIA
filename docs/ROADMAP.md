@@ -31,6 +31,9 @@ Updated: 2026-10-30
 - [x] Priority 0 emergency halt without security nonces
 - [x] Disposable diagnostic sandbox with structured comparative reports (`qa_diagnostic_sandbox.py` PASS)
 - [x] Public documentation: `GETTING_STARTED.md` and `VERIFIED_CAPABILITIES.md`
+- [x] Disposable **local** Git-archive clean checkout on Chromebook: new
+      npm ci --offline --ignore-scripts, Node and Python full regression,
+      missing-owner CLI denial; no production world changes (2026-11-02)
 - [ ] Another-machine clean install confirmation
 - [x] Isolated QA integration: separately enrolled owner + live signed Fabric
       presence + checkpoint witness + signed journal runtime + terminal operator
