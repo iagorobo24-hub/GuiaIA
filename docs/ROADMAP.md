@@ -102,13 +102,24 @@ Updated: 2026-11-02
       play.toClient decoder error for impossible array length; original
       16-second spawn timeout was a symptom, not root cause. No data or
       authorizations bypassed; see QA_COBBLEMON_OBSERVER_2026-11-02.md
-- [ ] Identify the precise malformed/unsupported 1.21.1 packet schema,
-      fix only verified version-specific decoding or adopt a native Fabric
-      client, then prove spawned bot before enabling any physical action
-- [ ] Establish a Fabric/Cobblemon-compatible operator client or signed
-      server-side execution bridge, preserving all identity, one-shot grant,
-      witness and fail-closed controls; rerun physical gather/deposit and
-      witness-outage QA against a disposable Cobblemon world
+- [x] Identify and correct exact recipe serializer-ID mismatch in Minecraft
+      1.21.1: `play.toClient` 0x77 `declare_recipes`; QA-only mapping from
+      upstream minecraft-data PR #1291 enables Mineflayer `spawn` on a real
+      Cobblemon 1.8.2 server, without loosening parser bounds (2026-11-02)
+- [x] Real disposable Fabric/Cobblemon standalone operator QA: signed
+      physical oak gather and chest deposit, 1+1 receipts, 2 one-shot grants,
+      durable signed revocation, denied post-revocation action and unchanged
+      journals/chest; no official identity and QA-only adapter;
+      Node 369/369 and Python 58/58 PASS
+      (2026-11-02; QA_COBBLEMON_SIGNED_OPERATOR_2026-11-02.md)
+- [x] Real disposable Fabric/Cobblemon 1.8.2 witness-outage test:
+      after one physical oak gather, kill independent witness process on
+      Chromebook before deposit: 0 deposits/0 chest stock, unchanged journals,
+      1 spent nonce, durable cancellation, signed checkpoint seq1 recovery
+      without replay; QA exit0. **Local second process**, not physical Durán
+      (2026-11-02; QA_COBBLEMON_SIGNED_OPERATOR_2026-11-02.md)
+- [ ] Repeat Cobblemon world-action failure test with physically remote
+      Durán WSL2 witness, independent credentials and network outage
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: deployment hardening, restart and crash tests,
       host authorization, account identity and controlled multiplayer beta

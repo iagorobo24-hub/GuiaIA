@@ -376,14 +376,24 @@ read-only snapshot (16 sampled blocks, 1 diamond block and 1 sheep), and
 completed the normal MCP tool roundtrip: **PASS**. The Cobblemon JAR identity
 is pinned, the server is loopback-only, and the test world is removed.
 
-The separate signed-operator trial did **not** pass: Mineflayer did not
-complete player startup with this modded server. An independent probe saw
-the server accept a synthetic player, but the Mineflayer `spawn` event timed
-out after 16 seconds. A longer read-only diagnostic subsequently proved the
-client completes `configuration` and reaches `play` (79 play packets), then
-raises a `play.toClient` array-length decoding error before `spawn`. The
-**exact failing packet type remains unconfirmed**. No physical
-gather, signed chest deposit, Pokémon actions or official online accounts
-are validated by this test. Do not bypass identity or checkpoint gates to
-work around modded-client incompatibility. See
-[the Cobblemon evidence](../docs/QA_COBBLEMON_OBSERVER_2026-11-02.md).
+The first signed-operator trial failed at Mineflayer spawn. We subsequently
+identified the exact packet (`play.toClient` ID `0x77`, `declare_recipes`)
+and the 1.21.1 vanilla serializer-ID defect addressed by upstream
+[minecraft-data PR #1291](https://github.com/PrismarineJS/minecraft-data/pull/1291).
+A **QA-only**, exact-version, fail-closed in-memory correction permitted
+Mineflayer to spawn. A separate signed physical oak-gather/chest-deposit
+scenario with Cobblemon loaded then passed, including 1 real gather receipt,
+1 real deposit receipt, 2 spent one-shot grants, signed revocation and no
+post-revocation journal or chest changes.
+
+A second disposable Fabric/Cobblemon QA world also passed the strict
+independent-witness outage scenario: 1 real gather, 0 deposits, 0 chest
+stock, denied authorization while the separately running witness was down,
+durable cancellation and signed recovery **without replay**. Its witness
+was a **separate local Chromebook process** (not the physical Durán host).
+See [the signed mission and outage evidence](../docs/QA_COBBLEMON_SIGNED_OPERATOR_2026-11-02.md).
+
+This is **not** official-account
+or Pokémon-action support and is not a production protocol patch. See
+[the original failure report](../docs/QA_COBBLEMON_OBSERVER_2026-11-02.md)
+and [the corrected signed-mission evidence](../docs/QA_COBBLEMON_SIGNED_OPERATOR_2026-11-02.md).

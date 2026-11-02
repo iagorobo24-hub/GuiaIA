@@ -267,6 +267,18 @@ def main() -> None:
             raise RuntimeError("Unsafe or incompatible Cobblemon QA JAR")
     with tempfile.TemporaryDirectory(prefix="guiaia-fabric-qa-") as temporary:
         qa_dir = Path(temporary)
+        if args.cobblemon_smoke:
+            # Copy, never symlink, the already provisioned vanilla/Fabric
+            # runtime. A disposable installer may modify its OWN copies only.
+            # This avoids fetching cached libraries again from the network.
+            for directory in ("libraries", "versions", ".fabric/server"):
+                source = launcher.parent / directory
+                if source.is_dir() and not source.is_symlink():
+                    if any(item.is_symlink() for item in source.rglob("*")):
+                        raise RuntimeError("Refuse symlinked QA runtime inputs")
+                    destination = qa_dir / directory
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(source, destination)
         mods = qa_dir / "mods"
         mods.mkdir()
         shutil.copy2(fabric_api, mods / "fabric-api.jar")

@@ -64,6 +64,17 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="guiaia-fabric-bridge-qa-") as temp:
         root = Path(temp)
+        if cobblemon:
+            # Copy immutable preprovisioned runtime inputs into disposable QA.
+            # Never link to or write into the shared Teselia server runtime.
+            for directory in ("libraries", "versions", ".fabric/server"):
+                source = launcher.parent / directory
+                if source.is_dir() and not source.is_symlink():
+                    if any(item.is_symlink() for item in source.rglob("*")):
+                        raise RuntimeError("Refuse symlinked QA runtime input")
+                    destination = root / directory
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(source, destination)
         (root / "eula.txt").write_text("eula=true\n", encoding="ascii")
         (root / "server.properties").write_text(
             "server-ip=127.0.0.1\nserver-port=25593\n"
@@ -143,6 +154,9 @@ def main():
                 time.sleep(3)
             events = config / "guiaia-identity-bridge" / "events.jsonl"
             child_env = os.environ.copy()
+            if cobblemon and operator_mode:
+                child_env["GUIAIA_QA_COBBLEMON"] = "1"
+                child_env["GUIAIA_QA_UPSTREAM_RECIPE_IDS"] = "1"
             if args.crash_after_deposit:
                 child_env["GUIAIA_QA_CRASH_DURING_SIGNED_DEPOSIT"] = "1"
             if args.multi_resource:

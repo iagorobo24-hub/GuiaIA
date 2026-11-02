@@ -171,6 +171,11 @@ async function run(mode,file){
     deposit=openDepositJournal(conf.depositDirectory)
     // Prepare and check independent live identity BEFORE joining with bot.
     await issueQaBoundPrincipalSession(identity)
+    if(process.env.GUIAIA_QA_UPSTREAM_RECIPE_IDS==='1'){
+      if(process.env.GUIAIA_QA_COBBLEMON!=='1')
+        throw Error('Recipe serializer correction restricted to Cobblemon QA')
+      require('./test/qa_cobblemon_recipe_ids_qa').applyUpstreamQaRecipeIds()
+    }
     const mineflayer=require('mineflayer')
     const {pathfinder,Movements,goals}=require('mineflayer-pathfinder')
     bot=mineflayer.createBot({

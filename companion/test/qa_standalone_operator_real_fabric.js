@@ -77,6 +77,11 @@ async function main(){
   try{
     const opts={host:'127.0.0.1',port:25593,auth:'offline',
       username,version:'1.21.1',hideErrors:true}
+    if(process.env.GUIAIA_QA_UPSTREAM_RECIPE_IDS==='1'){
+      if(process.env.GUIAIA_QA_COBBLEMON!=='1')
+        throw Error('Recipe serializer correction restricted to Cobblemon QA')
+      require('./qa_cobblemon_recipe_ids_qa').applyUpstreamQaRecipeIds()
+    }
     owner=mineflayer.createBot(opts)
     await new Promise((resolve,reject)=>{
       const timeout=setTimeout(()=>reject(Error('QA owner connection timed out')),20000)
