@@ -301,6 +301,20 @@ WSL2 `/tmp` is **not durable storage**; no claim of production disaster
 recovery or official-identity support is made. See
 [QA crash recovery evidence](../docs/QA_WITNESS_EXPLICIT_CRASH_RECOVERY_2026-11-02.md).
 
+### Third-authority high-water contract (QA simulation only)
+
+`src/qa_high_water_client.js` and
+`src/qa_triple_authority_reconciler.js` introduce a **read-only**, fourth-key
+Ed25519 high-water proof. A QA child process holds a volatile signed
+high-water reference in memory and verifies operator CAS against **both**
+witness and floor before advancing; the triple observer brackets the two
+existing authorities with two fresh high-water reads. It detects a
+*simultaneous restoration* of both older signed on-disk heads **as long as**
+this separate test process retains the newer value. A reboot that loses
+the child memory denies, not reconstructs, the high-water. The simulator
+has **no durable or immutable backing store** and is never part of world
+authorization. See [the high-water contract and negative tests](../docs/QA_EXTERNAL_MONOTONIC_CONTRACT_2026-11-02.md).
+
 ### Passive two-authority reconciliation (QA only)
 
 `src/qa_floor_reconciler.js` provides a **read-only** diagnostic after

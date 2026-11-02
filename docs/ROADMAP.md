@@ -175,6 +175,16 @@ Updated: 2026-11-02
       simultaneous signed disk rollback remains undetected**.
       Node 405/405 and Python 58/58 PASS
       (2026-11-02; QA_FLOOR_DUAL_AUTHORITY_RECONCILIATION_2026-11-02.md)
+- [x] QA-only third-source high-water protocol and triple-authority
+      read-only diagnostic: separate fourth Ed25519 key, nonce/freshness,
+      five pinned reads, signed operator CAS in a disposable in-memory child,
+      verification against signed witness and custodian before each advance;
+      both signed files rolled back together are detected **while the third
+      process retains seq1**, and third-process crash/restart without state
+      fails closed. **Simulation has no durable/immutable storage; no
+      world-action integration or remote Durán test**.
+      Node 412/412 and Python 58/58 PASS
+      (2026-11-02; QA_EXTERNAL_MONOTONIC_CONTRACT_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: durable storage/keys, host restarts and
       disaster recovery, host authorization, account identity and
