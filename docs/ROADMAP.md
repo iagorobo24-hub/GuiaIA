@@ -56,6 +56,9 @@ Updated: 2026-10-30
       independent private credential files, restart persistence, deny on
       invalid/stale state, and full Fabric 1.21.1 standalone operator QA PASS
       with physical deposit and subsequent revocation (2026-10-31)
+- [x] Offline-only SSH transport preflight: pinned host-key fingerprint,
+      Ed25519 identity, exact host/port and strict local-forward arguments;
+      5 negative/positive QA tests without network use (2026-11-02)
 - [ ] Witness on a physically different host, securely tunneled transport and
       independent operational trust root; not yet validated
 - [ ] Official online-mode Minecraft account identity and consent before beta

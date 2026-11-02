@@ -292,3 +292,15 @@ mode was retested using `GUIAIA_QA_STANDALONE_WITNESS=1`, with physical
 chest verification, durable receipts, signed revocation and code 0.
 Read [the evidence and limitations](../docs/QA_STANDALONE_WITNESS_2026-10-31.md).
 A different *process* is verified; a different *computer* is not yet verified.
+
+### Future cross-host witness: SSH offline preflight only
+
+`node qa_witness_tunnel_check.js --qa-check /tmp/guiaia-witness-tunnel-qa-EXAMPLE/config.json`
+validates a **private, synthetic QA** SSH configuration without making a
+connection. It requires a pinned Ed25519 SSH host key and a locally valid
+private OpenSSH identity, exact host/port, restricted loopback forwarding
+settings and pinned operator/witness public keys. The output explicitly
+reports `connected:false`. It does not start SSH, create a tunnel, or make
+the witness available on another machine. See
+[QA_SSH_TUNNEL_OFFLINE_PREFLIGHT_2026-11-02.md](../docs/QA_SSH_TUNNEL_OFFLINE_PREFLIGHT_2026-11-02.md).
+An actual second host, authenticated transport and failure tests are pending.
