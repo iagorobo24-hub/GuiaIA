@@ -317,6 +317,21 @@ replaying the cancelled world action. This test passed against real Fabric
 1.21.1 with synthetic offline identities. It is **not** a cross-host witness
 outage test. See [the evidence](../docs/QA_REAL_FABRIC_WITNESS_OUTAGE_2026-11-02.md).
 
+### Two physical hosts in a real disposable Fabric mission (QA)
+
+The `--physical-witness-outage` scenario has now completed on real isolated
+Fabric 1.21.1 with the independent signing witness on **Durán WSL2** and the
+enrolled offline operator on the Chromebook. The test-only
+`qa_physical_witness_proxy.js` pins the tailnet HTTPS certificate/SNI and
+uses a client-side outage marker to cut network access after an authorized
+physical gather, before a chest deposit. The operator denied the deposit,
+left zero items in the chest, durably cancelled the action and confirmed the
+same remote signed checkpoint after transport restoration, with no automatic
+replay. The full Node regression passed **368/368**, Python **58/58**.
+This **does not** claim a full Durán outage, Microsoft authentication,
+Cobblemon compatibility or production readiness. See
+[physical witness Fabric evidence](../docs/QA_REAL_FABRIC_PHYSICAL_WITNESS_2026-11-02.md).
+
 ### Windows native vs Ubuntu WSL2 credential safety (QA)
 
 Native Windows supports the dependency installation, most Node tests and

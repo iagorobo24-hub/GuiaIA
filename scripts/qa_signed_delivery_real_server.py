@@ -31,12 +31,14 @@ def main():
     parser.add_argument("--standalone-operator", action="store_true")
     parser.add_argument("--standalone-live-revocation", action="store_true")
     parser.add_argument("--standalone-witness-outage", action="store_true")
+    parser.add_argument("--physical-witness-outage", action="store_true")
     args = parser.parse_args()
     operator_mode = (args.standalone_operator or args.standalone_live_revocation
-                     or args.standalone_witness_outage)
+                     or args.standalone_witness_outage or args.physical_witness_outage)
     if sum((args.crash_after_deposit, args.multi_resource, args.secure_runtime,
             args.secure_runtime_recovery, args.standalone_operator,
-            args.standalone_live_revocation, args.standalone_witness_outage)) > 1:
+            args.standalone_live_revocation, args.standalone_witness_outage,
+            args.physical_witness_outage)) > 1:
         parser.error("Select only one isolated QA scenario")
     launcher = require_file(args.launcher, "QA Fabric server")
     fabric_api = require_file(args.fabric_api, "QA Fabric API")
@@ -135,12 +137,21 @@ def main():
             if args.standalone_witness_outage:
                 child_env["GUIAIA_QA_WITNESS_OUTAGE"] = "1"
                 child_env["GUIAIA_QA_STANDALONE_WITNESS"] = "1"
+            if args.physical_witness_outage:
+                child_env["GUIAIA_QA_WITNESS_OUTAGE"] = "1"
+                child_env["GUIAIA_QA_PHYSICAL_WITNESS"] = "1"
+                if not child_env.get("GUIAIA_QA_PHYSICAL_WITNESS_DIRECTORY"):
+                    raise RuntimeError("Private physical QA witness fixture required")
             driver = ("test/qa_standalone_operator_real_fabric.js" if operator_mode
                       else "test/qa_live_bridge_gateway.js")
             client_args = (["node", driver, str(events), str(public),
                             str(root / "journal"), str(root / "qa-operator-ready.flag")]
                            if operator_mode else
                            ["node", driver, str(events), str(public), str(root / "journal")])
+            if args.physical_witness_outage:
+                # Let the disposable JVM finish chunk/world warmup before
+                # starting the two-host sub-1500ms signed checkpoint ceremony.
+                time.sleep(12)
             client = subprocess.Popen(
                 client_args,
                 cwd=ROOT / "companion", env=child_env,
@@ -176,7 +187,7 @@ def main():
                 (root / "qa-operator-ready.flag").write_text("inventory_prepared\\n", encoding="ascii")
             out, err = client.communicate(timeout=120)
             result = out + "\n" + err
-            if args.standalone_witness_outage:
+            if args.standalone_witness_outage or args.physical_witness_outage:
                 marker = "GUIAIA_STANDALONE_WITNESS_OUTAGE_REAL_FABRIC_QA_EVIDENCE="
                 if client.returncode != 0 or marker not in result:
                     raise RuntimeError("Real Fabric witness outage QA failed\n" +
@@ -186,6 +197,8 @@ def main():
                 if (evidence.get("result") != "pass" or
                     evidence.get("real_fabric") is not True or
                     evidence.get("standalone_witness_process") is not True or
+                    (args.physical_witness_outage and
+                     evidence.get("physical_remote_witness") is not True) or
                     evidence.get("real_gather_receipts") != 1 or
                     evidence.get("real_deposit_receipts") != 0 or
                     evidence.get("physical_mined_block") is not True or

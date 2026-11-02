@@ -16,11 +16,13 @@ const {createQaCheckpointWitness}=require('../src/qa_checkpoint_witness')
 const {createPinnedQaRemoteCheckpointClient}=require('../src/remote_checkpoint')
 const {openMission}=require('../src/mission')
 const {openDepositJournal}=require('../src/deposit')
+const {createPhysicalQaWitnessFixture}=require('./qa_physical_witness_fixture')
 
 const [eventsFile,serverPubFile,journalRoot,readyFlag]=process.argv.slice(2)
 const liveRevocation=process.env.GUIAIA_QA_LIVE_REVOCATION==='1'
 const separateWitness=process.env.GUIAIA_QA_STANDALONE_WITNESS==='1'
 const witnessOutage=process.env.GUIAIA_QA_WITNESS_OUTAGE==='1'
+const physicalWitnessMode=process.env.GUIAIA_QA_PHYSICAL_WITNESS==='1'
 const worldId='qa:real-fabric:25593',botName='GuiaIA_QA',username='OwnerQA'
 const principalId='qa_external_preapproved_owner'
 const key=()=>crypto.generateKeyPairSync('ed25519')
@@ -41,8 +43,11 @@ function safeTemp(file,marker){
      !rel.includes(marker))throw Error('Refuse non-disposable test paths')
 }
 async function main(){
-  if(witnessOutage&&(!separateWitness||liveRevocation))
-    throw Error('Witness outage QA requires a separate test witness only')
+  if(witnessOutage&&(!(separateWitness||physicalWitnessMode)||liveRevocation||
+     (separateWitness&&physicalWitnessMode)))
+    throw Error('Witness outage QA requires one independent test witness only')
+  if(physicalWitnessMode&&!witnessOutage)
+    throw Error('Physical witness only allowed for isolated outage QA')
   safeTemp(eventsFile,'events.jsonl')
   safeTemp(serverPubFile,'qa-public.pem')
   safeTemp(journalRoot,'journal')
@@ -56,11 +61,15 @@ async function main(){
   const source=createPinnedQaServerBridgeAuthority(eventsFile,serverPub,worldId)
   const live=createPinnedQaLivePresenceAuthority({
     port:25594,worldId,serverBridgePublicKeyPem:serverPub})
-  const ownerKey=key(),operatorKey=key(),witnessKey=key()
+  const physicalFixture=physicalWitnessMode?createPhysicalQaWitnessFixture(
+    process.env.GUIAIA_QA_PHYSICAL_WITNESS_DIRECTORY):null
+  const ownerKey=key(),operatorKey=physicalFixture?.operatorKey||key()
+  const witnessKey=physicalFixture?null:key()
+  const witnessPublicPem=physicalFixture?.witnessPublicKeyPem||pub(witnessKey)
   const witnessChildConfig=separateWitness?createChildWitness(
     witnessRoot,worldId,operatorKey,witnessKey):null
   const witnessConfigRoot=witnessChildConfig?.configRoot||null
-  const witness=witnessChildConfig?.witness||createQaCheckpointWitness({
+  const witness=physicalFixture?.witness||witnessChildConfig?.witness||createQaCheckpointWitness({
     directory:witnessRoot,worldId,
     operatorPublicKeyPem:pub(operatorKey),witnessPrivateKey:witnessKey.privateKey})
   let owner=null,cli=null,registry=null,mission=null,deposit=null
@@ -125,21 +134,41 @@ async function main(){
     const witnessUrl=await witness.start()
     const witnessClient=createPinnedQaRemoteCheckpointClient({
       url:witnessUrl,worldId,operatorPublicKeyPem:pub(operatorKey),
-      witnessPublicKeyPem:pub(witnessKey)})
+      witnessPublicKeyPem:witnessPublicPem})
+    async function confirmedHead(expected){
+      // Read-only signed proof retries only. Never dispatch a world action
+      // or blindly resend an advance whose reply might have been lost.
+      for(let i=0;i<5;i++){
+        try{if(await witnessClient.verifyLocal(expected)===true)return true}
+        catch(error){
+          if(!physicalWitnessMode)throw error
+        }
+        await sleep(250)
+      }
+      throw Error('Independent signed checkpoint remains unconfirmed')
+    }
     async function advance(a,b){
       const now=Date.now()
-      await witnessClient.publish(signed({
+      const ticket=signed({
         aud:'guiaia:checkpoint-advance:v1',worldId,
         operatorFingerprint:after.operatorFingerprint,
         previousSequence:a===null?-1:a.sequence,
         previousSha256:a===null?null:a.registrySha256,
         sequence:b.sequence,registrySha256:b.registrySha256,
         nonce:crypto.randomUUID(),issuedAt:now-1000,expiresAt:now+30000
-      },operatorKey))
+      },operatorKey)
+      try{await witnessClient.publish(ticket)}
+      catch(error){
+        if(!physicalWitnessMode)throw error
+        // Lost ACK is not authority to retry a signed CAS. Only continue if
+        // a FRESH witness-signed proof confirms exactly the expected head.
+        await confirmedHead(b)
+      }
     }
     await advance(null,before)
     await advance(before,after)
-    await witnessClient.verifyLocal(after)
+    if(physicalWitnessMode)await confirmedHead(after)
+    else await witnessClient.verifyLocal(after)
     registry.close()
     registry=null
 
@@ -175,7 +204,7 @@ async function main(){
     const ownerPrivate=privateFile('owner-private.pem',privatePem(ownerKey))
     const operatorPublic=privateFile('operator-public.pem',pub(operatorKey))
     const serverPublic=privateFile('server-public.pem',serverPub)
-    const witnessPublic=privateFile('witness-public.pem',pub(witnessKey))
+    const witnessPublic=privateFile('witness-public.pem',witnessPublicPem)
     const planFile=privateFile('plan.json',JSON.stringify(approvedPlan))
     const grantsFile=privateFile('grants.json',JSON.stringify(grants))
     const conf={version:1,sandboxOnly:true,worldId,botName,username,
@@ -262,7 +291,7 @@ async function main(){
       const restartedUrl=await witness.start()
       const recovered=createPinnedQaRemoteCheckpointClient({
         url:restartedUrl,worldId,operatorPublicKeyPem:pub(operatorKey),
-        witnessPublicKeyPem:pub(witnessKey)})
+        witnessPublicKeyPem:witnessPublicPem})
       if(await recovered.verifyLocal(after)!==true)
         throw Error('Restarted external witness did not recover signed head')
       const exclusions=new Set(['missionDirectory','depositDirectory',
@@ -294,7 +323,9 @@ async function main(){
         throw Error('Recovery unexpectedly reused signed permits')
       console.log('GUIAIA_STANDALONE_WITNESS_OUTAGE_REAL_FABRIC_QA_EVIDENCE='+
         JSON.stringify({result:'pass',production:false,real_fabric:true,
-          standalone_witness_process:true,offline_account_identity:false,
+          standalone_witness_process:true,
+          physical_remote_witness:physicalWitnessMode,
+          offline_account_identity:false,
           real_gather_receipts:1,real_deposit_receipts:0,
           physical_mined_block:true,physical_chest_oak_log:0,
           witness_disconnection_denied:witnessDenied,

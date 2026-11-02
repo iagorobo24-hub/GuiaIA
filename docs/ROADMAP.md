@@ -86,6 +86,12 @@ Updated: 2026-11-02
       denial, link outage fail-closed in 1566 ms, independent process SIGTERM,
       persisted signed head and recovery without key rotation; ephemeral
       secrets/Serve cleaned (2026-11-02; QA_REMOTE_WITNESS_PROCESS_RESTART_2026-11-02.md)
+- [x] Disposable real Fabric 1.21.1 mission gated by physical Durán WSL2
+      Ed25519 witness over tailnet-verified HTTPS: real oak gather, local
+      client transport deliberately severed before signed chest deposit,
+      zero deposit, unchanged journals, durable cancellation, checkpoint
+      sequence 1 and preflight restored without replay; Node 368/368 and
+      Python 58/58 PASS (2026-11-02; QA_REAL_FABRIC_PHYSICAL_WITNESS_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: deployment hardening, restart and crash tests,
       host authorization, account identity and controlled multiplayer beta
