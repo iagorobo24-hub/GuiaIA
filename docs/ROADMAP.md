@@ -167,6 +167,14 @@ Updated: 2026-11-02
       **Same Chromebook and disposable /tmp: not persistent hardware
       or immutable anti-rollback authority; not wired to world actions**
       (2026-11-02; QA_INDEPENDENT_FLOOR_CUSTODIAN_2026-11-02.md)
+- [x] Read-only QA reconciliation of independently pinned live witness and
+      custodian: two signed floor reads bracket a signed witness snapshot;
+      dropped write ACK after persisted commit, custodian outage, hash
+      divergence, concurrent floor change, and simultaneous rollback tested.
+      **Diagnostic only; not atomic, not authorized for world actions, and
+      simultaneous signed disk rollback remains undetected**.
+      Node 405/405 and Python 58/58 PASS
+      (2026-11-02; QA_FLOOR_DUAL_AUTHORITY_RECONCILIATION_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: durable storage/keys, host restarts and
       disaster recovery, host authorization, account identity and

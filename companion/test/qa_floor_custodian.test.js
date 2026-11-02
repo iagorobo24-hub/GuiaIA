@@ -377,3 +377,191 @@ test('SIGKILL of custodian leaves exclusive lock and fails closed rather than si
   assert.equal(fs.existsSync(lock),true)
   assert.deepEqual(fs.readFileSync(f.file),floorBytes)
 })
+
+test('read-only reconciliation distinguishes equal from witness-ahead state without retry',async t=>{
+  const {createQaFloorReconciler}=require('../src/qa_floor_reconciler')
+  const f=setup(t),s=await launch(t,f)
+  const h0=f.head(0,'a'.repeat(64)),h1=f.head(1,'b'.repeat(64))
+  const reconciler=createQaFloorReconciler({
+    ...f.options(s.wu,s.au),witnessUrl:s.wu})
+  await assert.rejects(reconciler.inspect(),/denied/i)
+  await s.witness.publish(f.ticket(null,h0))
+  await s.anchor.publish(f.ticket(null,h0))
+  const matched=await reconciler.inspect()
+  assert.equal(matched.result,'qa_equal_observation')
+  assert.equal(matched.requiresManualReview,false)
+  assert.equal(matched.world_actions,false)
+  assert.equal(matched.production_ready,false)
+  assert.equal(matched.atomic_snapshot,false)
+  await s.witness.publish(f.ticket(h0,h1))
+  const pending=await reconciler.inspect()
+  assert.equal(pending.result,'qa_witness_ahead_requires_review')
+  assert.equal(pending.requiresManualReview,true)
+  assert.equal(pending.floorSequence,0)
+  assert.equal(pending.witnessSequence,1)
+  assert.equal(pending.world_actions,false)
+  assert.equal((await s.anchor.latest()).sequence,0,
+    'observation must not advance the floor')
+  await s.anchor.publish(f.ticket(h0,h1))
+  const restored=await reconciler.inspect()
+  assert.equal(restored.result,'qa_equal_observation')
+  assert.equal(restored.witnessSequence,1)
+  assert.equal(restored.floorSequence,1)
+})
+
+test('lost HTTP acknowledgment after committed floor write is reconciled without replay',async t=>{
+  const {createQaFloorReconciler}=require('../src/qa_floor_reconciler')
+  const f=setup(t),s=await launch(t,f)
+  const h0=f.head(0,'1'.repeat(64)),h1=f.head(1,'2'.repeat(64))
+  await s.witness.publish(f.ticket(null,h0))
+  await s.anchor.publish(f.ticket(null,h0))
+  await s.witness.publish(f.ticket(h0,h1))
+  let dropped=0
+  const target=new URL(s.au)
+  const proxy=http.createServer((req,res)=>{
+    const upstream=http.request({
+      hostname:'127.0.0.1',port:Number(target.port),
+      path:req.url,method:req.method,headers:req.headers
+    },answer=>{
+      const chunks=[]
+      answer.on('data',c=>chunks.push(c))
+      answer.on('end',()=>{
+        if(req.method==='POST'&&answer.statusCode===200){
+          dropped++
+          res.socket?.destroy()
+        }else{
+          res.writeHead(answer.statusCode,answer.headers)
+          res.end(Buffer.concat(chunks))
+        }
+      })
+    })
+    upstream.on('error',()=>res.destroy())
+    req.pipe(upstream)
+  })
+  await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve))
+  t.after(()=>{proxy.closeAllConnections();proxy.close()})
+  const proxyUrl='http://127.0.0.1:'+proxy.address().port+'/'
+  const interrupted=createPinnedQaFloorClient({
+    ...f.options(s.wu,proxyUrl),url:proxyUrl})
+  await assert.rejects(interrupted.publish(f.ticket(h0,h1)),/unavailable|deadline/i)
+  assert.equal(dropped,1,'proxy must drop ACK only after committed 200')
+  const current=await s.anchor.latest()
+  assert.equal(current.sequence,1,'signed write must survive lost ACK')
+  const recovered=await createQaFloorReconciler({
+    ...f.options(s.wu,s.au),witnessUrl:s.wu}).inspect()
+  assert.equal(recovered.result,'qa_equal_observation')
+  assert.equal(recovered.world_actions,false)
+  await assert.rejects(s.anchor.publish(f.ticket(h0,h1)),/denied/)
+  assert.equal((await s.anchor.latest()).sequence,1)
+})
+
+test('custodian outage after witness advance remains fail closed until explicit floor update',async t=>{
+  const {createQaFloorReconciler}=require('../src/qa_floor_reconciler')
+  const f=setup(t),s=await launch(t,f)
+  const h0=f.head(0,'3'.repeat(64)),h1=f.head(1,'4'.repeat(64))
+  await s.witness.publish(f.ticket(null,h0))
+  await s.anchor.publish(f.ticket(null,h0))
+  await s.witness.publish(f.ticket(h0,h1))
+  await s.a.close()
+  await assert.rejects(createQaFloorReconciler({
+    ...f.options(s.wu,s.au),witnessUrl:s.wu}).inspect(),/unavailable/i)
+  const reopened=f.floorServer(s.wu),newUrl=await reopened.start()
+  t.after(()=>reopened.close())
+  const current=createQaFloorReconciler({
+    ...f.options(s.wu,newUrl),witnessUrl:s.wu})
+  const pending=await current.inspect()
+  assert.equal(pending.result,'qa_witness_ahead_requires_review')
+  assert.equal(pending.requiresManualReview,true)
+  const manual=createPinnedQaFloorClient({
+    ...f.options(s.wu,newUrl),url:newUrl})
+  await manual.publish(f.ticket(h0,h1))
+  assert.equal((await current.inspect()).result,'qa_equal_observation')
+})
+
+test('restoring both old signed states still defeats a same-disk floor: never claim durable anti-rollback',async t=>{
+  const {createQaFloorReconciler}=require('../src/qa_floor_reconciler')
+  const f=setup(t),s=await launch(t,f)
+  const h0=f.head(0,'5'.repeat(64)),h1=f.head(1,'6'.repeat(64))
+  await s.witness.publish(f.ticket(null,h0))
+  await s.anchor.publish(f.ticket(null,h0))
+  const oldWitness=fs.readFileSync(path.join(f.witnessRoot,'head.json'))
+  const oldFloor=fs.readFileSync(f.file)
+  await s.witness.publish(f.ticket(h0,h1))
+  await s.anchor.publish(f.ticket(h0,h1))
+  await s.a.close()
+  await s.w.close()
+  fs.writeFileSync(path.join(f.witnessRoot,'head.json'),oldWitness)
+  fs.writeFileSync(f.file,oldFloor)
+  const revivedWitness=f.witnessServer(),wu=await revivedWitness.start()
+  t.after(()=>revivedWitness.close())
+  const revivedFloor=f.floorServer(wu),au=await revivedFloor.start()
+  t.after(()=>revivedFloor.close())
+  const outcome=await createQaFloorReconciler({
+    ...f.options(wu,au),witnessUrl:wu}).inspect()
+  assert.equal(outcome.result,'qa_equal_observation')
+  assert.equal(outcome.witnessSequence,0)
+  assert.equal(outcome.floorSequence,0)
+  assert.equal(outcome.production_ready,false)
+  assert.equal(outcome.atomic_snapshot,false)
+  assert.equal(outcome.world_actions,false)
+})
+
+test('reconciliation rejects same-sequence hash divergence between the two authorities',async t=>{
+  const {createQaFloorReconciler}=require('../src/qa_floor_reconciler')
+  const f=setup(t),s=await launch(t,f)
+  const h0=f.head(0,'7'.repeat(64)),h1=f.head(1,'8'.repeat(64))
+  await s.witness.publish(f.ticket(null,h0))
+  await s.anchor.publish(f.ticket(null,h0))
+  await s.witness.publish(f.ticket(h0,h1))
+  await s.anchor.publish(f.ticket(h0,h1))
+  await s.w.close()
+  const altered=fs.readFileSync(path.join(f.witnessRoot,'head.json'))
+  const obj=JSON.parse(altered)
+  obj.head.registrySha256='9'.repeat(64)
+  obj.signature=crypto.sign(null,Buffer.from(JSON.stringify(obj.head)),
+    f.witness.privateKey).toString('base64url')
+  fs.writeFileSync(path.join(f.witnessRoot,'head.json'),
+    JSON.stringify(obj)+'\n')
+  const revived=f.witnessServer(),wu=await revived.start()
+  t.after(()=>revived.close())
+  const reconciler=createQaFloorReconciler({
+    ...f.options(wu,s.au),witnessUrl:wu})
+  await assert.rejects(reconciler.inspect(),/disagree on checkpoint hash/)
+})
+
+test('floor moving between two signed snapshots forces reconciliation to fail closed',async t=>{
+  const {createQaFloorReconciler}=require('../src/qa_floor_reconciler')
+  const f=setup(t),s=await launch(t,f)
+  const h0=f.head(0,'a'.repeat(64)),h1=f.head(1,'b'.repeat(64))
+  await s.witness.publish(f.ticket(null,h0))
+  await s.anchor.publish(f.ticket(null,h0))
+  await s.witness.publish(f.ticket(h0,h1))
+  const source=new URL(s.wu)
+  let advanced=false
+  const proxy=http.createServer(async(req,res)=>{
+    try{
+      if(!advanced&&req.method==='GET'&&req.url.startsWith('/checkpoint?')){
+        advanced=true
+        await s.anchor.publish(f.ticket(h0,h1))
+      }
+      const upstream=http.request({
+        hostname:'127.0.0.1',port:Number(source.port),
+        method:req.method,path:req.url,headers:req.headers
+      },response=>{
+        res.writeHead(response.statusCode,response.headers)
+        response.pipe(res)
+      })
+      upstream.on('error',()=>res.destroy())
+      req.pipe(upstream)
+    }catch{res.destroy()}
+  })
+  await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve))
+  t.after(()=>{proxy.closeAllConnections();proxy.close()})
+  const proxyUrl='http://127.0.0.1:'+proxy.address().port+'/'
+  const recon=createQaFloorReconciler({
+    ...f.options(proxyUrl,s.au),witnessUrl:proxyUrl})
+  await assert.rejects(recon.inspect(),/floor changed during reconciliation/)
+  assert.equal(advanced,true)
+  assert.equal((await s.anchor.latest()).sequence,1)
+  assert.equal((await recon.inspect()).result,'qa_equal_observation')
+})

@@ -301,6 +301,19 @@ WSL2 `/tmp` is **not durable storage**; no claim of production disaster
 recovery or official-identity support is made. See
 [QA crash recovery evidence](../docs/QA_WITNESS_EXPLICIT_CRASH_RECOVERY_2026-11-02.md).
 
+### Passive two-authority reconciliation (QA only)
+
+`src/qa_floor_reconciler.js` provides a **read-only** diagnostic after
+an uncertain ACK or recovery: it checks two fresh signed custodian reads
+around one fresh signed witness read. A matching snapshot is merely
+`qa_equal_observation`; a witness ahead of the custodian is
+`qa_witness_ahead_requires_review`; mismatched hashes, unavailable
+sources, or a floor changing between reads fail closed. It **never**
+retries a signed POST, recovers journals, grants permissions or starts
+Minecraft actions. Restoring both old signed states remains undetectable,
+and a read cannot guarantee an atomic snapshot.
+See [QA reconciliation evidence](../docs/QA_FLOOR_DUAL_AUTHORITY_RECONCILIATION_2026-11-02.md).
+
 ### Separate QA floor custodian (not production anti-rollback storage)
 
 The standalone `qa_floor_custodian.js --qa-serve <private-config>` maintains a
