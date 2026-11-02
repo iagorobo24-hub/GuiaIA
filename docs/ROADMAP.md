@@ -149,6 +149,15 @@ Updated: 2026-11-02
       **Chromebook-only tests, remote
       Durán inspection blocked by session controls**
       (2026-11-02; QA_DURAN_WSL2_PERSISTENCE_READINESS_2026-11-02.md)
+- [x] QA-only independent signed rollback floor comparison:
+      a third Ed25519 authority pins world/operator/witness and minimum
+      checkpoint sequence/hash; a real authenticated witness accepts a
+      restored older signed head but an externally retained newer floor
+      rejects it. Forgery/scope/key/hash negatives tested. **Not integrated
+      with permissions or durable external storage**; a stale restored
+      floor still permits rollback. Node 390/390 and Python 58/58 PASS
+      (2026-11-02;
+      QA_INDEPENDENT_ROLLBACK_FLOOR_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: durable storage/keys, host restarts and
       disaster recovery, host authorization, account identity and

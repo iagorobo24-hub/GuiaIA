@@ -301,6 +301,20 @@ WSL2 `/tmp` is **not durable storage**; no claim of production disaster
 recovery or official-identity support is made. See
 [QA crash recovery evidence](../docs/QA_WITNESS_EXPLICIT_CRASH_RECOVERY_2026-11-02.md).
 
+### Independent rollback floor: QA-only negative proof
+
+`src/qa_independent_rollback_floor.js` contains a **read-only** comparator
+of two separately verified signatures: the currently pinned witness head
+and a minimum sequence/hash signed by a **third, independently pinned**
+Ed25519 authority. It rejects a signed old `head.json` restored under the
+same witness key if an independently retained newer floor exists. It
+never grants world permissions or updates the checkpoint. It is **not**
+connected to authorization and does not store or protect the floor itself.
+Restoring an old but genuinely signed floor alongside the witness still
+escapes detection; a future implementation must establish durable,
+nonrollbackable **external** custody and fail-closed freshness semantics.
+See [negative rollback proof](../docs/QA_INDEPENDENT_ROLLBACK_FLOOR_2026-11-02.md).
+
 ### Future WSL2 witness storage: read-only candidate audit (not deployment)
 
 `qa_witness_storage_audit.js --qa-readonly-storage-candidate <path>` evaluates
