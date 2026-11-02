@@ -107,8 +107,23 @@ function setup(t){
   return {start,client,operator,witness,head,ticket,stop,configFile,
     privateFile,witnessRoot,configRoot}
 }
+async function assertNativeWindowsDenied(f){
+  const child=spawn(process.execPath,[path.resolve(__dirname,'../qa_witness.js'),
+    '--qa-serve',f.configFile],{stdio:['ignore','pipe','pipe']})
+  let stderr=''
+  child.stderr.on('data',part=>{stderr+=part.toString('utf8')})
+  const code=await new Promise((resolve,reject)=>{
+    const timeout=setTimeout(()=>{child.kill();reject(Error('Native Windows QA guard hung'))},4500)
+    child.once('error',error=>{clearTimeout(timeout);reject(error)})
+    child.once('close',exit=>{clearTimeout(timeout);resolve(exit)})
+  })
+  assert.equal(code,2)
+  assert.match(stderr,/Native Windows witness requires verified NTFS ACL isolation/)
+  assert.equal(fs.existsSync(f.witnessRoot),false)
+}
 test('independent executable persists pinned witness, denies invalid signatures and survives restart',async t=>{
   const f=setup(t)
+  if(process.platform==='win32')return assertNativeWindowsDenied(f)
   const first=await f.start(),remote=f.client(first.url)
   await assert.rejects(remote.latest(),/denied/)
   const start=f.head(0,'a'.repeat(64)),next=f.head(1,'b'.repeat(64))
@@ -129,6 +144,7 @@ test('independent executable persists pinned witness, denies invalid signatures 
 })
 test('independent executable denies unsafe credentials, unexpected keys and symlinked config',async t=>{
   const f=setup(t)
+  if(process.platform==='win32')return assertNativeWindowsDenied(f)
   const config=JSON.parse(fs.readFileSync(f.configFile,'utf8'))
   const command=[path.resolve(__dirname,'../qa_witness.js'),'--qa-serve']
   const spawnDenied=async file=>{
@@ -155,6 +171,7 @@ test('independent executable denies unsafe credentials, unexpected keys and syml
 })
 test('independent witness keeps an exclusive lock and requires external private state for startup',async t=>{
   const f=setup(t)
+  if(process.platform==='win32')return assertNativeWindowsDenied(f)
   const primary=await f.start()
   await assert.rejects(f.start(),/Witness exited|did not start/)
   await f.stop(primary.child)

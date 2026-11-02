@@ -21,6 +21,11 @@ function securePath(file,{output=false}={}){
   const relative=path.relative(PROJECT,file)
   if(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..'))
     throw Error('Credential or handoff files inside Git project denied')
+  // The POSIX 0700/0600 masks are not NTFS ACL verification. Do not read or
+  // write principal/operator key material on native Windows until there is
+  // an independently tested policy for owner, inheritance and allowed SIDs.
+  if(process.platform==='win32')
+    throw Error('Native Windows principal handoff requires verified NTFS ACL isolation')
   // Reject symlink parent AND symlink ancestors, including aliases that
   // would route apparently external material through the repository.
   if(fs.realpathSync(parent)!==parent)

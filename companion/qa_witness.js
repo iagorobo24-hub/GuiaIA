@@ -68,6 +68,13 @@ function validateConfig(file){
     operatorPublicKeyPem,witnessPrivateKey}
 }
 async function main(){
+  // POSIX 0700/0600 restrictions are not NTFS ACL checks. A Windows-native
+  // temp directory may grant read access to unrelated principals even when
+  // fs.stat reports restrictive mode bits. Refuse loading any signing key
+  // until a separately reviewed, strict Windows ACL implementation exists.
+  // On a Windows computer, this QA witness may instead run in Linux WSL2.
+  if(process.platform==='win32')
+    throw Error('Native Windows witness requires verified NTFS ACL isolation')
   if(process.argv.length!==4||process.argv[2]!=='--qa-serve')
     throw Error('Use --qa-serve with one private isolated QA witness config')
   const conf=validateConfig(process.argv[3])

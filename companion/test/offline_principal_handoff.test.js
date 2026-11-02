@@ -42,6 +42,13 @@ const approve=(f,request,{world=worldId,id=principalId,finger=fingerprint(reques
 
 test('separate principal process, operator approval, consent, verification and registry import',t=>{
   const x=fixture(t)
+  if(process.platform==='win32'){
+    const denied=cmd('principal-request',worldId,principalId,x.principalKey,x.requestFile)
+    assert.equal(denied.status,2)
+    assert.match(denied.stderr,/Native Windows principal handoff requires verified NTFS ACL isolation/)
+    assert.equal(fs.existsSync(x.requestFile),false)
+    return
+  }
   const first=cmd('principal-request',worldId,principalId,x.principalKey,x.requestFile)
   assert.equal(first.status,0,first.stderr)
   const request=JSON.parse(fs.readFileSync(x.requestFile,'utf8'))
@@ -135,6 +142,13 @@ test('operator review CLI refuses redirected stdin, never signing the request',t
 
 test('CLI refuses weak permissions, symlinks, hardlinks, overwrites and unsafe parents',t=>{
   const x=fixture(t)
+  if(process.platform==='win32'){
+    const denied=cmd('principal-request',worldId,principalId,x.principalKey,x.requestFile)
+    assert.equal(denied.status,2)
+    assert.match(denied.stderr,/Native Windows principal handoff requires verified NTFS ACL isolation/)
+    assert.equal(fs.existsSync(x.requestFile),false)
+    return
+  }
   fs.chmodSync(x.principalKey,0o644)
   let result=cmd('principal-request',worldId,principalId,x.principalKey,x.requestFile)
   assert.equal(result.status,2)
@@ -256,7 +270,9 @@ test('malformed external JSON never echoes its content or private-looking bytes'
   fs.writeFileSync(x.handoffFile,'{"unsafe":"'+secret+'",bad}',{mode:0o600})
   const result=cmd('verify',worldId,x.operatorPublic,x.handoffFile)
   assert.equal(result.status,2)
-  assert.match(result.stderr,/Malformed public QA JSON/)
+  assert.match(result.stderr,process.platform==='win32'
+    ?/Native Windows principal handoff requires verified NTFS ACL isolation/
+    :/Malformed public QA JSON/)
   assert.ok(!result.stderr.includes(secret))
   assert.ok(!result.stdout.includes(secret))
 })

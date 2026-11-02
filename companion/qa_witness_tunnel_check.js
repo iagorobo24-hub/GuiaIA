@@ -58,6 +58,12 @@ function fingerprintKnownHost(raw,host,sshPort){
     .digest('base64').replace(/=+$/,'')
 }
 function loadQaTunnelConfig(file){
+  // NTFS ACLs cannot be validated using fs.stat().mode POSIX masks.
+  // Never treat inherited Windows permissions as an isolated QA credential.
+  // Use the verified Linux/WSL2 QA environment until native ACL validation
+  // is implemented and tested independently.
+  if(process.platform==='win32')
+    throw Error('Native Windows SSH tunnel config requires verified NTFS ACL isolation')
   const root=rootFor(file)
   const conf=JSON.parse(readPrivate(file,root,4096).toString('utf8'))
   if(!conf||Array.isArray(conf)||Object.getPrototypeOf(conf)!==Object.prototype||

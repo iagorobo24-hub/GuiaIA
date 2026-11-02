@@ -47,8 +47,20 @@ function fixture(t){
     {encoding:'utf8',timeout:6000,stdio:['ignore','pipe','pipe']})
   return {root,config,save,run,wire,knownHostsFile,identityFile,write}
 }
+function nativeWindowsTunnelDenied(f){
+  if(process.platform!=='win32')return false
+  const file=f.save()
+  assert.throws(()=>loadQaTunnelConfig(file),/Native Windows SSH tunnel config requires verified NTFS ACL isolation/)
+  const result=f.run(file)
+  assert.equal(result.status,2)
+  assert.match(result.stderr,/Native Windows SSH tunnel config requires verified NTFS ACL isolation/)
+  assert.equal(result.stdout,'')
+  return true
+}
 test('offline preflight accepts exact Ed25519 host key, valid SSH identity and pinned QA keys',t=>{
-  const f=fixture(t),file=f.save()
+  const f=fixture(t)
+  if(nativeWindowsTunnelDenied(f))return
+  const file=f.save()
   const loaded=loadQaTunnelConfig(file)
   assert.equal(loaded.sshHost,'witness.example.invalid')
   const args=buildPinnedSshArgs(loaded)
@@ -70,6 +82,7 @@ test('offline preflight accepts exact Ed25519 host key, valid SSH identity and p
 })
 test('host key mismatch, wrong hostname, unexpected host entries and malformed wire key all deny',t=>{
   const f=fixture(t)
+  if(nativeWindowsTunnelDenied(f))return
   assert.equal(f.run(f.save('wrong-hash.json',{
     hostKeyFingerprint:'SHA256:'+'A'.repeat(43)})).status,2)
   const other=f.save('other-host.json',{sshHost:'other.example.invalid'})
@@ -81,6 +94,7 @@ test('host key mismatch, wrong hostname, unexpected host entries and malformed w
 })
 test('insecure permissions, symlinks and invalid private identity deny with no connection',t=>{
   const f=fixture(t)
+  if(nativeWindowsTunnelDenied(f))return
   const insecure=f.save('insecure.json')
   fs.chmodSync(insecure,0o644)
   assert.equal(f.run(insecure).status,2)
@@ -95,6 +109,7 @@ test('insecure permissions, symlinks and invalid private identity deny with no c
 })
 test('option injection, unsafe remote endpoints and extraneous config are refused',t=>{
   const f=fixture(t)
+  if(nativeWindowsTunnelDenied(f))return
   for(const [i,override] of [
     {sshHost:'-oProxyCommand=bad'},
     {sshHost:'localhost'},
@@ -115,6 +130,7 @@ test('option injection, unsafe remote endpoints and extraneous config are refuse
 })
 test('nonstandard SSH host key port must be pinned exactly; never infer host key from DNS',t=>{
   const f=fixture(t)
+  if(nativeWindowsTunnelDenied(f))return
   const config=f.save('alternate-port.json',{sshPort:2222})
   assert.equal(f.run(config).status,2)
   fs.writeFileSync(f.knownHostsFile,

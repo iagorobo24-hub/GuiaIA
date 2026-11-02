@@ -304,3 +304,19 @@ reports `connected:false`. It does not start SSH, create a tunnel, or make
 the witness available on another machine. See
 [QA_SSH_TUNNEL_OFFLINE_PREFLIGHT_2026-11-02.md](../docs/QA_SSH_TUNNEL_OFFLINE_PREFLIGHT_2026-11-02.md).
 An actual second host, authenticated transport and failure tests are pending.
+
+### Windows native vs Ubuntu WSL2 credential safety (QA)
+
+Native Windows supports the dependency installation, most Node tests and
+Python tests, but **must not be used to store or load QA private signing keys**
+with the current POSIX-mode-based utilities. The external witness CLI,
+SSH tunnel preflight and offline principal handoff explicitly deny native
+Windows until verified NTFS ACL isolation exists. Use Linux/Ubuntu WSL2 for
+these QA ceremonies with private directories and mode-0600 files instead.
+On 2026-11-02, independently transferred Git-archive sources passed the full
+Node suite on Durán WSL2 (364/364) and the native Windows test suite with
+362 passed, 2 Linux-PTY skips and 0 failures. Python: 58/58 on both.
+The witness-in-another-host test is **not complete**: TCP/443 from the
+Chromebook to Durán's tailnet HTTPS listener timed out despite Tailscale
+ping and file transfer success. See
+[the cross-host acceptance report](../docs/QA_CROSS_HOST_DURAN_WINDOWS_WSL_2026-11-02.md).

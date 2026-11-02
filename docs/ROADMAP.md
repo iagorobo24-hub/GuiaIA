@@ -24,7 +24,9 @@ Updated: 2026-10-30
 - [x] Tests for sanitization, prompt injection, policy denial, read-only semantics
 - [x] Real live RCON read of Penguin Minecraft status, without in-game mutation
 - [x] MCP subprocess smoke integration
-- [x] Cross-platform Windows NTFS / Linux execution and permission fallbacks
+- [x] Cross-platform general execution and basic filesystem tests;
+      security-sensitive native Windows secret-file entrypoints fail closed
+      pending independently verified NTFS ACL handling
 - [x] Multi-resource 4-step mission in real Fabric 1.21.1 (`--multi-resource` PASS)
 - [x] Safe interruption and crash recovery without item duplication (`--crash-after-deposit` PASS)
 - [x] Ed25519 signed session identity bridge and live presence server (`qa_fabric_identity_bridge.py` PASS)
@@ -34,7 +36,11 @@ Updated: 2026-10-30
 - [x] Disposable **local** Git-archive clean checkout on Chromebook: new
       npm ci --offline --ignore-scripts, Node and Python full regression,
       missing-owner CLI denial; no production world changes (2026-11-02)
-- [ ] Another-machine clean install confirmation
+- [x] Another physical machine clean install: Chromebook git archive SHA-256
+      verified on Durán; npm ci on Windows and Ubuntu WSL2, Node 362/364
+      Windows (2 PTY-only skipped), 364/364 WSL2 and Python 58/58 on both;
+      Windows native private-key commands explicitly fail closed until NTFS
+      ACL validation exists (2026-11-02)
 - [x] Isolated QA integration: separately enrolled owner + live signed Fabric
       presence + checkpoint witness + signed journal runtime + terminal operator
       (library simulation and standalone TCP/HTTP preflight verified)
@@ -63,6 +69,9 @@ Updated: 2026-10-30
       Ed25519 identity, exact host/port and strict local-forward arguments;
       5 negative/positive QA tests without network use (2026-11-02)
 - [ ] Witness on a physically different host, securely tunneled transport and
-      independent operational trust root; not yet validated
+      independent operational trust root; isolated witness private signing key
+      provisioned in Durán WSL2, public key checked on Chromebook, Tailscale
+      HTTPS local to Durán verified, but Chromebook TCP/443 timed out; no
+      cross-host signed checkpoint accepted (2026-11-02)
 - [ ] Official online-mode Minecraft account identity and consent before beta
 - [ ] Independent user-facing installation and controlled multiplayer beta
