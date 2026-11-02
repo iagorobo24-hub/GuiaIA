@@ -379,7 +379,10 @@ is pinned, the server is loopback-only, and the test world is removed.
 The separate signed-operator trial did **not** pass: Mineflayer did not
 complete player startup with this modded server. An independent probe saw
 the server accept a synthetic player, but the Mineflayer `spawn` event timed
-out after 16 seconds. The exact protocol cause is **unconfirmed**. No physical
+out after 16 seconds. A longer read-only diagnostic subsequently proved the
+client completes `configuration` and reaches `play` (79 play packets), then
+raises a `play.toClient` array-length decoding error before `spawn`. The
+**exact failing packet type remains unconfirmed**. No physical
 gather, signed chest deposit, Pokémon actions or official online accounts
 are validated by this test. Do not bypass identity or checkpoint gates to
 work around modded-client incompatibility. See

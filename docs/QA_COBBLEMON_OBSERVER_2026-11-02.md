@@ -45,3 +45,19 @@ Para separar las causas, el ensayo de observación incluyó un cliente Mineflaye
 - Regresión Python: **58/58** PASS; sintaxis y `git diff --check`: PASS. Suite completa Node `npm test`: **368/368 PASS**, sin fallos ni omisiones, verificada con el código de esta fase. No hay evidencia de login oficial, prueba de un cliente Cobblemon real ni build reproducible del observador en esta fase.
 
 **Prioridad:** cerrar compatibilidad de cliente/ejecutor en QA, repetir extracción y depósito sintéticos con Cobblemon y ejecutar también caída de testigo, sin tocar Teselia. Mantener la parte de observación como validada y la de actuación como pendiente.
+
+## Continuación: diagnóstico reproducido a nivel de paquetes (2026-11-02)
+
+Se repitió **un único mundo temporal** con Fabric 1.21.1, Cobblemon 1.8.2 y el observador; se amplió el límite de la sonda sintética de 16 a **65 segundos** y se registraron **solo nombres de paquetes y transiciones de protocolo**, nunca cargas binarias, identidades reales, tokens o mensajes. El controlador limita su espera a 90 segundos y conserva la retirada de mundo/JVM en el bloque `finally`.
+
+**Resultado medido**, archivo QA `/tmp/guiaia-cobblemon-protocol-diagnosis-20261102.log`:
+
+- **MCP real: PASS otra vez**: bloque de diamante 1, oveja 1, 16 bloques muestreados, permisos privados correctos. El servidor de laboratorio acabó y se retiró.
+- **Cliente Mineflayer 4.39.0 / minecraft-protocol 1.68.0 / prismarine-registry 1.12.0**: llegó a `handshaking -> login -> configuration -> play`, recibió 2 paquetes en `login`, 18 en `configuration` y 79 en `play`.
+- Emitió `mineflayer:login`, `mineflayer:game` y **`mineflayer:error`**, pero no `spawn`. El servidor sí registró entrada y salida de `CobblemonProbeQA`.
+- **Fallo confirmado**: `Parse error for play.toClient: Read error for undefined : array size is abnormally large, not reading: 1718575989`. Los últimos 18 paquetes correctamente decodificados se denominan `play:custom_payload`. El número **no es una longitud válida autorizada** y no debe aceptarse o ignorarse como solución.
+- No conocemos todavía el identificador exacto del **siguiente** paquete que falló ni su campo/esquema. Que el error ocurra después de `custom_payload` no demuestra que el paquete averiado sea uno de ellos, ni identifica por sí solo una causa NBT o Cobblemon concreta.
+
+**Revisión de hipótesis:** el problema principal **no** es que la biblioteca se quede detenida en `configuration` ni que 16 segundos sean insuficientes: sí alcanza `play`, pero la decodificación falla de manera explícita antes del `spawn`. La biblioteca instalada ya tiene manejadores `settings` y `select_known_packs`; no se debe copiar un parche para versiones que no los incluyen. En las incidencias de PrismarineJS [#3787](https://github.com/PrismarineJS/mineflayer/issues/3787) y [#3573](https://github.com/PrismarineJS/mineflayer/issues/3573) se describen errores de tamaño semejantes en parsing NBT/SlotComponent, pero **la correspondencia con este caso sigue sin verificar**. En particular, las respuestas de mantenimiento advierten contra eliminar la comprobación de tamaño de array cuando la causa es un esquema incorrecto.
+
+**Siguiente corrección acotada:** identificar el **ID/tipo del paquete que no pudo decodificarse** con trazas de metadatos sintéticos del flujo de entrada (sin persistir cargas ni claves); contrastar exactamente ese esquema con `minecraft-data`/`protodef` y el protocolo 1.21.1. Aplicar solo una corrección de contrato de paquete versionada y probada, o seleccionar un cliente Fabric real compatible. Repetir luego un inicio hasta `spawn` y **solo después** la misión firmada/caída del testigo. No debilitar límites de arrays, firmas, autoridad del propietario, permisos de un solo uso ni protección frente a replays.

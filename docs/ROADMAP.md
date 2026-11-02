@@ -97,6 +97,14 @@ Updated: 2026-11-02
       16 blocks, private snapshot), negative JAR-identity gate PASS, Python
       58/58 and Node 368/368 PASS; Mineflayer connection accepted by server
       but client spawn not completed (2026-11-02; QA_COBBLEMON_OBSERVER_2026-11-02.md)
+- [x] Instrument the isolated Cobblemon Mineflayer protocol failure:
+      state transitions reach PLAY; 79 PLAY packets then observed
+      play.toClient decoder error for impossible array length; original
+      16-second spawn timeout was a symptom, not root cause. No data or
+      authorizations bypassed; see QA_COBBLEMON_OBSERVER_2026-11-02.md
+- [ ] Identify the precise malformed/unsupported 1.21.1 packet schema,
+      fix only verified version-specific decoding or adopt a native Fabric
+      client, then prove spawned bot before enabling any physical action
 - [ ] Establish a Fabric/Cobblemon-compatible operator client or signed
       server-side execution bridge, preserving all identity, one-shot grant,
       witness and fail-closed controls; rerun physical gather/deposit and

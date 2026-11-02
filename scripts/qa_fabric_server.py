@@ -159,7 +159,7 @@ def validate_enabled(server_dir: Path, launcher: Path, *, cobblemon_probe: bool 
             probe = subprocess.run(
                 ["node", "test/qa_cobblemon_client_probe.js"],
                 cwd=REPO_ROOT / "companion", capture_output=True,
-                text=True, timeout=27, check=True,
+                text=True, timeout=90, check=True,
             )
             marker = "GUIAIA_COBBLEMON_MINEFLAYER_PROTOCOL_PROBE="
             lines = [line for line in probe.stdout.splitlines() if line.startswith(marker)]
