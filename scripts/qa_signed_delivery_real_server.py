@@ -12,6 +12,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 
 from qa_fabric_server import require_file, recent_log, start_server, shutdown, until, send
@@ -24,6 +25,7 @@ def main():
     parser.add_argument("--launcher", required=True)
     parser.add_argument("--fabric-api", required=True)
     parser.add_argument("--mod", required=True)
+    parser.add_argument("--cobblemon", help="Optional isolated Fabric 1.21.1 Cobblemon mod JAR")
     parser.add_argument("--crash-after-deposit", action="store_true")
     parser.add_argument("--multi-resource", action="store_true")
     parser.add_argument("--secure-runtime", action="store_true")
@@ -43,6 +45,16 @@ def main():
     launcher = require_file(args.launcher, "QA Fabric server")
     fabric_api = require_file(args.fabric_api, "QA Fabric API")
     observer = require_file(args.mod, "QA bridge mod")
+    cobblemon = require_file(args.cobblemon, "Cobblemon 1.21.1 QA mod") if args.cobblemon else None
+    cobblemon_version = None
+    if cobblemon:
+        with zipfile.ZipFile(cobblemon) as archive:
+            metadata = json.loads(archive.read("fabric.mod.json"))
+        cobblemon_version = metadata.get("version")
+        if (metadata.get("id") != "cobblemon" or
+            cobblemon_version != "1.8.2+1.21.1" or
+            metadata.get("depends", {}).get("minecraft") != "1.21.1"):
+            raise RuntimeError("Unsupported Cobblemon QA mod identity/version")
     for port in (25593, 25594):
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.4):
@@ -68,6 +80,8 @@ def main():
         mods.mkdir()
         shutil.copyfile(observer, mods / "guiaia-observer-with-qa-bridge.jar")
         shutil.copyfile(fabric_api, mods / "fabric-api.jar")
+        if cobblemon:
+            shutil.copyfile(cobblemon, mods / "Cobblemon-fabric-1.8.2+1.21.1.jar")
         config = root / "config"
         config.mkdir()
         private = config / "guiaia-identity-key.pk8"
@@ -96,6 +110,11 @@ def main():
             until(lambda: "Done (" in recent_log(log),
                   660 if operator_mode else 390,
                   process=server, note="single-instance signed delivery QA ready")
+            if cobblemon:
+                loading_log = log.read_text(encoding="utf-8", errors="replace")
+                if not any("- cobblemon " + cobblemon_version in line
+                           for line in loading_log.splitlines()):
+                    raise RuntimeError("Cobblemon not confirmed loaded by Fabric")
             world_commands = [
                 "forceload add 0 0",
                 "gamerule spawnRadius 0",
@@ -400,6 +419,17 @@ def main():
                         "\nMinecraft tail:\n" + recent_log(log, 2400)
                     )
                 print(result.strip())
+            if cobblemon:
+                print("GUIAIA_COBBLEMON_FABRIC_COMPAT_QA_EVIDENCE=" + json.dumps({
+                    "result": "pass", "production": False,
+                    "real_fabric": True, "cobblemon_mod_loaded": True,
+                    "cobblemon_version": cobblemon_version,
+                    "independent_fabric_world": True, "teselia_untouched": True,
+                    "scenario": "standalone-witness-outage" if args.standalone_witness_outage
+                        else "standalone-operator" if args.standalone_operator
+                        else "other-signed-fabric-qa",
+                    "source_jar": cobblemon.name,
+                }))
         finally:
             if client is not None and client.poll() is None:
                 client.terminate()

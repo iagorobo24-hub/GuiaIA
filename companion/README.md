@@ -367,3 +367,20 @@ rejected replay, and denied access during the outage in 1566 ms. All QA keys,
 proxies and temporary Tailscale Serve were removed afterwards. This was
 **not** a real Fabric mission or a Durán/WSL reboot. See
 [the physical witness restart evidence](../docs/QA_REMOTE_WITNESS_PROCESS_RESTART_2026-11-02.md).
+
+### Cobblemon 1.8.2 / Minecraft Fabric 1.21.1 (isolated QA)
+
+The disposable `scripts/qa_fabric_server.py --cobblemon <jar> --cobblemon-smoke`
+scenario loaded Cobblemon **and** the real GuiaIA observer, verified a private
+read-only snapshot (16 sampled blocks, 1 diamond block and 1 sheep), and
+completed the normal MCP tool roundtrip: **PASS**. The Cobblemon JAR identity
+is pinned, the server is loopback-only, and the test world is removed.
+
+The separate signed-operator trial did **not** pass: Mineflayer did not
+complete player startup with this modded server. An independent probe saw
+the server accept a synthetic player, but the Mineflayer `spawn` event timed
+out after 16 seconds. The exact protocol cause is **unconfirmed**. No physical
+gather, signed chest deposit, Pokémon actions or official online accounts
+are validated by this test. Do not bypass identity or checkpoint gates to
+work around modded-client incompatibility. See
+[the Cobblemon evidence](../docs/QA_COBBLEMON_OBSERVER_2026-11-02.md).

@@ -10,10 +10,12 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 
 from guiaia.world_snapshot import WorldSnapshotError, parse_world_snapshot
@@ -87,7 +89,7 @@ def shutdown(process: subprocess.Popen, log) -> None:
         log.close()
 
 
-def validate_enabled(server_dir: Path, launcher: Path) -> dict:
+def validate_enabled(server_dir: Path, launcher: Path, *, cobblemon_probe: bool = False) -> dict:
     config_dir = server_dir / "config"
     config_dir.mkdir(exist_ok=True)
     (config_dir / "guiaia-observer.properties").write_text(
@@ -103,7 +105,8 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
     started = time.monotonic()
     try:
         until(lambda: "Done (" in recent_log(log_file),
-              SERVER_TIMEOUT, process=process, note="Fabric QA server ready")
+              660 if cobblemon_probe else SERVER_TIMEOUT,
+              process=process, note="Fabric QA server ready")
         # These commands change only the temporary QA world; the observer does not.
         send(process, "forceload add 0 0")
         send(process, "setblock 0 64 0 minecraft:diamond_block")
@@ -151,6 +154,20 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
         assert not any(k in raw for k in ("player_name", "player_uuid", "coordinates", "rcon", "chat"))
         assert seen["entities_loaded"] <= 64
         assert seen["blocks_sampled"] <= 16
+        probe_evidence = None
+        if cobblemon_probe:
+            probe = subprocess.run(
+                ["node", "test/qa_cobblemon_client_probe.js"],
+                cwd=REPO_ROOT / "companion", capture_output=True,
+                text=True, timeout=27, check=True,
+            )
+            marker = "GUIAIA_COBBLEMON_MINEFLAYER_PROTOCOL_PROBE="
+            lines = [line for line in probe.stdout.splitlines() if line.startswith(marker)]
+            if len(lines) != 1:
+                raise RuntimeError("No conclusive Cobblemon client probe evidence")
+            probe_evidence = json.loads(lines[0][len(marker):])
+            if probe_evidence.get("result") != "observed" or probe_evidence.get("qa_only") is not True:
+                raise RuntimeError("Invalid Cobblemon client probe evidence")
         return {
             "result": "pass",
             "source": seen["source"],
@@ -168,6 +185,7 @@ def validate_enabled(server_dir: Path, launcher: Path) -> dict:
             "mcp_fabric_real_snapshot_roundtrip": True,
             "private_file_0600_and_directory_0700_verified": True,
             "test_world": "disposable_flat_qa",
+            **({"mineflayer_client_probe": probe_evidence} if cobblemon_probe else {}),
         }
     except Exception as exc:
         raw_snapshot = (snapshot_file.read_text(encoding="utf-8", errors="replace")[:1800]
@@ -225,16 +243,36 @@ def main() -> None:
     parser.add_argument("--launcher", required=True)
     parser.add_argument("--fabric-api", required=True)
     parser.add_argument("--mod", required=True)
+    parser.add_argument("--cobblemon", help="Optional pinned Fabric 1.21.1 Cobblemon JAR")
+    parser.add_argument("--cobblemon-smoke", action="store_true")
     args = parser.parse_args()
     launcher = require_file(args.launcher, "Fabric server launcher")
     fabric_api = require_file(args.fabric_api, "Fabric API")
     mod = require_file(args.mod, "Observer JAR")
+    if args.cobblemon_smoke:
+        try:
+            with socket.create_connection(("127.0.0.1", 25596), timeout=0.5):
+                parser.error("Disposable QA port 25596 already occupied")
+        except (ConnectionRefusedError, TimeoutError, OSError):
+            pass
+    if args.cobblemon_smoke != bool(args.cobblemon):
+        parser.error("Cobblemon QA requires both --cobblemon and --cobblemon-smoke")
+    cobblemon = require_file(args.cobblemon, "Cobblemon QA JAR") if args.cobblemon else None
+    if cobblemon:
+        with zipfile.ZipFile(cobblemon) as archive:
+            mod_meta = json.loads(archive.read("fabric.mod.json"))
+        if (mod_meta.get("id") != "cobblemon" or
+            mod_meta.get("version") != "1.8.2+1.21.1" or
+            mod_meta.get("depends", {}).get("minecraft") != "1.21.1"):
+            raise RuntimeError("Unsafe or incompatible Cobblemon QA JAR")
     with tempfile.TemporaryDirectory(prefix="guiaia-fabric-qa-") as temporary:
         qa_dir = Path(temporary)
         mods = qa_dir / "mods"
         mods.mkdir()
         shutil.copy2(fabric_api, mods / "fabric-api.jar")
         shutil.copy2(mod, mods / "guiaia-world-observer.jar")
+        if cobblemon:
+            shutil.copyfile(cobblemon, mods / "Cobblemon-fabric-1.8.2+1.21.1.jar")
         (qa_dir / "eula.txt").write_text("eula=true\n", encoding="ascii")
         (qa_dir / "server.properties").write_text(
             "server-ip=127.0.0.1\n"
@@ -253,6 +291,16 @@ def main() -> None:
             "motd=Disposable GuiaIA QA only\n",
             encoding="ascii",
         )
+        if args.cobblemon_smoke:
+            evidence = validate_enabled(qa_dir, launcher, cobblemon_probe=True)
+            enabled_log = (qa_dir / "enabled-server.log").read_text(encoding="utf-8", errors="replace")
+            if ("- cobblemon 1.8.2+1.21.1" not in enabled_log or
+                "Launching Cobblemon 1.8.2" not in enabled_log):
+                raise RuntimeError("Cobblemon did not initialize in actual Fabric QA")
+            evidence.update(cobblemon_mod_loaded=True, cobblemon_version="1.8.2+1.21.1",
+                            modded_client_not_claimed=True, private_qa_world=True)
+            print("GUIAIA_COBBLEMON_OBSERVER_QA_EVIDENCE=" + json.dumps(evidence, sort_keys=True))
+            return
         # Disabled-by-default gate: mod present, but no explicit configuration.
         log_file = qa_dir / "disabled-server.log"
         process, log = start_server(qa_dir, launcher, log_file)

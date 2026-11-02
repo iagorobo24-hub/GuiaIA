@@ -92,6 +92,15 @@ Updated: 2026-11-02
       zero deposit, unchanged journals, durable cancellation, checkpoint
       sequence 1 and preflight restored without replay; Node 368/368 and
       Python 58/58 PASS (2026-11-02; QA_REAL_FABRIC_PHYSICAL_WITNESS_2026-11-02.md)
+- [x] Cobblemon 1.8.2 loaded in a separate real Fabric 1.21.1 world:
+      read-only GuiaIA observer MCP roundtrip PASS (diamond block, sheep,
+      16 blocks, private snapshot), negative JAR-identity gate PASS, Python
+      58/58 and Node 368/368 PASS; Mineflayer connection accepted by server
+      but client spawn not completed (2026-11-02; QA_COBBLEMON_OBSERVER_2026-11-02.md)
+- [ ] Establish a Fabric/Cobblemon-compatible operator client or signed
+      server-side execution bridge, preserving all identity, one-shot grant,
+      witness and fail-closed controls; rerun physical gather/deposit and
+      witness-outage QA against a disposable Cobblemon world
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: deployment hardening, restart and crash tests,
       host authorization, account identity and controlled multiplayer beta
