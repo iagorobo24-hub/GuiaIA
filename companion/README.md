@@ -301,6 +301,17 @@ WSL2 `/tmp` is **not durable storage**; no claim of production disaster
 recovery or official-identity support is made. See
 [QA crash recovery evidence](../docs/QA_WITNESS_EXPLICIT_CRASH_RECOVERY_2026-11-02.md).
 
+### Future WSL2 witness storage: read-only candidate audit (not deployment)
+
+`qa_witness_storage_audit.js --qa-readonly-storage-candidate <path>` evaluates
+an already-existing, user-owned, private candidate under
+`$HOME/.local/state/guiaia-witness-qa-*` on a native Linux ext4 filesystem.
+It **does not** create storage, access keys, move existing checkpoints,
+update the witness QA `/tmp` restriction or certify backups/reboots. Even
+a favorable report explicitly states `production_ready=false`. Mounted
+Windows filesystems, symlinks, missing directories, caller-spoofed `HOME`
+and lax permissions are denied. See [the Durán WSL2 persistence readiness and safety gate](../docs/QA_DURAN_WSL2_PERSISTENCE_READINESS_2026-11-02.md).
+
 ### Standalone checkpoint witness (QA only)
 
 `node companion/qa_witness.js --qa-serve /tmp/guiaia-witness-config-qa-EXAMPLE/config.json`

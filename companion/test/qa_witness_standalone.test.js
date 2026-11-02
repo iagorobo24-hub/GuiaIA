@@ -328,3 +328,43 @@ test('two recovery operators cannot remove the same QA lock concurrently',async 
   assert.equal(fs.existsSync(lock),false)
   assert.equal(spawnSync(process.execPath,args,{encoding:'utf8',timeout:5000}).status,2)
 })
+
+test('crash recovery rejects lost or rotated operator and witness keys before removing lock',async t=>{
+  const f=setup(t)
+  if(process.platform!=='linux')return
+  const first=await f.start()
+  const client=f.client(first.url),initial=f.head(0,'6'.repeat(64))
+  await client.publish(f.ticket(null,initial))
+  const headFile=path.join(f.witnessRoot,'head.json')
+  const originalHead=fs.readFileSync(headFile)
+  const lock=path.join(f.witnessRoot,'witness.lock')
+  first.child.kill('SIGKILL')
+  await new Promise(resolve=>first.child.once('close',resolve))
+  const config=JSON.parse(fs.readFileSync(f.configFile,'utf8'))
+  const otherOperator=f.privateFile('other-operator.pem',pem(pair()))
+  const otherWitness=f.privateFile('other-witness.pem',
+    pair().privateKey.export({format:'pem',type:'pkcs8'}))
+  const configs=[
+    f.privateFile('rotated-operator.json',JSON.stringify({
+      ...config,operatorPublicKeyFile:otherOperator})),
+    f.privateFile('rotated-witness.json',JSON.stringify({
+      ...config,witnessPrivateKeyFile:otherWitness}))
+  ]
+  const cli=path.resolve(__dirname,'../qa_witness_recover.js')
+  const recover=cfg=>spawnSync(process.execPath,[cli,
+    '--qa-recover-crashed-lock',cfg,'--acknowledge-operator-stopped'],
+    {encoding:'utf8',timeout:5000})
+  for(const cfg of configs){
+    const denied=recover(cfg)
+    assert.equal(denied.status,2)
+    assert.equal(denied.stdout,'')
+    assert.equal(fs.existsSync(lock),true)
+    assert.deepEqual(fs.readFileSync(headFile),originalHead)
+  }
+  const valid=recover(f.configFile)
+  assert.equal(valid.status,0,valid.stderr)
+  assert.equal(fs.existsSync(lock),false)
+  const second=await f.start()
+  assert.equal(await f.client(second.url).verifyLocal(initial),true)
+  await f.stop(second.child)
+})

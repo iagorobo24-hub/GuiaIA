@@ -141,6 +141,14 @@ Updated: 2026-11-02
       Tested in isolated child processes on Chromebook only, **not a
       Durán/Windows crash or durable production deployment**
       (2026-11-02; QA_WITNESS_EXPLICIT_CRASH_RECOVERY_2026-11-02.md)
+- [x] Read-only QA audit for future WSL2 native-Linux ext4 storage:
+      strict owner/private-directory/no-symlink/namespace checks, deny
+      Windows-mounted volumes; always report production_ready=false and
+      reboot/backup/anti-rollback as unverified. Crash recovery also denies
+      replacement operator/witness keys. Node 386/386 and Python 58/58 PASS.
+      **Chromebook-only tests, remote
+      Durán inspection blocked by session controls**
+      (2026-11-02; QA_DURAN_WSL2_PERSISTENCE_READINESS_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: durable storage/keys, host restarts and
       disaster recovery, host authorization, account identity and
