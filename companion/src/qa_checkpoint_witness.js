@@ -5,7 +5,37 @@ const path=require('node:path')
 const crypto=require('node:crypto')
 const http=require('node:http')
 const {validateAdvance,publicKey}=require('./remote_checkpoint')
+const {createOwnedQaWitnessLock}=require('./qa_witness_lock')
 const MAX_FILE=1024
+// Read-only canonical signed-head verification shared with the explicit
+// crash-recovery utility. A missing head is never authorization to reboot.
+function readSignedQaHead(file,worldId,fingerprint,witnessPublicKey){
+  if(!fs.existsSync(file))return null
+  const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0))
+  try{
+    const stat=fs.fstatSync(fd)
+    if(!stat.isFile()||stat.nlink!==1||stat.size<2||stat.size>MAX_FILE||
+       (process.platform!=='win32' && ((stat.mode&0o777)!==0o600||
+         (typeof process.getuid==='function'&&stat.uid!==process.getuid()))))
+      throw Error('Unsafe persisted witness')
+    const b=Buffer.alloc(stat.size)
+    if(fs.readSync(fd,b,0,b.length,0)!==b.length)throw Error('Short witness read')
+    const encoded=JSON.parse(b.toString('utf8'))
+    if(!encoded||Object.keys(encoded).sort().join(',')!=='head,signature'||
+       typeof encoded.signature!=='string'||
+       !/^[A-Za-z0-9_-]{86}$/.test(encoded.signature))
+      throw Error('Corrupt witness checkpoint envelope')
+    const v=encoded.head
+    if(!v||Object.keys(v).sort().join(',')!=='operatorFingerprint,registrySha256,sequence,version,worldId'||
+       v.version!==1||v.worldId!==worldId||v.operatorFingerprint!==fingerprint||
+       !Number.isSafeInteger(v.sequence)||v.sequence<0||
+       !/^[0-9a-f]{64}$/.test(v.registrySha256||'')||
+       !crypto.verify(null,Buffer.from(JSON.stringify(v)),
+         witnessPublicKey,Buffer.from(encoded.signature,'base64url')))
+      throw Error('Corrupt or unsigned witness checkpoint')
+    return v
+  }finally{fs.closeSync(fd)}
+}
 function createQaCheckpointWitness({directory,worldId,operatorPublicKeyPem,
   witnessPrivateKey}={}){
   if(typeof directory!=='string'||!path.isAbsolute(directory)||
@@ -28,35 +58,12 @@ function createQaCheckpointWitness({directory,worldId,operatorPublicKeyPem,
   const fingerprint=crypto.createHash('sha256')
     .update(operator.export({format:'der',type:'spki'})).digest('hex')
   const file=path.join(directory,'head.json'),lock=path.join(directory,'witness.lock')
-  const lockFd=fs.openSync(lock,'wx',0o600)
+  const lockFd=createOwnedQaWitnessLock(lock)
   let head=null,server=null,poisoned=false,closed=false
   function ensure(){if(poisoned)throw Error('Checkpoint witness poisoned')}
+  const witnessPublicKey=crypto.createPublicKey(witnessPrivateKey)
   function read(){
-    if(!fs.existsSync(file))return null
-    const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0))
-    try{
-      const stat=fs.fstatSync(fd)
-      if(!stat.isFile()||stat.size<2||stat.size>MAX_FILE||
-         (process.platform!=='win32' && (stat.mode&0o777)!==0o600))
-        throw Error('Unsafe persisted witness')
-      const b=Buffer.alloc(stat.size)
-      if(fs.readSync(fd,b,0,b.length,0)!==b.length)throw Error('Short witness read')
-      const encoded=JSON.parse(b.toString('utf8'))
-      if(!encoded||Object.keys(encoded).sort().join(',')!=='head,signature'||
-         typeof encoded.signature!=='string'||
-         !/^[A-Za-z0-9_-]{86}$/.test(encoded.signature))
-        throw Error('Corrupt witness checkpoint envelope')
-      const v=encoded.head
-      if(!v||Object.keys(v).sort().join(',')!=='operatorFingerprint,registrySha256,sequence,version,worldId'||
-         v.version!==1||v.worldId!==worldId||v.operatorFingerprint!==fingerprint||
-         !Number.isSafeInteger(v.sequence)||v.sequence<0||
-         !/^[0-9a-f]{64}$/.test(v.registrySha256||'')||
-         !crypto.verify(null,Buffer.from(JSON.stringify(v)),
-           crypto.createPublicKey(witnessPrivateKey),
-           Buffer.from(encoded.signature,'base64url')))
-        throw Error('Corrupt or unsigned witness checkpoint')
-      return v
-    }finally{fs.closeSync(fd)}
+    return readSignedQaHead(file,worldId,fingerprint,witnessPublicKey)
   }
   function write(v){
     const signed={head:v,signature:crypto.sign(null,
@@ -174,4 +181,4 @@ function createQaCheckpointWitness({directory,worldId,operatorPublicKeyPem,
     }
   })
 }
-module.exports={createQaCheckpointWitness}
+module.exports={createQaCheckpointWitness,readSignedQaHead}

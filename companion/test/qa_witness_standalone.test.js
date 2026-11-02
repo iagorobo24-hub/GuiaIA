@@ -5,7 +5,7 @@ const fs=require('node:fs')
 const path=require('node:path')
 const os=require('node:os')
 const crypto=require('node:crypto')
-const {spawn}=require('node:child_process')
+const {spawn,spawnSync}=require('node:child_process')
 const {createPinnedQaRemoteCheckpointClient}=require('../src/remote_checkpoint')
 
 const worldId='qa:standalone-witness'
@@ -207,4 +207,124 @@ test('standalone witness closes slow-trickle POST bodies without applying state'
   assert.ok(elapsed<2700,'dripping HTTP request exceeded QA deadline')
   assert.equal(fs.existsSync(path.join(f.witnessRoot,'head.json')),false)
   await f.stop(child)
+})
+
+// A signed durable head can survive SIGKILL, but cleanup of the old process
+// lock must prove the old Linux PID+starttime+boot identity is gone.
+test('explicit crash-lock recovery survives SIGKILL and retains the signed head without replay',async t=>{
+  const f=setup(t)
+  if(process.platform!=='linux')return
+  const recoverFile=path.resolve(__dirname,'../qa_witness_recover.js')
+  const recover=ack=>spawnSync(process.execPath,[recoverFile,
+    '--qa-recover-crashed-lock',f.configFile,
+    ...(ack?['--acknowledge-operator-stopped']:[])],
+    {encoding:'utf8',timeout:5000})
+  const first=await f.start()
+  const client=f.client(first.url)
+  const initial=f.head(0,'c'.repeat(64)),current=f.head(1,'d'.repeat(64))
+  await client.publish(f.ticket(null,initial))
+  await client.publish(f.ticket(initial,current))
+  const lock=path.join(f.witnessRoot,'witness.lock')
+  const headPath=path.join(f.witnessRoot,'head.json')
+  const headBytes=fs.readFileSync(headPath)
+  const oldLockBytes=fs.readFileSync(lock)
+  const identity=JSON.parse(oldLockBytes)
+  assert.equal(identity.pid,first.child.pid)
+  assert.equal(identity.version,1)
+  assert.match(identity.bootId,/^[0-9a-f-]{36}$/)
+  assert.match(identity.startTicks,/^[0-9]+$/)
+  assert.equal(recover(false).status,2,'missing explicit acknowledgment must deny')
+  assert.equal(recover(true).status,2,'live owner must not lose lock')
+  assert.deepEqual(fs.readFileSync(lock),oldLockBytes)
+  first.child.kill('SIGKILL')
+  await new Promise(resolve=>first.child.once('close',resolve))
+  await assert.rejects(client.latest(),/unavailable/)
+  await assert.rejects(f.start(),/Witness exited|did not start/)
+  // An altered signed checkpoint forbids lock recovery even if PID is dead.
+  fs.writeFileSync(headPath,'{}\n',{mode:0o600})
+  const corrupt=recover(true)
+  assert.equal(corrupt.status,2)
+  assert.equal(fs.existsSync(lock),true)
+  fs.writeFileSync(headPath,headBytes)
+  const result=recover(true)
+  assert.equal(result.status,0,result.stderr)
+  const output=JSON.parse(result.stdout.trim().split('=')[1])
+  assert.equal(output.result,'qa_crashed_witness_lock_recovered')
+  assert.equal(output.sequence,1)
+  assert.equal(output.world_actions,false)
+  assert.equal(fs.existsSync(lock),false)
+  assert.deepEqual(fs.readFileSync(headPath),headBytes)
+  const second=await f.start()
+  const restarted=f.client(second.url)
+  assert.equal(await restarted.verifyLocal(current),true)
+  await assert.rejects(restarted.publish(f.ticket(initial,current)),/denied/)
+  await f.stop(second.child)
+  assert.equal(recover(true).status,2,'clean shutdown left no stale lock')
+})
+
+test('legacy, malformed and symlinked QA locks cannot be reclaimed',async t=>{
+  const f=setup(t)
+  if(process.platform!=='linux')return
+  const first=await f.start()
+  const client=f.client(first.url),initial=f.head(0,'a'.repeat(64))
+  await client.publish(f.ticket(null,initial))
+  await f.stop(first.child)
+  const lock=path.join(f.witnessRoot,'witness.lock')
+  const recoverFile=path.resolve(__dirname,'../qa_witness_recover.js')
+  const recover=()=>spawnSync(process.execPath,[recoverFile,
+    '--qa-recover-crashed-lock',f.configFile,'--acknowledge-operator-stopped'],
+    {encoding:'utf8',timeout:5000})
+  fs.writeFileSync(lock,'',{mode:0o600})
+  assert.equal(recover().status,2)
+  assert.equal(fs.statSync(lock).size,0)
+  fs.writeFileSync(lock,'{}\n')
+  assert.equal(recover().status,2)
+  assert.equal(fs.existsSync(lock),true)
+  fs.unlinkSync(lock)
+  fs.symlinkSync(path.join(f.witnessRoot,'head.json'),lock)
+  assert.equal(recover().status,2)
+  assert.equal(fs.lstatSync(lock).isSymbolicLink(),true)
+  fs.unlinkSync(lock)
+  const second=await f.start()
+  await f.stop(second.child)
+})
+
+test('a pre-bootstrap SIGKILL cannot be turned into implicit identity enrollment',async t=>{
+  const f=setup(t)
+  if(process.platform!=='linux')return
+  const first=await f.start()
+  const lock=path.join(f.witnessRoot,'witness.lock')
+  first.child.kill('SIGKILL')
+  await new Promise(resolve=>first.child.once('close',resolve))
+  assert.equal(fs.existsSync(path.join(f.witnessRoot,'head.json')),false)
+  const result=spawnSync(process.execPath,[
+    path.resolve(__dirname,'../qa_witness_recover.js'),
+    '--qa-recover-crashed-lock',f.configFile,'--acknowledge-operator-stopped'],
+    {encoding:'utf8',timeout:5000})
+  assert.equal(result.status,2)
+  assert.equal(result.stdout,'')
+  assert.equal(fs.existsSync(lock),true)
+})
+
+test('two recovery operators cannot remove the same QA lock concurrently',async t=>{
+  const f=setup(t)
+  if(process.platform!=='linux')return
+  const first=await f.start()
+  const client=f.client(first.url),initial=f.head(0,'e'.repeat(64))
+  await client.publish(f.ticket(null,initial))
+  const lock=path.join(f.witnessRoot,'witness.lock')
+  first.child.kill('SIGKILL')
+  await new Promise(resolve=>first.child.once('close',resolve))
+  const gate=path.join(f.witnessRoot,'.recovery.lock')
+  fs.writeFileSync(gate,'occupied',{mode:0o600,flag:'wx'})
+  const args=[path.resolve(__dirname,'../qa_witness_recover.js'),
+    '--qa-recover-crashed-lock',f.configFile,'--acknowledge-operator-stopped']
+  const denied=spawnSync(process.execPath,args,{encoding:'utf8',timeout:5000})
+  assert.equal(denied.status,2)
+  assert.equal(fs.existsSync(lock),true)
+  fs.unlinkSync(gate)
+  const approved=spawnSync(process.execPath,args,{encoding:'utf8',timeout:5000})
+  assert.equal(approved.status,0,approved.stderr)
+  assert.equal(fs.existsSync(lock),false)
+  assert.equal(spawnSync(process.execPath,args,{encoding:'utf8',timeout:5000}).status,2)
 })

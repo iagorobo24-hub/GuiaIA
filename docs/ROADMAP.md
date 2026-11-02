@@ -133,8 +133,17 @@ Updated: 2026-11-02
       Node 376/376 and Python 58/58 PASS.
       **Not a physical Durán power/network outage, official identity, or
       Pokémon actions** (2026-11-02; QA_COBBLEMON_DURAN_PHYSICAL_WITNESS_PASS_2026-11-02.md)
+- [x] Explicit Linux QA witness crash-lock recovery after SIGKILL:
+      PID+process start time+kernel boot identity, strict signed-head
+      verification, operator acknowledgement, lock exclusivity, no replay;
+      live/legacy/forged/pre-bootstrap/concurrent attempts denied.
+      Node 380/380, Python 58/58, focus 18/18 PASS.
+      Tested in isolated child processes on Chromebook only, **not a
+      Durán/Windows crash or durable production deployment**
+      (2026-11-02; QA_WITNESS_EXPLICIT_CRASH_RECOVERY_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
-      Fabric/Cobblemon world: deployment hardening, restart and crash tests,
-      host authorization, account identity and controlled multiplayer beta
+      Fabric/Cobblemon world: durable storage/keys, host restarts and
+      disaster recovery, host authorization, account identity and
+      controlled multiplayer beta
 - [ ] Official online-mode Minecraft account identity and consent before beta
 - [ ] Independent user-facing installation and controlled multiplayer beta

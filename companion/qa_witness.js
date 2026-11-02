@@ -98,7 +98,7 @@ async function main(){
     throw error
   }
 }
-main().catch(error=>{
+if(require.main===module)main().catch(error=>{
   // Do not reveal private paths or serialized key material in failure logs.
   const message=String(error?.message||'qa_witness_denied')
   const reason=/^[A-Za-z0-9 .,:()_-]{1,120}$/.test(message)
@@ -106,3 +106,5 @@ main().catch(error=>{
   process.stderr.write('GuiaIA QA witness denied: '+reason+'\n')
   process.exitCode=2
 })
+
+module.exports={validateConfig}

@@ -5,7 +5,8 @@ const fs=require('node:fs')
 const os=require('node:os')
 const path=require('node:path')
 const crypto=require('node:crypto')
-const {createQaCheckpointWitness}=require('../src/qa_checkpoint_witness')
+const {createQaCheckpointWitness,readSignedQaHead}=require('../src/qa_checkpoint_witness')
+const {recoverQaWitnessCrashLock}=require('../src/qa_witness_lock')
 const {createPinnedQaRemoteCheckpointClient}=require('../src/remote_checkpoint')
 const WORLD='qa:separate-witness:1'
 const keys=()=>crypto.generateKeyPairSync('ed25519')
@@ -176,12 +177,19 @@ test('independent witness process survives restart, denies requests while down a
   first.child.kill('SIGKILL')
   await new Promise(resolve=>first.child.once('exit',resolve))
   await assert.rejects(client.verifyLocal(current),/unavailable/)
-  // Only the disposable QA witness lock is stale after SIGKILL. Unlike the
-  // registry, this explicit test harness can remove its own former lock.
-  // This is NOT general-purpose recovery of untrusted locks.
+  // Recover only a provably dead Linux test process and a verified signed
+  // head. On other OSs this generic test retains its disposable fixture-only
+  // legacy cleanup; the actual recovery utility explicitly refuses non-Linux.
   const lock=path.join(x.dir,'witness.lock')
   assert.equal(fs.existsSync(lock),true)
-  fs.unlinkSync(lock)
+  if(process.platform==='linux'){
+    const outcome=recoverQaWitnessCrashLock({directory:x.dir,
+      validateSignedHead:()=>readSignedQaHead(path.join(x.dir,'head.json'),
+        WORLD,current.operatorFingerprint,x.witnessKey.publicKey),
+      acknowledged:true})
+    assert.equal(outcome.sequence,1)
+    assert.equal(outcome.world_actions,false)
+  }else fs.unlinkSync(lock)
   const second=await start()
   const restored=x.makeClient(second.url)
   assert.equal(await restored.verifyLocal(current),true)

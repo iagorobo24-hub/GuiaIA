@@ -278,6 +278,29 @@ zero deposited logs. See
 [QA_EXTERNAL_LIVE_REVOCATION_2026-10-31.md](../docs/QA_EXTERNAL_LIVE_REVOCATION_2026-10-31.md).
 This remains offline, localhost QA—not remote-host or account authentication.
 
+### Explicit QA crash-lock recovery (Linux only)
+
+A `SIGKILL` can leave a valid signed checkpoint together with an exclusive
+`witness.lock`, correctly blocking restart. New QA lockfiles record the
+owner PID, Linux process start ticks and kernel boot ID; an **operator-acknowledged**
+recovery utility checks that the exact former process is gone and independently
+validates the persisted Ed25519-signed head before releasing **only** that
+stale QA lock:
+
+```sh
+node qa_witness_recover.js --qa-recover-crashed-lock /tmp/guiaia-witness-config-qa-<unique>/config.json --acknowledge-operator-stopped
+```
+
+This is an example path: use the **actual existing private config** from the
+same disposable lab. Do not create a new witness key or new head. The tool
+**refuses** a live witness, unverified or pre-bootstrap head, legacy empty
+lock, invalid permissions, symlink or concurrent recovery. It never starts
+the server, alters enrollment, retries signed CAS or acts on Minecraft.
+Restart `qa_witness.js` explicitly afterwards, using the existing config.
+WSL2 `/tmp` is **not durable storage**; no claim of production disaster
+recovery or official-identity support is made. See
+[QA crash recovery evidence](../docs/QA_WITNESS_EXPLICIT_CRASH_RECOVERY_2026-11-02.md).
+
 ### Standalone checkpoint witness (QA only)
 
 `node companion/qa_witness.js --qa-serve /tmp/guiaia-witness-config-qa-EXAMPLE/config.json`
