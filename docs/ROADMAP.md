@@ -158,6 +158,15 @@ Updated: 2026-11-02
       floor still permits rollback. Node 390/390 and Python 58/58 PASS
       (2026-11-02;
       QA_INDEPENDENT_ROLLBACK_FLOOR_2026-11-02.md)
+- [x] QA-only independent floor custodian implemented and exercised:
+      separate child process, separate Ed25519 key, signed witness verification
+      before operator-signed floor CAS, double-check after async access,
+      atomic fsync/rename, nonce-bound live floor read, strict isolated
+      credentials; crash/stale lock/forgery/concurrency/rollback failures
+      tested. Node 399/399 and Python 58/58 PASS.
+      **Same Chromebook and disposable /tmp: not persistent hardware
+      or immutable anti-rollback authority; not wired to world actions**
+      (2026-11-02; QA_INDEPENDENT_FLOOR_CUSTODIAN_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: durable storage/keys, host restarts and
       disaster recovery, host authorization, account identity and

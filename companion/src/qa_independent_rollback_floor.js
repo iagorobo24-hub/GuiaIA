@@ -4,6 +4,7 @@
 // to authorize world actions or to retry any checkpoint CAS operation.
 const crypto=require('node:crypto')
 const {publicKey,validHead,createPinnedQaRemoteCheckpointClient}=require('./remote_checkpoint')
+const {createPinnedQaFloorClient}=require('./qa_floor_client')
 const HEX=/^[0-9a-f]{64}$/
 const FIELDS=['aud','worldId','operatorFingerprint','witnessFingerprint',
   'sequence','registrySha256']
@@ -17,7 +18,7 @@ function exact(v,keys){
     Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k))
 }
 function createQaIndependentRollbackVerifier({worldId,operatorPublicKeyPem,
-  witnessPublicKeyPem,anchorPublicKeyPem,url}={}){
+  witnessPublicKeyPem,anchorPublicKeyPem,url,anchorUrl}={}){
   if(typeof worldId!=='string'||!/^qa:[A-Za-z0-9:_-]{1,61}$/.test(worldId))
     throw Error('Explicit QA world required')
   const operator=publicKey(operatorPublicKeyPem)
@@ -30,6 +31,9 @@ function createQaIndependentRollbackVerifier({worldId,operatorPublicKeyPem,
   // arbitrary object whose latest() could return an unsigned fake snapshot.
   const client=createPinnedQaRemoteCheckpointClient({url,worldId,
     operatorPublicKeyPem,witnessPublicKeyPem})
+  const floorClient=anchorUrl===undefined?null:createPinnedQaFloorClient({
+    url:anchorUrl,worldId,operatorPublicKeyPem,witnessPublicKeyPem,
+    anchorPublicKeyPem})
   function validateFloor(token){
     if(!exact(token,['payload','signature'])||
        !exact(token.payload,FIELDS)||
@@ -65,6 +69,15 @@ function createQaIndependentRollbackVerifier({worldId,operatorPublicKeyPem,
     const snapshot=await client.latest() // Witness Ed25519, nonce and age checked.
     return verifySnapshot(snapshot,floor)
   }
-  return Object.freeze({verifyRemote})
+  return Object.freeze({verifyRemote,
+    async verifyLive(){
+      if(!floorClient)throw Error('Independent QA live floor URL required')
+      // Both reads use separate, freshly signed nonce challenges. An older
+      // captured floor reply cannot be replayed, even if its signature is real.
+      const floor=await floorClient.latest()
+      const snapshot=await client.latest()
+      return verifySnapshot(snapshot,floor)
+    }
+  })
 }
 module.exports={createQaIndependentRollbackVerifier}

@@ -107,4 +107,4 @@ if(require.main===module)main().catch(error=>{
   process.exitCode=2
 })
 
-module.exports={validateConfig}
+module.exports={validateConfig,readPrivate}

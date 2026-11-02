@@ -301,7 +301,26 @@ WSL2 `/tmp` is **not durable storage**; no claim of production disaster
 recovery or official-identity support is made. See
 [QA crash recovery evidence](../docs/QA_WITNESS_EXPLICIT_CRASH_RECOVERY_2026-11-02.md).
 
-### Independent rollback floor: QA-only negative proof
+### Separate QA floor custodian (not production anti-rollback storage)
+
+The standalone `qa_floor_custodian.js --qa-serve <private-config>` maintains a
+second signed floor in a private, disposable `guiaia-independent-floor-qa-*`
+root, independent of the witness state. It accepts only signed operator CAS
+confirmed **directly by a fresh pinned witness response**. Its loopback-only
+client, `src/qa_floor_client.js`, supplies nonce-bound and time-bounded signed
+floor readings. `createQaIndependentRollbackVerifier(...,anchorUrl).verifyLive()`
+reads both signed authorities and rejects a witness rollback to an older
+sequence. The CLI's configuration requires a private `guiaia-floor-config-qa-*`
+directory containing public operator/witness keys and the independent floor
+private key; no witness signing key is loaded into this process. It never
+allows world mutation.
+
+**The custodian is NOT immutable**: restoring its own old signed floor can
+also restore its old history, as a dedicated negative test demonstrates.
+Nor does its QA `/tmp` storage survive every WSL2 restart. It is not
+integrated into mission authorization or a beta. See the
+[QA custodian evidence and remaining failure modes](../docs/QA_INDEPENDENT_FLOOR_CUSTODIAN_2026-11-02.md).
+
 
 `src/qa_independent_rollback_floor.js` contains a **read-only** comparator
 of two separately verified signatures: the currently pinned witness head
