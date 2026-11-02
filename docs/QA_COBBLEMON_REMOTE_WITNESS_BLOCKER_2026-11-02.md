@@ -44,3 +44,7 @@ Pruebas locales: únicamente GET, conteo de arranque lento no aceptado como esta
 Se añadió además trazabilidad **opcional** al proxy físico, activada solo con `GUIAIA_QA_TRANSPORT_DIAGNOSTICS=1`: método GET/POST, etapa (cabeceras/respuesta terminada/timeout/error), estado HTTP y tiempo redondeado. Nunca registra URL, cuerpo, firmas, claves, UUID, cabeceras o datos del jugador. Su objetivo es distinguir retraso TCP/TLS de respuesta HTTP incompleta sin alterar las decisiones de autorización.
 
 **Resultado de esta continuación:** avance local de diagnóstico/infraestructura; la misión con testigo físico Durán **sigue pendiente** hasta una nueva ejecución end-to-end con prueba POST Ed25519 completa y el ensayo fail-closed de Cobblemon.
+
+## Resolución verificada (2026-11-02)
+
+**El bloqueo de este documento es histórico.** Una prueba posterior instrumentó únicamente la cabecera HTTP en WSL y confirmó que Tailscale Serve conservaba `Host: durn.taild703f5.ts.net`, incompatible con la exigencia estricta de Host loopback del testigo. El proxy QA ahora envía Host loopback con puerto explícito, pero **conserva** TLS SNI/certificado de Durán. Un nuevo ensayo completo con Cobblemon, testigo real WSL en Durán, corte de la ruta de Chromebook, depósito denegado y recuperación firmada **PASÓ**. Informe canónico actualizado: [QA_COBBLEMON_DURAN_PHYSICAL_WITNESS_PASS_2026-11-02.md](QA_COBBLEMON_DURAN_PHYSICAL_WITNESS_PASS_2026-11-02.md).

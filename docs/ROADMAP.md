@@ -123,12 +123,16 @@ Updated: 2026-11-02
       fail-closed before login, no signed POST/CAS retry and no change to
       the 1500ms authorization deadline. Optional metadata-only TLS proxy
       diagnostics (2026-11-02; QA_COBBLEMON_REMOTE_WITNESS_BLOCKER_2026-11-02.md)
-- [ ] Repeat Cobblemon world-action failure test with physically remote
-      Durán WSL2 witness, independent credentials and network outage.
-      Attempt on 2026-11-02 failed **before bot login**: signed initial
-      checkpoint unconfirmed within strict deadline, no head persisted,
-      no world actions; all temporary services and keys cleaned. Do not
-      mark PASS (QA_COBBLEMON_REMOTE_WITNESS_BLOCKER_2026-11-02.md)
+- [x] Real disposable Cobblemon 1.8.2 + independent Durán WSL2 witness:
+      signed seq0/seq1 persisted on separate machine, real oak gather,
+      client-side tailnet outage before deposit, zero chest stock, denial,
+      durable cancellation, signed recovery without automatic replay;
+      Ed25519 checkpoint independently verified on Durán. Root cause of
+      previous failure was HTTPS Host forwarded through Tailscale Serve;
+      pinned QA-only loopback Host fixed while TLS SNI remains verified.
+      Node 376/376 and Python 58/58 PASS.
+      **Not a physical Durán power/network outage, official identity, or
+      Pokémon actions** (2026-11-02; QA_COBBLEMON_DURAN_PHYSICAL_WITNESS_PASS_2026-11-02.md)
 - [ ] Operationalize authenticated remote witness for a real isolated
       Fabric/Cobblemon world: deployment hardening, restart and crash tests,
       host authorization, account identity and controlled multiplayer beta

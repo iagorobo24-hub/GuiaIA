@@ -378,8 +378,22 @@ the physical QA session (no authorization and no retry of signed tickets).
 The proxy may emit method/status/timing-only diagnostics when explicitly
 started with `GUIAIA_QA_TRANSPORT_DIAGNOSTICS=1`. Its HTTPS verification and
 the checkpoint client's **1.5 second deadline remain unchanged**. This is
-**not** a completed remote-Cobblemon mission; see
-[the blocked attempt and next checks](../docs/QA_COBBLEMON_REMOTE_WITNESS_BLOCKER_2026-11-02.md).
+**not** a completed remote-Cobblemon mission at that historical stage; see
+[the blocked attempt and its diagnosis](../docs/QA_COBBLEMON_REMOTE_WITNESS_BLOCKER_2026-11-02.md).
+
+**Update, 2026-11-02: remote Cobblemon QA PASS.** Inspection proved Tailscale
+Serve preserved the public tailnet HTTP Host, so the independent witness's
+strict loopback Host check rejected each signed POST before signature
+validation. The QA HTTPS proxy now explicitly pins an internal HTTP Host
+of `127.0.0.1:<witness-port>`, while **preserving TLS SNI, certificate
+validation, Ed25519 and the strict request deadlines**. The second-host
+Durán WSL2 checkpoint seq1 was independently verified with the witness
+public key. In a real disposable Cobblemon world, one log was gathered;
+the client's tailnet transport was intentionally disabled before deposit;
+the deposit failed closed, chest stayed empty, cancellation remained
+persistent and signed recovery completed without replay. Durán was not
+powered off, and no official account or Pokémon-specific action was used.
+See [complete remote Cobblemon signed evidence](../docs/QA_COBBLEMON_DURAN_PHYSICAL_WITNESS_PASS_2026-11-02.md).
 
 
 ### Cobblemon 1.8.2 / Minecraft Fabric 1.21.1 (isolated QA)
