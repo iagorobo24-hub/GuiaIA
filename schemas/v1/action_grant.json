@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guiaia.dev/schemas/v1/action_grant.json",
+  "title": "GuiaIA Action Grant Contract",
+  "description": "Defines an Ed25519 single-use, time-bounded action grant for world mutation or following",
+  "type": "object",
+  "required": ["payload", "signature"],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "required": ["kind", "nonce", "issuedAt", "expiresAt", "worldId", "username"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["follow", "gather", "deposit"]
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F-]{36}$"
+        },
+        "issuedAt": { "type": "integer" },
+        "expiresAt": { "type": "integer" },
+        "worldId": { "type": "string" },
+        "username": { "type": "string" },
+        "target": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "integer" },
+            "y": { "type": "integer" },
+            "z": { "type": "integer" }
+          }
+        },
+        "chest": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "integer" },
+            "y": { "type": "integer" },
+            "z": { "type": "integer" }
+          }
+        },
+        "item": { "type": "string" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 16 }
+      }
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86,88}$"
+    }
+  },
+  "additionalProperties": false
+}

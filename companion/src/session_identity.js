@@ -17,6 +17,7 @@ const FOLLOW_FIELDS=['aud','worldId','botName','ownerName','principalId',
 const GATHER_FIELDS=['aud','worldId','botName','ownerName','principalId',
   'connectionId','challenge','target','item','count','nonce','issuedAt','expiresAt']
 const EXACT_SESSION = ['bridge','owner']
+const EXACT_VANILLA_SESSION = ['owner']
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const name=/^[A-Za-z0-9_]{3,16}$/
 const id=/^[a-zA-Z0-9:_-]{1,64}$/
@@ -51,54 +52,78 @@ function verifySigned(token,keyPem){
 }
 function verifySessionBundle(bundle,authority){
   if(!authority || authority.sandboxOnly!==true ||
-     authority.identityMode!=='trusted_server_bridge_lab' ||
      !id.test(authority.worldId||'') || !name.test(authority.botName||'') ||
      !authority.trustedPrincipals || typeof authority.trustedPrincipals!=='object' ||
-     !exact(bundle,EXACT_SESSION) ||
-     typeof authority.activeConnection!=='function' ||
      typeof authority.isRevoked!=='function') {
     throw Error('No independent trusted session authority')
   }
-  const bridge=bundle.bridge?.payload,owner=bundle.owner?.payload
-  if(!exact(bridge,BRIDGE_FIELDS) || !exact(owner,OWNER_FIELDS) ||
-     bridge.aud!=='guiaia:server-connection:v1' ||
-     owner.aud!=='guiaia:principal-proof:v1' ||
-     !id.test(bridge.worldId||'') || bridge.worldId!==authority.worldId ||
-     owner.worldId!==authority.worldId ||
-     !uuid.test(bridge.connectionId||'') || bridge.connectionId!==owner.connectionId ||
-     !name.test(bridge.username||'') ||
-     !challenge.test(bridge.challenge||'') || bridge.challenge!==owner.challenge ||
-     !id.test(owner.principalId||'') ||
-     !Object.hasOwn(authority.trustedPrincipals,owner.principalId) ||
-     !validWindow(bridge,Date.now(),130000) ||
-     !validWindow(owner,Date.now(),130000)) {
-    throw Error('Session identity or scope invalid')
+
+  if (authority.identityMode === 'trusted_server_bridge_lab') {
+    if (!exact(bundle,EXACT_SESSION) || typeof authority.activeConnection!=='function') {
+      throw Error('No independent trusted session authority')
+    }
+    const bridge=bundle.bridge?.payload,owner=bundle.owner?.payload
+    if(!exact(bridge,BRIDGE_FIELDS) || !exact(owner,OWNER_FIELDS) ||
+       bridge.aud!=='guiaia:server-connection:v1' ||
+       owner.aud!=='guiaia:principal-proof:v1' ||
+       !id.test(bridge.worldId||'') || bridge.worldId!==authority.worldId ||
+       owner.worldId!==authority.worldId ||
+       !uuid.test(bridge.connectionId||'') || bridge.connectionId!==owner.connectionId ||
+       !name.test(bridge.username||'') ||
+       !challenge.test(bridge.challenge||'') || bridge.challenge!==owner.challenge ||
+       !id.test(owner.principalId||'') ||
+       !Object.hasOwn(authority.trustedPrincipals,owner.principalId) ||
+       !validWindow(bridge,Date.now(),130000) ||
+       !validWindow(owner,Date.now(),130000)) {
+      throw Error('Session identity or scope invalid')
+    }
+    verifySigned(bundle.bridge,authority.serverBridgePublicKeyPem)
+    verifySigned(bundle.owner,authority.trustedPrincipals[owner.principalId])
+    if(authority.isRevoked(owner.principalId,bridge.connectionId)!==false) {
+      throw Error('Principal or session revoked or revocation unavailable')
+    }
+    // MUST come from a live authenticated SERVER BRIDGE, not bot.players,
+    // nickname, user-supplied JSON or a previous snapshot.
+    const active=authority.activeConnection(bridge.connectionId)
+    if(!active || active.worldId!==authority.worldId ||
+       active.connectionId!==bridge.connectionId ||
+       active.username!==bridge.username ||
+       active.connected!==true){
+      throw Error('Server bridge cannot attest live matching connection')
+    }
+    return {worldId:bridge.worldId,principalId:owner.principalId,
+      connectionId:bridge.connectionId,challenge:bridge.challenge,username:bridge.username}
+  } else if (authority.identityMode === 'vanilla_paired_operator') {
+    if (!exact(bundle, EXACT_VANILLA_SESSION)) {
+      throw Error('Vanilla session requires owner proof')
+    }
+    const owner = bundle.owner?.payload
+    if (!owner || (owner.aud !== 'guiaia:principal-proof:v1' && owner.aud !== 'guiaia:vanilla-paired-session:v1') ||
+        owner.worldId !== authority.worldId ||
+        !id.test(owner.principalId || '') ||
+        !Object.hasOwn(authority.trustedPrincipals, owner.principalId) ||
+        !validWindow(owner, Date.now(), 130000)) {
+      throw Error('Vanilla paired session identity or scope invalid')
+    }
+    verifySigned(bundle.owner, authority.trustedPrincipals[owner.principalId])
+    if (authority.isRevoked(owner.principalId, owner.connectionId) !== false) {
+      throw Error('Principal or session revoked or revocation unavailable')
+    }
+    return {worldId: owner.worldId, principalId: owner.principalId,
+      connectionId: owner.connectionId, challenge: owner.challenge, username: owner.username || authority.ownerName}
+  } else {
+    throw Error('No independent trusted session authority')
   }
-  verifySigned(bundle.bridge,authority.serverBridgePublicKeyPem)
-  verifySigned(bundle.owner,authority.trustedPrincipals[owner.principalId])
-  if(authority.isRevoked(owner.principalId,bridge.connectionId)!==false) {
-    throw Error('Principal or session revoked or revocation unavailable')
-  }
-  // MUST come from a live authenticated SERVER BRIDGE, not bot.players,
-  // nickname, user-supplied JSON or a previous snapshot.
-  const active=authority.activeConnection(bridge.connectionId)
-  if(!active || active.worldId!==authority.worldId ||
-     active.connectionId!==bridge.connectionId ||
-     active.username!==bridge.username ||
-     active.connected!==true){
-    throw Error('Server bridge cannot attest live matching connection')
-  }
-  return {worldId:bridge.worldId,principalId:owner.principalId,
-    connectionId:bridge.connectionId,challenge:bridge.challenge,username:bridge.username}
 }
 function verifySessionDepositGrant(token,session,authority){
   const p=token?.payload
+  const maxCount = authority?.v1Batch ? 16 : 2
   if(!exact(p,GRANT_FIELDS) || p.aud!=='guiaia:session-deposit:v1' ||
      p.worldId!==session.worldId || p.principalId!==session.principalId ||
      p.connectionId!==session.connectionId || p.challenge!==session.challenge ||
      p.ownerName!==session.username || p.botName!==authority.botName ||
      !validChest(p.chest) || !Object.hasOwn(RESOURCE_ITEMS,p.item) ||
-     !Number.isInteger(p.count) || p.count<1 || p.count>2 ||
+     !Number.isInteger(p.count) || p.count<1 || p.count>maxCount ||
      !uuid.test(p.nonce||'') || !validWindow(p,Date.now(),120000)) {
     throw Error('Session-scoped deposit capability invalid')
   }
@@ -120,12 +145,14 @@ function verifySessionFollowGrant(token,session,authority){
 // One signed, single-block permit; a valid connection alone cannot authorize mining.
 function verifySessionGatherGrant(token,session,authority){
   const p=token?.payload
+  const maxCount = authority?.v1Batch ? 16 : 1
   if(!exact(p,GATHER_FIELDS) || p.aud!=='guiaia:session-gather:v1' ||
      p.worldId!==session.worldId || p.principalId!==session.principalId ||
      p.connectionId!==session.connectionId || p.challenge!==session.challenge ||
      p.ownerName!==session.username || p.botName!==authority.botName ||
      !validChest(p.target) || !Object.hasOwn(RESOURCE_ITEMS,p.item) ||
-     p.count!==1 || !uuid.test(p.nonce||'') ||
+     !Number.isInteger(p.count) || p.count<1 || p.count>maxCount ||
+     !uuid.test(p.nonce||'') ||
      !validWindow(p,Date.now(),120000)){
     throw Error('Session-scoped gather capability invalid')
   }
@@ -172,7 +199,7 @@ function createSessionAuthorizedQaDeposit(bot,bundle,capability,authority){
     return true
   }
   const scope={sandboxOnly:true,ownerName:p.ownerName,chest:Object.freeze({...p.chest}),
-    item:p.item,count:p.count,authorizeBeforeTransfer}
+    item:p.item,count:p.count,v1Batch:Boolean(trust.v1Batch),authorizeBeforeTransfer}
   const adapter=createQaChestDeposit(bot,scope)
   const base=adapter.depositOne
   let attempted=false

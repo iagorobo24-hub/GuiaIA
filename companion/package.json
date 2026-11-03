@@ -1,8 +1,8 @@
 {
-  "name": "guiaia-qa-companion",
-  "version": "0.1.0-alpha.1",
+  "name": "guiaia-companion",
+  "version": "1.0.0",
   "private": true,
-  "description": "Sandbox-only first playable GuiaIA companion proof",
+  "description": "GuiaIA V1 - Authorized Intelligent Companion for Minecraft Java 1.21.1",
   "license": "MIT",
   "engines": {
     "node": ">=22"
@@ -10,7 +10,8 @@
   "type": "commonjs",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "start": "node src/cli.js --qa-local-only",
+    "start": "node src/cli_v1.js",
+    "start:qa-legacy": "node src/cli.js --qa-local-only",
     "principal:offline-qa": "node offline_principal_handoff.js",
     "operator:qa": "node qa_operator.js"
   },

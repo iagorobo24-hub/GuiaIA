@@ -10,9 +10,10 @@ const MAX_BYTES = 16384
 const STATES = new Set(['ready', 'dispatching', 'needs_review', 'paused', 'completed', 'cancelled'])
 
 function validateSpec(spec) {
+  const maxTargets = spec?.v1Batch ? 16 : 3
   if (!spec || spec.sandboxOnly !== true ||
       !/^[a-zA-Z0-9_]{3,16}$/.test(spec.ownerName || '') ||
-      !Array.isArray(spec.targets) || spec.targets.length < 1 || spec.targets.length > 3) {
+      !Array.isArray(spec.targets) || spec.targets.length < 1 || spec.targets.length > maxTargets) {
     throw new Error('Only a bounded owner-authorized QA mission is permitted')
   }
   const seen = new Set()
@@ -32,7 +33,7 @@ function validateState(state) {
       typeof state.missionId !== 'string' || !/^[0-9a-f-]{36}$/.test(state.missionId) ||
       !STATES.has(state.phase) || !Array.isArray(state.receipts) ||
       !Number.isInteger(state.index) || state.index < 0) throw new Error('Corrupted QA mission journal')
-  validateSpec(state)
+  validateSpec(state, { v1Batch: Boolean(state.v1Batch) })
   if (state.index > state.targets.length || state.receipts.length !== state.index ||
       state.receipts.some((r,i) => !r || r.step !== i ||
         r.item !== RESOURCE_ITEMS[state.targets[i].block || 'oak_log'] ||
@@ -109,10 +110,11 @@ function openMission(directory, specification = null) {
         save()
       }
     } else {
-      validateSpec(specification)
+      validateSpec(specification, { v1Batch: Boolean(specification.v1Batch) })
       state = {
         version:1, sandboxOnly:true, missionId:randomUUID(),
         ownerName: specification.ownerName,
+        v1Batch: Boolean(specification.v1Batch),
         targets: specification.targets.map(p=>({x:p.x,y:p.y,z:p.z,
           ...(p.block === undefined ? {} : {block:p.block})})),
         index:0, receipts:[], phase:'ready', operationId:null, reason:'created'
@@ -200,6 +202,48 @@ function openMission(directory, specification = null) {
       state.reason = 'operator_resumed_unattempted_step'
       save()
       return {ok:true, state:view()}
+    },
+    reconcile(decision, details = {}) {
+      ensureOpen()
+      if (busy) return { ok: false, reason: 'mission_busy', state: view() }
+      if (state.phase !== 'needs_review' && state.phase !== 'paused') {
+        return { ok: false, reason: 'reconciliation_not_required', state: view() }
+      }
+      if (decision === 'cancel' || decision === 'abort') {
+        state.phase = 'cancelled'
+        state.reason = details.reason || 'operator_reconciled_cancel'
+        state.operationId = null
+        save()
+        return { ok: true, decision: 'cancelled', state: view() }
+      }
+      if (decision === 'retry') {
+        state.phase = 'ready'
+        state.reason = details.reason || 'operator_reconciled_retry'
+        state.operationId = null
+        save()
+        return { ok: true, decision: 'ready_for_retry', state: view() }
+      }
+      if (decision === 'mark_step_completed') {
+        const expected = state.index
+        const target = state.targets[expected]
+        if (!target) throw new Error('No active step to mark completed')
+        const expectedBlock = target.block || 'oak_log'
+        const item = details.item || RESOURCE_ITEMS[expectedBlock] || expectedBlock
+        const inventoryDelta = Number.isInteger(details.inventoryDelta) ? details.inventoryDelta : 1
+        state.receipts.push({
+          step: expected,
+          operationId: state.operationId || randomUUID(),
+          item,
+          inventoryDelta
+        })
+        state.index++
+        state.phase = state.index === state.targets.length ? 'completed' : 'ready'
+        state.reason = 'operator_reconciled_verified_step'
+        state.operationId = null
+        save()
+        return { ok: true, decision: 'step_completed', state: view() }
+      }
+      throw new Error('Unknown reconciliation decision: ' + decision)
     },
     close() {
       if (closed) return

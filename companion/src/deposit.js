@@ -16,23 +16,25 @@ const positionValid = p => p && ['x','y','z'].every(k => Number.isInteger(p[k]) 
 const samePosition = (a,b) => a && b && ['x','y','z'].every(k => a[k] === b[k])
 
 function validatePlan(plan) {
+  const maxItems = plan?.v1Batch ? 16 : 2
+  const maxCount = plan?.v1Batch ? 16 : 2
   if (!plan || plan.sandboxOnly !== true ||
       !/^[A-Za-z0-9_]{3,16}$/.test(plan.ownerName || '') ||
       !positionValid(plan.chest) || !Array.isArray(plan.items) ||
-      plan.items.length < 1 || plan.items.length > 2) {
+      plan.items.length < 1 || plan.items.length > maxItems) {
     throw Error('Invalid bounded QA chest plan')
   }
   const names = new Set()
   for (const step of plan.items) {
     if (!step || !allowed(step.name) || !Number.isInteger(step.count) ||
-        step.count < 1 || step.count > 2 || names.has(step.name)) {
+        step.count < 1 || step.count > maxCount || names.has(step.name)) {
       throw Error('Unauthorized QA item or count')
     }
     names.add(step.name)
   }
 }
 function validateJournal(state) {
-  validatePlan(state)
+  validatePlan(state, { v1Batch: Boolean(state.v1Batch) })
   if (state.version !== 1 || !/^[0-9a-f-]{36}$/.test(state.planId || '') ||
       !STATES.has(state.phase) ||
       !Number.isInteger(state.index) || state.index < 0 ||
@@ -73,7 +75,7 @@ function chestPlayerCount(window,itemName) {
     (sum,slot) => sum+(slot?.name===itemName && Number.isInteger(slot.count) && slot.count>0?slot.count:0),0)
 }
 function createQaChestDeposit(bot, plan) {
-  validatePlan({...plan,items:[{name:plan.item,count:plan.count}]})
+  validatePlan({...plan,items:[{name:plan.item,count:plan.count}]}, { v1Batch: Boolean(plan.v1Batch) })
   const {ownerName,chest:position,item,count,authorizeBeforeTransfer}=plan
   if (typeof bot.blockAt !== 'function' || typeof bot.openContainer !== 'function' ||
       !bot.inventory || typeof bot.inventory.items !== 'function') {
@@ -213,9 +215,10 @@ function openDepositJournal(directory,plan=null) {
         save()
       }
     }else{
-      validatePlan(plan)
+      validatePlan(plan, { v1Batch: Boolean(plan.v1Batch) })
       state={version:1,sandboxOnly:true,planId:randomUUID(),
         ownerName:plan.ownerName,chest:{...plan.chest},
+        v1Batch:Boolean(plan.v1Batch),
         items:plan.items.map(i=>({name:i.name,count:i.count})),
         index:0,phase:'ready',operationId:null,receipts:[],reason:'created'}
       save()
@@ -285,6 +288,55 @@ function openDepositJournal(directory,plan=null) {
       if(busy||state.phase!=='paused')return {ok:false,reason:'manual_review_required',state:view()}
       state.phase='ready';state.reason='explicit_resume_before_transfer'
       save();return {ok:true,state:view()}
+    },
+    reconcile(decision, details = {}){
+      ensureOpen()
+      if (busy) return {ok:false, reason:'deposit_busy', state:view()}
+      if (state.phase !== 'needs_review' && state.phase !== 'paused') {
+        return {ok:false, reason:'reconciliation_not_required', state:view()}
+      }
+      if (decision === 'cancel' || decision === 'abort') {
+        state.phase = 'cancelled'
+        state.reason = details.reason || 'operator_reconciled_cancel'
+        state.operationId = null
+        save()
+        return {ok:true, decision:'cancelled', state:view()}
+      }
+      if (decision === 'retry') {
+        state.phase = 'ready'
+        state.reason = details.reason || 'operator_reconciled_retry'
+        state.operationId = null
+        save()
+        return {ok:true, decision:'ready_for_retry', state:view()}
+      }
+      if (decision === 'mark_step_completed') {
+        const expected = state.index
+        const expectedItem = state.items[expected]
+        if (!expectedItem) throw Error('No active step to mark completed')
+        const name = details.name || expectedItem.name
+        const count = Number.isInteger(details.count) ? details.count : expectedItem.count
+        const playerBefore = Number.isInteger(details.playerBefore) ? details.playerBefore : 0
+        const playerAfter = Number.isInteger(details.playerAfter) ? details.playerAfter : playerBefore - count
+        const chestBefore = Number.isInteger(details.chestBefore) ? details.chestBefore : 0
+        const chestAfter = Number.isInteger(details.chestAfter) ? details.chestAfter : chestBefore + count
+        state.receipts.push({
+          step: expected,
+          operationId: state.operationId || randomUUID(),
+          name,
+          count,
+          playerBefore,
+          playerAfter,
+          chestBefore,
+          chestAfter
+        })
+        state.index++
+        state.phase = state.index === state.items.length ? 'completed' : 'ready'
+        state.reason = 'operator_reconciled_verified_deposit'
+        state.operationId = null
+        save()
+        return {ok:true, decision:'step_completed', state:view()}
+      }
+      throw Error('Unknown reconciliation decision: ' + decision)
     },
     close(){
       if(closed)return

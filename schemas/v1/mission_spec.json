@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guiaia.dev/schemas/v1/mission_spec.json",
+  "title": "GuiaIA Mission Specification",
+  "description": "Defines an authorized, bounded resource gathering mission contract for GuiaIA companion",
+  "type": "object",
+  "required": ["ownerName", "targets"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "default": 1
+    },
+    "sandboxOnly": {
+      "type": "boolean",
+      "default": true
+    },
+    "ownerName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_]{3,16}$",
+      "description": "Minecraft player name of the authorized owner"
+    },
+    "ownerUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Optional Mojang UUID for online-mode servers"
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "required": ["x", "y", "z"],
+        "properties": {
+          "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+          "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+          "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+          "block": {
+            "type": "string",
+            "enum": ["oak_log", "birch_log", "stone", "coal_ore", "deepslate_coal_ore", "iron_ore", "deepslate_iron_ore"],
+            "default": "oak_log"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

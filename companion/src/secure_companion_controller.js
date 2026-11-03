@@ -20,7 +20,10 @@ const { reserveGrantOnce } = require('./operator_authorization')
 
 const ALLOWED_RESOURCES = Object.freeze({
   oak_log: 'oak_log',
-  birch_log: 'birch_log'
+  birch_log: 'birch_log',
+  cobblestone: 'cobblestone',
+  stone: 'cobblestone',
+  coal: 'coal'
 })
 
 const MAX_INVENTORY_SLOTS = 36
@@ -30,7 +33,8 @@ const MAX_ITEM_COUNT_PER_STACK = 64
  * Parses natural language or structured instruction into a typed command contract.
  * Rejects arbitrary strings, prompt injections, and unsupported commands.
  */
-function parseNaturalInstruction(input) {
+function parseNaturalInstruction(input, options = {}) {
+  const isV1Batch = options.v1Batch === true
   if (typeof input !== 'string' || input.length < 1 || input.length > 200) {
     throw new Error('Instruction must be a non-empty string under 200 characters')
   }
@@ -44,12 +48,12 @@ function parseNaturalInstruction(input) {
     .trim()
 
   // 1. Emergency Stop / Halt
-  if (/^(?:para|alto|detente|stop|quieto|espera)[\s!.,]*$/i.test(clean)) {
+  if (/^(?:para(?:r)?|alto|detente|stop|quieto|espera)[\s!.,]*$/i.test(clean)) {
     return Object.freeze({ kind: 'stop', raw: input })
   }
 
   // 2. Follow
-  if (/^(?:sigueme|ven(?:\s+conmigo)?|acompaname|follow)[\s!.,]*$/i.test(clean)) {
+  if (/^(?:sigue(?:me)?|ven(?:\s+conmigo)?|acompaname|follow)[\s!.,]*$/i.test(clean)) {
     return Object.freeze({ kind: 'follow', raw: input })
   }
 
@@ -60,15 +64,19 @@ function parseNaturalInstruction(input) {
 
   // 4. Gather
   const gatherMatch = clean.match(
-    /^(?:recoge|consigue|recolecta|mina|trae)\s+(\d{1,2})\s+(troncos?\s+de\s+roble|troncos?\s+de\s+abedul|roble|abedul|oak_log|birch_log)(?:\s+(?:en\s+la\s+posicion|en)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+))?\s*$/i
+    /^(?:recoge|consigue|recolecta|mina|trae)(?:\s+(\d{1,2}))?\s+(madera|troncos?\s+de\s+roble|troncos?\s+de\s+abedul|roble|abedul|oak_log|birch_log|piedra|adoquin|cobblestone|carbon|coal)(?:\s+(?:(?:en\s+la\s+posicion|en)\s+)?(-?\d+)\s+(-?\d+)\s+(-?\d+))?\s*$/i
   )
   if (gatherMatch) {
-    const count = parseInt(gatherMatch[1], 10)
-    if (count !== 1) throw new Error('Only single-item bounded gathering authorized')
+    const count = gatherMatch[1] !== undefined ? parseInt(gatherMatch[1], 10) : 1
+    if (!isV1Batch && count !== 1) throw new Error('Only single-item bounded gathering authorized')
+    if (isV1Batch && (count < 1 || count > 16)) throw new Error('Only bounded gathering (1-16) authorized')
     let rawResource = gatherMatch[2].replace(/\s+/g, '_')
     let resource = null
-    if (/roble|oak/.test(rawResource)) resource = 'oak_log'
+    if (/madera|roble|oak/.test(rawResource)) resource = 'oak_log'
     else if (/abedul|birch/.test(rawResource)) resource = 'birch_log'
+    else if (/adoquin|cobble/.test(rawResource)) resource = 'cobblestone'
+    else if (/piedra|stone/.test(rawResource)) resource = 'stone'
+    else if (/carbon|coal/.test(rawResource)) resource = 'coal'
     if (!resource || !Object.hasOwn(ALLOWED_RESOURCES, resource)) {
       throw new Error('Unauthorized or unknown gathering resource')
     }
@@ -82,15 +90,18 @@ function parseNaturalInstruction(input) {
 
   // 5. Deposit
   const depositMatch = clean.match(
-    /^(?:deposita|guarda|pon)\s+(\d{1,2})\s+(troncos?\s+de\s+roble|troncos?\s+de\s+abedul|roble|abedul|oak_log|birch_log)(?:\s+en\s+(?:el\s+)?cofre)?(?:\s+(?:en\s+la\s+posicion|en)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+))?\s*$/i
+    /^(?:deposita|guarda|pon)(?:\s+(\d{1,2}))?\s+(madera|troncos?\s+de\s+roble|troncos?\s+de\s+abedul|roble|abedul|oak_log|birch_log|piedra|adoquin|cobblestone|carbon|coal)(?:\s+en\s+(?:el\s+)?cofre)?(?:\s+(?:(?:en\s+la\s+posicion|en)\s+)?(-?\d+)\s+(-?\d+)\s+(-?\d+))?\s*$/i
   )
   if (depositMatch) {
-    const count = parseInt(depositMatch[1], 10)
-    if (count !== 1) throw new Error('Only single-item bounded deposit authorized')
+    const count = depositMatch[1] !== undefined ? parseInt(depositMatch[1], 10) : 1
+    if (!isV1Batch && count !== 1) throw new Error('Only single-item bounded deposit authorized')
+    if (isV1Batch && (count < 1 || count > 16)) throw new Error('Only bounded deposit (1-16) authorized')
     let rawResource = depositMatch[2].replace(/\s+/g, '_')
     let resource = null
-    if (/roble|oak/.test(rawResource)) resource = 'oak_log'
+    if (/madera|roble|oak/.test(rawResource)) resource = 'oak_log'
     else if (/abedul|birch/.test(rawResource)) resource = 'birch_log'
+    else if (/piedra|adoquin|cobble/.test(rawResource)) resource = 'cobblestone'
+    else if (/carbon|coal/.test(rawResource)) resource = 'coal'
     if (!resource || !Object.hasOwn(ALLOWED_RESOURCES, resource)) {
       throw new Error('Unauthorized or unknown deposit resource')
     }
@@ -106,8 +117,10 @@ function parseNaturalInstruction(input) {
 }
 
 function createSecureCompanionController({ bot, authority, classes }) {
+  const isFabricLab = authority?.identityMode === 'trusted_server_bridge_lab'
+  const isVanillaPaired = authority?.identityMode === 'vanilla_paired_operator'
   if (authority?.sandboxOnly !== true ||
-      authority?.identityMode !== 'trusted_server_bridge_lab' ||
+      (!isFabricLab && !isVanillaPaired) ||
       !authority?.worldId || !authority?.botName ||
       bot?.username !== authority.botName) {
     throw new Error('Secure companion requires valid sandbox authority matching bot username')
@@ -189,6 +202,19 @@ function createSecureCompanionController({ bot, authority, classes }) {
     const verifiedSession = verifySessionBundle(session, authority)
     const verifiedGrant = verifySessionFollowGrant(grant, verifiedSession, authority)
 
+    if (authority.identityMode === 'vanilla_paired_operator') {
+      const vanillaCtrl = createController(bot, classes, { ownerName: verifiedSession.username })
+      const res = vanillaCtrl.follow()
+      if (res.ok) {
+        mode = 'following'
+        lastReason = res.reason
+        activeFollow = vanillaCtrl
+      } else {
+        emergencyStop(res.reason || 'follow_failed')
+      }
+      return res
+    }
+
     activeFollow = createQaAuthorizedFollow(bot, classes, session, grant, authority)
     const result = await activeFollow.start()
     if (result.ok) {
@@ -205,32 +231,39 @@ function createSecureCompanionController({ bot, authority, classes }) {
       Number.isInteger(a[k]) && a[k] === b[k])
   }
 
-  // No world-modifying command may rely on a signed JOIN alone. Both live
-  // server presence and an independent checkpoint are mandatory in this lab.
+  // In Fabric lab mode, both live server presence and independent checkpoint are mandatory.
+  // In Vanilla paired mode, session bundle and local grant validation govern the action authority.
   async function freshActionAuthority(session, grant, verifyGrant) {
-    if (authority.requireLivePresence !== true ||
-        authority.requireRemoteCheckpoint !== true ||
-        typeof authority.livePresence !== 'function' ||
-        typeof authority.remoteCheckpointMatch !== 'function' ||
-        typeof authority.currentRegistryCheckpoint !== 'function') {
-      throw Error('Independent live authority required before world modification')
+    if (authority.identityMode === 'trusted_server_bridge_lab') {
+      if (authority.requireLivePresence !== true ||
+          authority.requireRemoteCheckpoint !== true ||
+          typeof authority.livePresence !== 'function' ||
+          typeof authority.remoteCheckpointMatch !== 'function' ||
+          typeof authority.currentRegistryCheckpoint !== 'function') {
+        throw Error('Independent live authority required before world modification')
+      }
+      const initial = verifySessionBundle(session, authority)
+      verifyGrant(grant, initial, authority)
+      const live = await authority.livePresence(initial.connectionId)
+      const now = Date.now()
+      if (!live || live.connected !== true || live.worldId !== initial.worldId ||
+          live.connectionId !== initial.connectionId ||
+          !Number.isSafeInteger(live.issuedAt) ||
+          live.issuedAt > now + 1000 || now - live.issuedAt > 1500) {
+        throw Error('Fresh signed Fabric presence unavailable')
+      }
+      if (await authority.remoteCheckpointMatch(authority.currentRegistryCheckpoint()) !== true) {
+        throw Error('Independent authority checkpoint unavailable')
+      }
+      const current = verifySessionBundle(session, authority)
+      verifyGrant(grant, current, authority)
+      return current
+    } else if (authority.identityMode === 'vanilla_paired_operator') {
+      const current = verifySessionBundle(session, authority)
+      verifyGrant(grant, current, authority)
+      return current
     }
-    const initial = verifySessionBundle(session, authority)
-    verifyGrant(grant, initial, authority)
-    const live = await authority.livePresence(initial.connectionId)
-    const now = Date.now()
-    if (!live || live.connected !== true || live.worldId !== initial.worldId ||
-        live.connectionId !== initial.connectionId ||
-        !Number.isSafeInteger(live.issuedAt) ||
-        live.issuedAt > now + 1000 || now - live.issuedAt > 1500) {
-      throw Error('Fresh signed Fabric presence unavailable')
-    }
-    if (await authority.remoteCheckpointMatch(authority.currentRegistryCheckpoint()) !== true) {
-      throw Error('Independent authority checkpoint unavailable')
-    }
-    const current = verifySessionBundle(session, authority)
-    verifyGrant(grant, current, authority)
-    return current
+    throw Error('Unsupported identity mode for action authority')
   }
 
   async function gather(session, grant, target, resource = 'oak_log', pickupTimeoutMs = 12000) {
@@ -327,7 +360,8 @@ function createSecureCompanionController({ bot, authority, classes }) {
   }
 
   async function dispatchInstruction(input, context = {}) {
-    const parsed = typeof input === 'string' ? parseNaturalInstruction(input) : input
+    const allowBatch = Boolean(context.v1Batch || authority?.v1Batch)
+    const parsed = typeof input === 'string' ? parseNaturalInstruction(input, { v1Batch: allowBatch }) : input
     if (!parsed || typeof parsed.kind !== 'string') {
       throw new Error('Invalid instruction contract')
     }
@@ -352,7 +386,10 @@ function createSecureCompanionController({ bot, authority, classes }) {
       if (!context.session || !context.grant) {
         return Object.freeze({ ok: false, reason: 'signed_session_and_grant_required' })
       }
-      if (parsed.count !== 1) return { ok: false, reason: 'invalid_gather_count' }
+      const maxCount = allowBatch ? 16 : 1
+      if (!Number.isInteger(parsed.count) || parsed.count < 1 || parsed.count > maxCount) {
+        return { ok: false, reason: 'invalid_gather_count' }
+      }
       const target = parsed.target || context.target
       return gather(context.session, context.grant, target, parsed.resource, context.pickupTimeoutMs)
     }
@@ -360,6 +397,10 @@ function createSecureCompanionController({ bot, authority, classes }) {
     if (parsed.kind === 'deposit') {
       if (!context.session || !context.grant) {
         return Object.freeze({ ok: false, reason: 'signed_session_and_grant_required' })
+      }
+      const maxCount = allowBatch ? 16 : 1
+      if (!Number.isInteger(parsed.count) || parsed.count < 1 || parsed.count > maxCount) {
+        return { ok: false, reason: 'invalid_deposit_count' }
       }
       if (parsed.count !== context.grant.payload?.count ||
           parsed.resource !== context.grant.payload?.item) {

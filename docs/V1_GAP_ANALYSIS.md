@@ -1,0 +1,23 @@
+# GuiaIA V1 — Análisis de Brechas Técnicas (V1_GAP_ANALYSIS)
+
+> **Fecha:** 2 de noviembre de 2026  
+> **Referencia de código auditado:** commit `df8c0dd` (`main`)
+
+---
+
+## Matriz Exhaustiva de Brechas
+
+| Capacidad Requerida para V1 | Implementación Existente | Pruebas Disponibles | Limitación Técnica Actual | Acción y Prioridad para V1 |
+|---|---|---|---|---|
+| **1. Instalador y arranque sencillo** | Inexistente. Requiere clonar git, instalar node, python, compilar mod java manualmente. | Solo `scripts/qa_clean_checkout.py` para QA interno. | Falta script de bootstrap interactivo y lanzador unificado de un clic. | Desarrollar `setup.ps1` y `iniciar.bat`. (**P0**) |
+| **2. Conexión a Servidor Minecraft** | Funcional vía Mineflayer, pero hardcoded a `127.0.0.1:25598` en `cli.js` o scripts QA. | Probado en Fabric real local y Cobblemon 1.8.2. | No permite configurar host/puerto en caliente ni reconectar ante desconexiones transitorias. | Parametrizar CLI/TUI para host/puerto dinámicos. (**P0**) |
+| **3. Autenticación e Identidad Real** | Solo identidades sintéticas offline (`offline_principal_handoff.js`) con claves Ed25519 de laboratorio. | 100% verificado en modo offline con firmas simétricas/asimétricas. | Incompatible con servidores online-mode (cuentas oficiales de Microsoft). No hay Device Code flow. | Añadir módulo Microsoft OAuth y emparejamiento PIN para LAN. (**P0**) |
+| **4. Autorización y Revocación de Operadores** | Implementada mediante certificados Ed25519 y desafío de presencia en servidor. | Verificada en Fabric real: desconexión de jugador revoca permisos en <1500 ms. | Requiere que el servidor tenga instalado obligatoriamente el mod Fabric `GuiaIdentityBridge`. | Soportar modo `vanilla_paired` sin mod del lado servidor. (**P1**) |
+| **5. Interpretación de Lenguaje Natural** | Parseador regex determinista en `secure_companion_controller.js`. | Pruebas unitarias de parsing (100% pasadas para comandos admitidos). | Muy estricto: solo admite comandos exactos en español/inglés para 1 tronco de madera. | Ampliar gramática y admitir lotes de 1 a 16 ítems y más materiales. (**P1**) |
+| **6. Navegación, Recolección y Cofres** | Módulo de recolección (`gather.js`) y depósito (`deposit.js`) con inventario doble y delta. | Misión de 4 pasos probada en Fabric real con madera de roble y abedul. | Límite forzado de 1 ítem por paso (`count !== 1` lanza excepción). | Habilitar recolección y depósito por lotes con recibos individuales. (**P1**) |
+| **7. Cancelación y Parada de Emergencia (P0)** | Implementada con prioridad absoluta en `emergencyStop()`, cancela pathfinder y minado al instante. | Pruebas exhaustivas unitarias y de integración (412 tests verdes). | Totalmente funcional. No requiere nonces ni autorizaciones. | Mantener y blindar en la TUI mediante atajo directo de teclado. (**Completa**) |
+| **8. Persistencia y Recuperación ante Caídas** | Diarios durables `mission.json` y `deposit.json` con fsync y bloqueo `O_EXCL`. | Probado matar el proceso con SIGKILL tras depósito; reinicia en `needs_review` sin duplicados. | La recuperación de `needs_review` requiere inspección manual de un desarrollador en JSON. | Asistente de reconciliación interactivo guiado para el usuario. (**P1**) |
+| **9. Testigo Externo Anti-Rollback** | Protocolo de triple autoridad implementado en laboratorio (`qa_triple_authority_reconciler.js`). | 7/7 pruebas unitarias pasadas detectando rollback simultáneo de archivos locales. | La tercera autoridad (`high_water`) corre en memoria RAM de un proceso hijo volátil. | Implementar testigo local durable append-only en disco de Durán. (**P1**) |
+| **10. Experiencia de Usuario (TUI)** | Consola TTY básica en `qa_operator.js` o cliente MCP crudo. | Pruebas de terminal en Linux/WSL2 (con limitaciones de PTY en Windows nativo). | El usuario común no puede operar el sistema cómodamente. | Desarrollar Consola TUI interactiva con colores ANSI y readline. (**P0**) |
+| **11. Soporte de Cobblemon** | Verificado spawn del bot en Cobblemon 1.8.2 con parche de serializer de recetas. | Misiones de madera probadas en mundo con Cobblemon activo sobre Tailscale HTTPS. | No hay interacciones con Pokémon ni mecánicas específicas de Cobblemon. | Mantener compatibilidad de red/mundo; aplazar Pokémon a V1.1. (**P2**) |
+| **12. Documentación de Usuario y Distribución** | Solo documentación técnica para ingenieros (`docs/QA_*.md`). | `GETTING_STARTED.md` redactado pero asume perfil de desarrollador. | Falta Manual de Usuario V1, guía de solución de problemas, y release GitHub con assets. | Redactar Guía de Usuario V1 y automatizar release en CI. (**P0**) |

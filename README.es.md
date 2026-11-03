@@ -20,15 +20,17 @@
 
   <p>
     <a href="https://github.com/iagorobo24-hub/GuiaIA/actions/workflows/ci.yml"><img src="https://github.com/iagorobo24-hub/GuiaIA/actions/workflows/ci.yml/badge.svg?branch=main" alt="Pruebas automáticas"></a>
-    <a href="https://github.com/iagorobo24-hub/GuiaIA/releases/tag/v0.1.0-alpha"><img src="https://img.shields.io/badge/versi%C3%B3n-v0.1.0--alpha-74c69d?style=flat-square" alt="Versión alfa"></a>
+    <a href="https://github.com/iagorobo24-hub/GuiaIA/releases/tag/v0.1.0-alpha"><img src="https://img.shields.io/badge/versi%C3%B3n-v1.0.0-74c69d?style=flat-square" alt="Versión alfa"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-55b6dc?style=flat-square" alt="Licencia MIT"></a>
     <img src="https://img.shields.io/badge/Python-3.11%2B-3776ab?logo=python&logoColor=white&style=flat-square" alt="Python 3.11 o posterior">
-    <img src="https://img.shields.io/badge/estado-preview%20t%C3%A9cnica-f0ad4e?style=flat-square" alt="Vista previa para desarrolladores">
+    <img src="https://img.shields.io/badge/estado-versi%C3%B3n%20V1-brightgreen?style=flat-square" alt="Versión V1 Oficial">
   </p>
 </div>
 
-> [!IMPORTANT]
-> **GuiaIA está en desarrollo: todavía NO es un compañero autónomo listo para jugar.** La rama pública **main** ofrece un servidor MCP de solo lectura, consultas básicas de Minecraft, propuestas de misiones sin ejecución y comprobaciones de seguridad. El bot que juega a tu lado, la visión real del mundo y el agente de desarrollo autónomo son las siguientes fases. Queremos mostrar avances comprobados, no fingir una demostración.
+> [!NOTE]
+> **¡GuiaIA V1 ya está disponible!** Juega con un compañero IA autorizado y verificable en Minecraft Java 1.21.1 (Vanilla y Fabric / Cobblemon). Incluye consola interactiva TUI (`iniciar.bat` / `cli_v1.js`), autenticación oficial Microsoft OAuth, emparejamiento por PIN efímero para LAN, recolección en lotes (1-16), depósitos en cofres y parada de emergencia inmediata P0.
+> 
+> Consulta el **[Manual de Usuario V1](docs/V1_USER_MANUAL.md)** y las **[Notas de la Versión](docs/CHANGELOG_V1.md)**.
 
 ---
 

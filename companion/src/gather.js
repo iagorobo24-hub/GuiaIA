@@ -7,7 +7,14 @@ const HAZARDS = new Set(['water','lava','fire','soul_fire','cactus','powder_snow
 const ALLOWED_BLOCK = 'oak_log'
 const ALLOWED_ITEM = 'oak_log'
 // A hardcoded, reviewed allowlist — not arbitrary chat/model-supplied blocks.
-const RESOURCE_ITEMS = Object.freeze({oak_log:'oak_log', birch_log:'birch_log'})
+const RESOURCE_ITEMS = Object.freeze({
+  oak_log: 'oak_log',
+  birch_log: 'birch_log',
+  stone: 'cobblestone',
+  cobblestone: 'cobblestone',
+  coal_ore: 'coal',
+  coal: 'coal'
+})
 
 function inventoryCount(bot, name) {
   if (!bot.inventory || typeof bot.inventory.items !== 'function') return null
