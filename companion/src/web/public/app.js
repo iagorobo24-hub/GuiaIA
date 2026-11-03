@@ -1,12 +1,17 @@
 'use strict';
 
 (function () {
-  // 1. Token Initialization (strictly from server-injected meta tag; URL tokens forbidden)
+  // 1. Token Initialization (strictly via secure pairing handshake; never from URL or plaintext HTML)
   let token = null
-  const metaTag = document.querySelector('meta[name="guiaia-token"]')
-  if (metaTag && metaTag.content && !metaTag.content.startsWith('__')) {
-    token = metaTag.content
-  }
+  try {
+    token = sessionStorage.getItem('guiaia_session_token') || null
+  } catch {}
+
+  // Pairing Elements
+  const pairingOverlay = document.getElementById('pairing-overlay')
+  const pairingForm = document.getElementById('pairing-form')
+  const pairingPinInput = document.getElementById('pairing-pin-input')
+  const pairingError = document.getElementById('pairing-error')
 
   // State
   let botPosition = { x: 0, y: 64, z: 0 }
@@ -282,10 +287,16 @@
 
       const data = await res.json()
       if (res.ok && data.ok) {
-        remoteHaltDot.className = 'dot dot-red'
-        remoteHaltText.textContent = 'CONFIRMADO REMOTO'
+        if (data.remoteConfirmed === true) {
+          remoteHaltDot.className = 'dot dot-red'
+          remoteHaltText.textContent = 'CONFIRMADO REMOTO'
+          addLog(`🛑 [P0] Parada confirmada por testigo remoto (${data.reason}).`, 'error')
+        } else {
+          remoteHaltDot.className = 'dot dot-yellow'
+          remoteHaltText.textContent = 'PARADA LOCAL (SIN TESTIGO REMOTO)'
+          addLog(`🛑 [P0] Parada ejecutada localmente en el bot (${data.reason}). Sin testigo remoto activo.`, 'warn')
+        }
         lastStopReasonEl.textContent = `Motivo: ${data.reason}`
-        addLog(`🛑 [P0 REMOTO] Parada confirmada por el servidor GuiaIA (${data.reason}).`, 'error')
       } else {
         remoteHaltText.textContent = 'ERROR EN TRANSMISIÓN'
         addLog(`⚠️ Fallo confirmando P0 en el servidor: ${data.error || 'Respuesta inválida'}`, 'error')
@@ -352,8 +363,53 @@
     addLog('Registro de telemetría limpiado por el operador.', 'info')
   })
 
+  // 8. Pairing Form Submission (Secure Session Bootstrap)
+  if (pairingForm) {
+    pairingForm.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const pin = pairingPinInput.value.trim()
+      if (!pin) return
+
+      if (pairingError) pairingError.style.display = 'none'
+
+      try {
+        const res = await fetch('/api/session/pair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin })
+        })
+
+        const data = await res.json()
+        if (res.ok && data.ok && data.token) {
+          token = data.token
+          try { sessionStorage.setItem('guiaia_session_token', token) } catch {}
+          if (pairingOverlay) pairingOverlay.style.display = 'none'
+          addLog('✔ Emparejamiento seguro completado exitosamente con la consola.', 'success')
+          connectSse()
+        } else {
+          if (pairingError) {
+            pairingError.textContent = data.error || 'PIN incorrecto o ya utilizado'
+            pairingError.style.display = 'block'
+          }
+          addLog(`❌ Fallo en emparejamiento: ${data.error || 'PIN inválido'}`, 'error')
+        }
+      } catch (err) {
+        if (pairingError) {
+          pairingError.textContent = 'Error de conexión: ' + err.message
+          pairingError.style.display = 'block'
+        }
+      }
+    })
+  }
+
   // Initial setup
   renderInventory({}, false)
   drawMinimap()
-  connectSse()
+  if (token) {
+    if (pairingOverlay) pairingOverlay.style.display = 'none'
+    connectSse()
+  } else {
+    if (pairingOverlay) pairingOverlay.style.display = 'flex'
+    addLog('Esperando emparejamiento con el PIN de la consola...', 'warn')
+  }
 })()

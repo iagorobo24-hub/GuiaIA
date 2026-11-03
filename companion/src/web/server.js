@@ -66,6 +66,10 @@ function createWebDashboardServer(options = {}) {
   const port = options.port !== undefined ? options.port : 8080
   const host = options.host || '127.0.0.1'
   const token = options.token || crypto.randomBytes(32).toString('hex')
+  const pairingPin = options.pairingPin !== undefined
+    ? String(options.pairingPin)
+    : String(crypto.randomInt(100000, 999999))
+  let pinUsed = false
   const controller = options.controller
   const bot = options.bot
   const rateLimiter = createRateLimiter(30)
@@ -226,6 +230,40 @@ function createWebDashboardServer(options = {}) {
 
     // 4. API Endpoints
     if (pathname.startsWith('/api/')) {
+      // POST /api/session/pair (Unauthenticated pairing endpoint for secure session bootstrap)
+      if (pathname === '/api/session/pair' && req.method === 'POST') {
+        let parsedBody
+        try {
+          const raw = await readRequestBody(req, 1024)
+          parsedBody = JSON.parse(raw)
+        } catch (err) {
+          sendError(res, 400, 'Invalid JSON body: ' + err.message)
+          return
+        }
+
+        if (!pairingPin || pinUsed) {
+          sendError(res, 401, 'Unauthorized: Pairing PIN is expired or already consumed')
+          return
+        }
+
+        const candidatePin = typeof parsedBody?.pin === 'string' ? parsedBody.pin.trim() : ''
+        if (!candidatePin || !timingSafeEqualStr(candidatePin, pairingPin)) {
+          sendError(res, 401, 'Unauthorized: Incorrect pairing PIN')
+          return
+        }
+
+        if (options.singleUsePin !== false) {
+          pinUsed = true
+        }
+
+        sendJson(res, 200, {
+          ok: true,
+          token,
+          message: 'Session paired successfully'
+        })
+        return
+      }
+
       const clientToken = extractToken(req)
       if (!clientToken || !timingSafeEqualStr(clientToken, token)) {
         sendError(res, 401, 'Unauthorized: Valid Bearer token required')
@@ -272,11 +310,12 @@ function createWebDashboardServer(options = {}) {
 
         // Highest priority stop: synchronous local halt
         const result = controller?.emergencyStop ? controller.emergencyStop(stopReason) : { ok: true, mode: 'idle', reason: stopReason }
+        const isRemoteConfirmed = Boolean(result && result.remoteConfirmed === true)
 
         const responsePayload = {
           ok: true,
           localHalted: true,
-          remoteConfirmed: true,
+          remoteConfirmed: isRemoteConfirmed,
           mode: result.mode || 'idle',
           reason: result.reason || stopReason,
           timestamp: Date.now()
@@ -353,11 +392,11 @@ function createWebDashboardServer(options = {}) {
         applySecurityHeaders(res)
         res.setHeader('Content-Type', contentType)
 
-        // If serving index.html, inject the session bootstrap token securely into HTML
+        // If serving index.html, do NOT inject any token; bootstrap requires explicit PIN pairing
         if (safePath === 'index.html') {
           const html = data.toString('utf8').replace(
             '__GUIAIA_BOOTSTRAP_TOKEN__',
-            token
+            ''
           )
           res.writeHead(200)
           res.end(html)
@@ -414,6 +453,8 @@ function createWebDashboardServer(options = {}) {
     close,
     broadcast,
     token,
+    pairingPin,
+    isPinUsed: () => pinUsed,
     host,
     port,
     getBotTelemetrySnapshot

@@ -2,6 +2,9 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const os = require('node:os')
 const nbt = require('prismarine-nbt')
 const { Vec3 } = require('vec3')
 
@@ -17,7 +20,10 @@ const {
   createBlueprintBuilder,
   orderBlocksTopologically,
   createBatches,
-  previewBlueprint
+  previewBlueprint,
+  writeDurableJournal,
+  recoverBuildJournal,
+  computeBlueprintSha256
 } = require('../src/blueprint_builder')
 
 test('Blueprint Importer - JSON structure parsing and palette extraction', async () => {
@@ -268,9 +274,12 @@ test('Blueprint Builder - Accurate accounting skips already-present blocks witho
     ]
   }
 
+  const placedMap = new Map()
   const mockBot = {
     inventory: { items: () => [{ name: 'cobblestone', count: 10 }] },
     blockAt: (pos) => {
+      const key = `${pos.x},${pos.y},${pos.z}`
+      if (placedMap.has(key)) return { name: placedMap.get(key), position: pos }
       // (0, 64, 0) is ALREADY cobblestone!
       if (pos.x === 0 && pos.y === 64 && pos.z === 0) {
         return { name: 'cobblestone', position: pos }
@@ -279,7 +288,10 @@ test('Blueprint Builder - Accurate accounting skips already-present blocks witho
       return { name: 'air', position: pos }
     },
     equip: async () => {},
-    placeBlock: async () => {}
+    placeBlock: async (ref, face) => {
+      const targetPos = ref.position.plus(face)
+      placedMap.set(`${targetPos.x},${targetPos.y},${targetPos.z}`, 'cobblestone')
+    }
   }
 
   const builder = createBlueprintBuilder()
@@ -314,4 +326,230 @@ test('Blueprint Builder - Gravity check blocks sand placement in mid-air', async
     async () => builder.execute({ blueprintId: 'sand_pillar', origin: { x: 0, y: 64, z: 0 }, previewConfirmed: true }, bp, { bot: mockBot, previewAuthorized: true }),
     /Cannot place gravity block sand without solid support below/i
   )
+})
+
+test('Blueprint Builder - Persists durable build journal and recovers after process restart', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_build_journal_test_'))
+  const bp = {
+    blueprint_id: 'pillar_3',
+    dimensions: { width: 1, height: 3, length: 1 },
+    materials_needed: { stone: 3 },
+    blocks: [
+      { x: 0, y: 0, z: 0, block: 'stone' },
+      { x: 0, y: 1, z: 0, block: 'stone' },
+      { x: 0, y: 2, z: 0, block: 'stone' }
+    ]
+  }
+
+  const world = new Map()
+  const mockBot = {
+    inventory: { items: () => [{ name: 'stone', count: 10 }] },
+    blockAt: (pos) => {
+      const key = `${pos.x},${pos.y},${pos.z}`
+      if (world.has(key)) return { name: world.get(key), position: pos }
+      if (pos.y < 64) return { name: 'bedrock', position: pos }
+      return { name: 'air', position: pos }
+    },
+    equip: async () => {},
+    placeBlock: async (ref, face) => {
+      const targetPos = ref.position.plus(face)
+      world.set(`${targetPos.x},${targetPos.y},${targetPos.z}`, 'stone')
+    }
+  }
+
+  const journalPath = path.join(tempDir, 'build_101.json')
+  const builder = createBlueprintBuilder()
+  const res = await builder.execute(
+    { blueprintId: 'pillar_3', origin: { x: 0, y: 64, z: 0 }, nonce: 'build_101', previewConfirmed: true },
+    bp,
+    { bot: mockBot, previewAuthorized: true, journalPath }
+  )
+
+  assert.equal(res.ok, true)
+  assert.equal(res.totalPlaced, 3)
+  assert.equal(fs.existsSync(journalPath), true)
+
+  const recovered = recoverBuildJournal(journalPath)
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.journal.buildId, 'build_101')
+  assert.equal(recovered.journal.status, 'completed')
+  assert.equal(recovered.journal.placedBlocks.length, 3)
+
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+})
+
+test('Blueprint Builder - Continuous cancellation check immediately halts mid-batch before next block', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_build_cancel_test_'))
+  const bp = {
+    blueprint_id: 'long_wall',
+    dimensions: { width: 5, height: 1, length: 1 },
+    materials_needed: { cobblestone: 5 },
+    blocks: [
+      { x: 0, y: 0, z: 0, block: 'cobblestone' },
+      { x: 1, y: 0, z: 0, block: 'cobblestone' },
+      { x: 2, y: 0, z: 0, block: 'cobblestone' },
+      { x: 3, y: 0, z: 0, block: 'cobblestone' },
+      { x: 4, y: 0, z: 0, block: 'cobblestone' }
+    ]
+  }
+
+  let placedCount = 0
+  let cancelAfter2 = false
+
+  const world = new Map()
+  const mockBot = {
+    inventory: { items: () => [{ name: 'cobblestone', count: 10 }] },
+    blockAt: (pos) => {
+      const key = `${pos.x},${pos.y},${pos.z}`
+      if (world.has(key)) return { name: world.get(key), position: pos }
+      if (pos.y < 64) return { name: 'dirt', position: pos }
+      return { name: 'air', position: pos }
+    },
+    equip: async () => {},
+    placeBlock: async (ref, face) => {
+      const targetPos = ref.position.plus(face)
+      world.set(`${targetPos.x},${targetPos.y},${targetPos.z}`, 'cobblestone')
+      placedCount++
+      if (placedCount === 2) {
+        cancelAfter2 = true
+      }
+    }
+  }
+
+  const journalPath = path.join(tempDir, 'build_cancel.json')
+  const builder = createBlueprintBuilder()
+  const res = await builder.execute(
+    { blueprintId: 'long_wall', origin: { x: 0, y: 64, z: 0 }, nonce: 'build_cancel', previewConfirmed: true },
+    bp,
+    {
+      bot: mockBot,
+      previewAuthorized: true,
+      journalPath,
+      isCancelled: () => cancelAfter2
+    }
+  )
+
+  assert.equal(res.ok, false)
+  assert.equal(res.status, 'cancelled')
+  assert.equal(res.reason, 'build_cancelled_by_operator')
+  assert.equal(res.totalPlaced, 2)
+  assert.equal(placedCount, 2)
+
+  // Verify journal on disk is updated to cancelled with 2 placed blocks
+  const recovered = recoverBuildJournal(journalPath)
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.journal.status, 'cancelled')
+  assert.equal(recovered.journal.placedBlocks.length, 2)
+
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+})
+
+test('Blueprint Builder - Strict grant scope validation (budget, hash, blueprintId, origin)', async () => {
+  const bp = {
+    blueprint_id: 'tower',
+    dimensions: { width: 1, height: 10, length: 1 },
+    materials_needed: { stone: 10 },
+    blocks: Array.from({ length: 10 }, (_, i) => ({ x: 0, y: i, z: 0, block: 'stone' }))
+  }
+
+  const builder = createBlueprintBuilder()
+
+  // 1. Blueprint ID mismatch
+  const idMismatch = await builder.execute(
+    { blueprintId: 'different_tower', origin: { x: 0, y: 64, z: 0 } },
+    bp
+  )
+  assert.equal(idMismatch.ok, false)
+  assert.equal(idMismatch.status, 'blocked')
+  assert.equal(idMismatch.reason, 'blueprint_id_mismatch')
+
+  // 2. Origin mismatch
+  const originMismatch = await builder.execute(
+    { blueprintId: 'tower', origin: { x: 10, y: 64, z: 10 } },
+    bp,
+    { origin: { x: 0, y: 64, z: 0 } }
+  )
+  // Origin matches grant.origin
+
+  // 3. Exceeds budget (maxBlocks < blueprint total blocks)
+  const budgetOverflow = await builder.execute(
+    { blueprintId: 'tower', origin: { x: 0, y: 64, z: 0 }, maxBlocks: 5 },
+    bp
+  )
+  assert.equal(budgetOverflow.ok, false)
+  assert.equal(budgetOverflow.status, 'blocked')
+  assert.equal(budgetOverflow.reason, 'exceeds_authorized_block_budget')
+
+  // 4. Blueprint SHA-256 mismatch
+  const hashMismatch = await builder.execute(
+    { blueprintId: 'tower', origin: { x: 0, y: 64, z: 0 }, blueprintSha256: '0'.repeat(64) },
+    bp
+  )
+  assert.equal(hashMismatch.ok, false)
+  assert.equal(hashMismatch.status, 'blocked')
+  assert.equal(hashMismatch.reason, 'blueprint_hash_mismatch')
+
+  // 5. Valid blueprint SHA-256 matches
+  const validHash = computeBlueprintSha256(bp.blocks)
+  const validGrantRes = await builder.execute(
+    { blueprintId: 'tower', origin: { x: 0, y: 64, z: 0 }, blueprintSha256: validHash, previewConfirmed: true },
+    bp,
+    { requireSufficientInventory: false }
+  )
+  assert.equal(validGrantRes.ok, true)
+  assert.equal(validGrantRes.action, 'build_preview')
+})
+
+test('Blueprint Builder - Fails closed and reports partial_failure if block placement cannot be verified', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_build_fail_test_'))
+  const bp = {
+    blueprint_id: 'failing_block',
+    dimensions: { width: 2, height: 1, length: 1 },
+    materials_needed: { stone: 2 },
+    blocks: [
+      { x: 0, y: 0, z: 0, block: 'stone' },
+      { x: 1, y: 0, z: 0, block: 'stone' }
+    ]
+  }
+
+  let attempt = 0
+  const mockBot = {
+    inventory: { items: () => [{ name: 'stone', count: 10 }] },
+    blockAt: (pos) => {
+      // First block succeeds, second block remains air (ghost block / placement rejected by server)
+      if (pos.x === 0 && pos.y === 64 && pos.z === 0 && attempt >= 1) {
+        return { name: 'stone', position: pos }
+      }
+      if (pos.y < 64) return { name: 'bedrock', position: pos }
+      return { name: 'air', position: pos }
+    },
+    equip: async () => {},
+    placeBlock: async () => {
+      attempt++
+    }
+  }
+
+  const journalPath = path.join(tempDir, 'build_fail.json')
+  const builder = createBlueprintBuilder()
+  const res = await builder.execute(
+    { blueprintId: 'failing_block', origin: { x: 0, y: 64, z: 0 }, nonce: 'build_fail', previewConfirmed: true },
+    bp,
+    { bot: mockBot, previewAuthorized: true, journalPath }
+  )
+
+  // Must NOT declare success!
+  assert.equal(res.ok, false)
+  assert.equal(res.status, 'partial_failure')
+  assert.equal(res.reason, 'unverified_blocks_encountered')
+  assert.equal(res.totalPlaced, 1)
+  assert.equal(res.failedBlocks.length, 1)
+  assert.equal(res.failedBlocks[0].block, 'stone')
+
+  // Verify journal on disk records partial_failure and failedBlocks
+  const recovered = recoverBuildJournal(journalPath)
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.journal.status, 'partial_failure')
+  assert.equal(recovered.journal.failedBlocks.length, 1)
+
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
 })

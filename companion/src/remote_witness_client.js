@@ -288,8 +288,112 @@ function createRemoteWitnessClient({
   })
 }
 
+/**
+ * Validates remote witness configuration schema and pinned keys.
+ */
+function validateRemoteWitnessConfig(config) {
+  if (!config || typeof config !== 'object') {
+    return { valid: false, errors: ['Configuration object required'] }
+  }
+
+  const errors = []
+
+  if (!config.url || typeof config.url !== 'string') {
+    errors.push('config.url must be a valid URL string')
+  } else {
+    try {
+      const parsedUrl = new URL(config.url)
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        errors.push(`config.url protocol must be http or https, got '${parsedUrl.protocol}'`)
+      }
+    } catch {
+      errors.push(`config.url '${config.url}' is not a valid URL`)
+    }
+  }
+
+  if (!config.worldId || typeof config.worldId !== 'string' || config.worldId.trim().length === 0) {
+    errors.push('config.worldId must be a non-empty string')
+  }
+
+  let operatorKey = null
+  if (!config.operatorPublicKeyPem || typeof config.operatorPublicKeyPem !== 'string') {
+    errors.push('config.operatorPublicKeyPem must be a PEM string')
+  } else {
+    try {
+      operatorKey = parsePublicKey(config.operatorPublicKeyPem, 'operator')
+    } catch (err) {
+      errors.push(err.message)
+    }
+  }
+
+  if (!config.witnessPublicKeyPem || typeof config.witnessPublicKeyPem !== 'string') {
+    errors.push('config.witnessPublicKeyPem must be a PEM string')
+  } else {
+    try {
+      parsePublicKey(config.witnessPublicKeyPem, 'witness')
+    } catch (err) {
+      errors.push(err.message)
+    }
+  }
+
+  if (config.timeoutMs !== undefined) {
+    if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs <= 0 || config.timeoutMs > 10000) {
+      errors.push('config.timeoutMs must be a positive integer <= 10000 ms')
+    }
+  }
+
+  if (errors.length > 0) {
+    return { valid: false, errors }
+  }
+
+  return {
+    valid: true,
+    endpoint: config.url,
+    worldId: config.worldId,
+    operatorFingerprint: operatorKey ? computeOperatorFingerprint(operatorKey) : null
+  }
+}
+
+/**
+ * Verifies active remote custody, monotonic sequence, and bounded clock skew.
+ */
+async function verifyRemoteCustody(client, localCheckpoint, options = {}) {
+  if (!client || typeof client.readLatest !== 'function') {
+    throw new Error('Valid remote witness client required')
+  }
+  if (!localCheckpoint || typeof localCheckpoint !== 'object') {
+    throw new Error('Valid local checkpoint object required')
+  }
+
+  const maxSkewMs = options.maxClockSkewMs || 2000
+  const t0 = Date.now()
+  const remote = await client.readLatest()
+  const latencyMs = Date.now() - t0
+
+  const now = Date.now()
+  const skew = Math.abs(now - remote.issuedAt)
+  if (skew > maxSkewMs) {
+    throw new RemoteWitnessUnavailableError(`Excessive remote witness clock skew (${skew} ms > max ${maxSkewMs} ms)`)
+  }
+
+  await client.verifyConsistency(localCheckpoint)
+
+  return Object.freeze({
+    ok: true,
+    inSync: remote.sequence === localCheckpoint.sequence,
+    remoteSequence: remote.sequence,
+    localSequence: localCheckpoint.sequence,
+    remoteSha256: remote.registrySha256,
+    localSha256: localCheckpoint.registrySha256,
+    skewMs: skew,
+    latencyMs
+  })
+}
+
 module.exports = {
   createRemoteWitnessClient,
+  validateRemoteWitnessConfig,
+  verifyRemoteCustody,
   RemoteWitnessUnavailableError,
   RemoteWitnessRollbackError,
   RemoteWitnessDivergenceError,

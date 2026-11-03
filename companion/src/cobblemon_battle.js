@@ -14,6 +14,19 @@ const BATTLE_STATES = Object.freeze(new Set([
   'emergency_halted'
 ]))
 
+function verifyServerBattlePacket(packet, expected = {}) {
+  if (!packet || typeof packet !== 'object') {
+    return { valid: false, reason: 'malformed_packet' }
+  }
+  if (packet.channel !== 'cobblemon:battle_start' && packet.channel !== 'cobblemon:battle_init') {
+    return { valid: false, reason: 'untrusted_origin_channel' }
+  }
+  if (expected.opponentId !== undefined && packet.opponentId !== expected.opponentId) {
+    return { valid: false, reason: 'opponent_id_mismatch' }
+  }
+  return { valid: true, battleId: packet.battleId }
+}
+
 /**
  * Creates a Cobblemon Battle Controller FSM.
  */
@@ -91,13 +104,34 @@ function createCobblemonBattleController(options = {}) {
     }
 
     let serverConfirmed = false
+    let battleId = null
 
-    // Verify battle start through authentic server confirmation or verified callback
-    if (typeof battleOptions.onChallenge === 'function') {
-      const challengeRes = await battleOptions.onChallenge(targetEntity)
-      serverConfirmed = challengeRes !== false
-    } else if (battleOptions.serverConfirmation !== undefined) {
-      serverConfirmed = Boolean(battleOptions.serverConfirmation?.confirmed || battleOptions.serverConfirmation === true)
+    // Authenticate battle start strictly against genuine server source of truth
+    if (battleOptions.serverBattlePacket && typeof battleOptions.serverBattlePacket === 'object') {
+      const verified = verifyServerBattlePacket(battleOptions.serverBattlePacket, { opponentId: targetEntity?.id })
+      if (verified.valid) {
+        serverConfirmed = true
+        battleId = verified.battleId || `battle_${Date.now()}`
+      }
+    } else if (bot?._client && typeof bot._client.on === 'function' && battleOptions.awaitServerPacket) {
+      const packet = await new Promise(resolve => {
+        const timeout = setTimeout(() => resolve(null), battleOptions.packetTimeoutMs || 3000)
+        timeout.unref?.()
+        bot._client.once('custom_payload', (p) => {
+          if (p?.channel === 'cobblemon:battle_start') {
+            clearTimeout(timeout)
+            resolve(p)
+          }
+        })
+      })
+      if (packet) {
+        const parsed = typeof packet.data === 'string' ? JSON.parse(packet.data) : packet
+        const verified = verifyServerBattlePacket(parsed, { opponentId: targetEntity?.id })
+        if (verified.valid) {
+          serverConfirmed = true
+          battleId = verified.battleId
+        }
+      }
     }
 
     if (!serverConfirmed) {
@@ -107,13 +141,13 @@ function createCobblemonBattleController(options = {}) {
       return {
         ok: false,
         status: 'blocked',
-        reason: 'unverified_protocol_packet',
-        message: 'Cobblemon battle start not confirmed by server packet'
+        reason: 'unverified_server_source_of_truth',
+        message: 'Cobblemon battle blocked: server battle handshake not verified'
       }
     }
 
     state = 'in_battle'
-    return { ok: true, state: 'in_battle', opponentId: targetEntity?.id }
+    return { ok: true, state: 'in_battle', battleId, opponentId: targetEntity?.id }
   }
 
   function startTurn(turnData = {}) {
@@ -216,6 +250,7 @@ function createCobblemonBattleController(options = {}) {
 
 module.exports = {
   createCobblemonBattleController,
+  verifyServerBattlePacket,
   BATTLE_STATES,
   TURN_TIMEOUT_MS,
   BATTLE_TIMEOUT_MS

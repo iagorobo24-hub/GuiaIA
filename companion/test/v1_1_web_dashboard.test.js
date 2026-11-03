@@ -211,7 +211,7 @@ test('Web Dashboard - Static Files and Directory Traversal Prevention', async ()
   const addr = await dashboard.listenPromise
 
   try {
-    // 1. GET / serves index.html with bootstrap token
+    // 1. GET / serves index.html WITHOUT leaking the token
     const indexRes = await request({
       hostname: '127.0.0.1',
       port: addr.port,
@@ -221,7 +221,7 @@ test('Web Dashboard - Static Files and Directory Traversal Prevention', async ()
     })
     assert.equal(indexRes.statusCode, 200)
     assert.match(indexRes.headers['content-type'], /text\/html/)
-    assert.ok(indexRes.body.includes(dashboard.token), 'Bootstrap token should be injected into index.html')
+    assert.equal(indexRes.body.includes(dashboard.token), false, 'Bootstrap secret token MUST NOT be exposed in plaintext HTML')
     assert.equal(indexRes.headers['x-frame-options'], 'DENY')
     assert.equal(indexRes.headers['x-content-type-options'], 'nosniff')
 
@@ -267,6 +267,7 @@ test('Web Dashboard - P0 Emergency Stop Endpoint with Local and Remote Separatio
   const addr = await dashboard.listenPromise
 
   try {
+    // 1. Local-only halt without remote witness confirmation
     const p0Res = await request({
       hostname: '127.0.0.1',
       port: addr.port,
@@ -283,9 +284,84 @@ test('Web Dashboard - P0 Emergency Stop Endpoint with Local and Remote Separatio
     const data = JSON.parse(p0Res.body)
     assert.equal(data.ok, true)
     assert.equal(data.localHalted, true)
-    assert.equal(data.remoteConfirmed, true)
+    assert.equal(data.remoteConfirmed, false, 'Without verifiable remote receipt, remoteConfirmed must be false')
     assert.equal(data.reason, 'operator_ui_click')
     assert.ok(controller._getStoppedCalls().includes('operator_ui_click'))
+
+    // 2. Halt with verified remote witness confirmation
+    controller.emergencyStop = (reason) => ({ ok: true, mode: 'idle', reason, remoteConfirmed: true })
+    const p0ConfirmedRes = await request({
+      hostname: '127.0.0.1',
+      port: addr.port,
+      path: '/api/emergency-stop',
+      method: 'POST',
+      headers: {
+        'Host': `127.0.0.1:${addr.port}`,
+        'Authorization': `Bearer ${dashboard.token}`,
+        'Content-Type': 'application/json'
+      }
+    }, JSON.stringify({ reason: 'witness_confirmed_stop' }))
+
+    assert.equal(p0ConfirmedRes.statusCode, 200)
+    const dataConfirmed = JSON.parse(p0ConfirmedRes.body)
+    assert.equal(dataConfirmed.localHalted, true)
+    assert.equal(dataConfirmed.remoteConfirmed, true)
+  } finally {
+    await dashboard.close()
+  }
+})
+
+test('Web Dashboard - Secure Session Bootstrap Pairing via Operator PIN', async () => {
+  const controller = createMockController()
+  const dashboard = createWebDashboardServer({
+    port: 0,
+    controller,
+    pairingPin: '123456'
+  })
+  const addr = await dashboard.listenPromise
+
+  try {
+    // 1. Invalid PIN attempt
+    const badRes = await request({
+      hostname: '127.0.0.1',
+      port: addr.port,
+      path: '/api/session/pair',
+      method: 'POST',
+      headers: {
+        'Host': `127.0.0.1:${addr.port}`,
+        'Content-Type': 'application/json'
+      }
+    }, JSON.stringify({ pin: '000000' }))
+    assert.equal(badRes.statusCode, 401)
+
+    // 2. Valid PIN attempt -> returns session bearer token
+    const pairRes = await request({
+      hostname: '127.0.0.1',
+      port: addr.port,
+      path: '/api/session/pair',
+      method: 'POST',
+      headers: {
+        'Host': `127.0.0.1:${addr.port}`,
+        'Content-Type': 'application/json'
+      }
+    }, JSON.stringify({ pin: '123456' }))
+    assert.equal(pairRes.statusCode, 200)
+    const pairData = JSON.parse(pairRes.body)
+    assert.equal(pairData.ok, true)
+    assert.equal(pairData.token, dashboard.token)
+
+    // 3. Re-using single-use PIN must fail
+    const replayRes = await request({
+      hostname: '127.0.0.1',
+      port: addr.port,
+      path: '/api/session/pair',
+      method: 'POST',
+      headers: {
+        'Host': `127.0.0.1:${addr.port}`,
+        'Content-Type': 'application/json'
+      }
+    }, JSON.stringify({ pin: '123456' }))
+    assert.equal(replayRes.statusCode, 401)
   } finally {
     await dashboard.close()
   }

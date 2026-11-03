@@ -23,40 +23,70 @@ function validatePartySlotBounds(slot) {
 }
 
 /**
+ * Verifies and decodes an authentic Cobblemon PC server storage packet envelope.
+ *
+ * @param {Object} packet Incoming network packet or payload
+ * @param {string} expectedPlayerUuid Expected player/bot UUID
+ * @returns {Object} { valid: boolean, data?: Object, reason?: string }
+ */
+function verifyServerStoragePacket(packet, expectedPlayerUuid) {
+  if (!packet || typeof packet !== 'object') {
+    return { valid: false, reason: 'malformed_packet' }
+  }
+  if (packet.channel !== 'cobblemon:pc_data' && packet.channel !== 'cobblemon:storage_data') {
+    return { valid: false, reason: 'untrusted_origin_channel' }
+  }
+  if (expectedPlayerUuid && packet.playerUuid !== expectedPlayerUuid) {
+    return { valid: false, reason: 'player_uuid_mismatch' }
+  }
+  if (!packet.boxes || typeof packet.boxes !== 'object') {
+    return { valid: false, reason: 'missing_boxes_structure' }
+  }
+  return { valid: true, boxes: packet.boxes }
+}
+
+/**
  * Creates PC Storage Controller for managing Pokémon boxes and transfers.
- * Enforces genuine server data attestation; fails closed without server confirmation.
+ * Enforces genuine server packet verification; fail closed without verified server source of truth.
  */
 function createCobblemonPcController(options = {}) {
   const bot = options.bot
-  let serverAttested = Boolean(options.serverAttested)
+  const playerUuid = options.playerUuid || bot?.player?.uuid || null
+  let lastVerifiedPacket = null
   const boxes = new Map()
 
-  if (options.initialStorageData && typeof options.initialStorageData === 'object') {
-    loadServerStorageData(options.initialStorageData)
-    serverAttested = true
-  }
-
-  function loadServerStorageData(data) {
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid server storage data payload')
+  function ingestServerStoragePacket(packet) {
+    const verified = verifyServerStoragePacket(packet, playerUuid)
+    if (!verified.valid) {
+      return { ok: false, status: 'blocked', reason: verified.reason }
     }
+
     boxes.clear()
-    if (data.boxes && typeof data.boxes === 'object') {
-      for (const [boxKey, boxSlots] of Object.entries(data.boxes)) {
-        const boxIdx = parseInt(boxKey, 10)
-        if (Number.isInteger(boxIdx) && boxIdx >= 0 && boxIdx < TOTAL_BOXES) {
-          const slotArr = new Array(SLOTS_PER_BOX).fill(null)
-          if (Array.isArray(boxSlots)) {
-            for (let i = 0; i < Math.min(boxSlots.length, SLOTS_PER_BOX); i++) {
-              slotArr[i] = boxSlots[i] || null
+    for (const [boxKey, boxSlots] of Object.entries(verified.boxes)) {
+      const boxIdx = parseInt(boxKey, 10)
+      if (Number.isInteger(boxIdx) && boxIdx >= 0 && boxIdx < TOTAL_BOXES) {
+        const slotArr = new Array(SLOTS_PER_BOX).fill(null)
+        if (Array.isArray(boxSlots)) {
+          for (let i = 0; i < Math.min(boxSlots.length, SLOTS_PER_BOX); i++) {
+            if (boxSlots[i] && typeof boxSlots[i] === 'object') {
+              slotArr[i] = { ...boxSlots[i] }
             }
           }
-          boxes.set(boxIdx, slotArr)
         }
+        boxes.set(boxIdx, slotArr)
       }
     }
-    serverAttested = true
+
+    lastVerifiedPacket = {
+      receivedAt: Date.now(),
+      boxCount: boxes.size
+    }
+
     return { ok: true, loadedBoxes: boxes.size }
+  }
+
+  function isVerified() {
+    return Boolean(lastVerifiedPacket !== null)
   }
 
   function getBox(boxIndex) {
@@ -68,12 +98,12 @@ function createCobblemonPcController(options = {}) {
   }
 
   function queryBox(boxIndex = 0) {
-    if (!serverAttested) {
+    if (!isVerified()) {
       return {
         ok: false,
         status: 'blocked',
-        reason: 'unverified_protocol_packet',
-        message: 'Cobblemon PC protocol data not received or attested from server'
+        reason: 'unverified_server_source_of_truth',
+        message: 'Cobblemon PC operations blocked: no authentic server packet verified'
       }
     }
     validateBoxBounds(boxIndex)
@@ -94,12 +124,12 @@ function createCobblemonPcController(options = {}) {
   }
 
   function depositFromParty(partySlot, targetBox = 0, targetSlot = null, depositOptions = {}) {
-    if (!serverAttested) {
+    if (!isVerified()) {
       return {
         ok: false,
         status: 'blocked',
-        reason: 'unverified_protocol_packet',
-        message: 'Cobblemon PC protocol data not received or attested from server'
+        reason: 'unverified_server_source_of_truth',
+        message: 'Cobblemon PC operations blocked: no authentic server packet verified'
       }
     }
     validatePartySlotBounds(partySlot)
@@ -126,7 +156,6 @@ function createCobblemonPcController(options = {}) {
       }
     }
 
-    // Move genuine pokemon data to box
     const pokemon = { ...partyPokemon, depositedAt: Date.now(), sourcePartySlot: partySlot }
     box[slot] = pokemon
 
@@ -141,12 +170,12 @@ function createCobblemonPcController(options = {}) {
   }
 
   function withdrawToParty(boxIndex, boxSlot, targetPartySlot = null) {
-    if (!serverAttested) {
+    if (!isVerified()) {
       return {
         ok: false,
         status: 'blocked',
-        reason: 'unverified_protocol_packet',
-        message: 'Cobblemon PC protocol data not received or attested from server'
+        reason: 'unverified_server_source_of_truth',
+        message: 'Cobblemon PC operations blocked: no authentic server packet verified'
       }
     }
     validateBoxBounds(boxIndex)
@@ -165,7 +194,6 @@ function createCobblemonPcController(options = {}) {
       partySlot = 0
     }
 
-    // Remove from PC slot
     box[boxSlot] = null
 
     return {
@@ -182,8 +210,8 @@ function createCobblemonPcController(options = {}) {
     queryBox,
     depositFromParty,
     withdrawToParty,
-    loadServerStorageData,
-    isServerAttested: () => serverAttested,
+    ingestServerStoragePacket,
+    isVerified,
     TOTAL_BOXES,
     SLOTS_PER_BOX,
     PARTY_SLOTS
@@ -192,6 +220,7 @@ function createCobblemonPcController(options = {}) {
 
 module.exports = {
   createCobblemonPcController,
+  verifyServerStoragePacket,
   validateBoxBounds,
   validateSlotBounds,
   validatePartySlotBounds,

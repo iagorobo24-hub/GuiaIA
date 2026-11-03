@@ -1,5 +1,8 @@
 'use strict'
 
+const fs = require('node:fs')
+const path = require('node:path')
+const crypto = require('node:crypto')
 const { Vec3 } = require('vec3')
 const { parseBlueprint } = require('./blueprint_importer')
 
@@ -21,6 +24,52 @@ const GRAVITY_BLOCKS = Object.freeze(new Set([
   'brown_concrete_powder', 'green_concrete_powder', 'red_concrete_powder',
   'black_concrete_powder'
 ]))
+
+/**
+ * Persists build journal to disk atomically with sync write.
+ */
+function writeDurableJournal(journalPath, journalData) {
+  if (!journalPath) return
+  const dir = path.dirname(journalPath)
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  const tempPath = `${journalPath}.${process.pid}.${Date.now()}.tmp`
+  fs.writeFileSync(tempPath, JSON.stringify(journalData, null, 2), 'utf8')
+  fs.renameSync(tempPath, journalPath)
+}
+
+/**
+ * Recovers build journal from disk and verifies structure.
+ */
+function recoverBuildJournal(journalPath) {
+  if (!journalPath || !fs.existsSync(journalPath)) {
+    return { ok: false, reason: 'journal_not_found' }
+  }
+  try {
+    const content = fs.readFileSync(journalPath, 'utf8')
+    const journal = JSON.parse(content)
+    if (!journal || typeof journal !== 'object' || !journal.buildId || !journal.blueprintId) {
+      return { ok: false, reason: 'corrupt_journal' }
+    }
+    return { ok: true, journal }
+  } catch (err) {
+    return { ok: false, reason: 'unreadable_journal', error: err.message }
+  }
+}
+
+/**
+ * Computes canonical SHA-256 hash of blueprint blocks.
+ */
+function computeBlueprintSha256(blocks) {
+  if (!Array.isArray(blocks)) return null
+  const canonical = JSON.stringify([...blocks].sort((a, b) => {
+    if (a.y !== b.y) return a.y - b.y
+    if (a.x !== b.x) return a.x - b.x
+    return a.z - b.z
+  }))
+  return crypto.createHash('sha256').update(canonical).digest('hex')
+}
 
 /**
  * Topologically orders blocks for physical stability and dependency resolution.
@@ -120,10 +169,13 @@ function previewBlueprint(blueprint, origin, inventory) {
  */
 function createBlueprintBuilder(options = {}) {
   const maxBatchSize = options.maxBatchSize || MAX_BATCH_SIZE
+  const defaultJournalDir = options.journalDir || path.join(process.cwd(), '.guiaia', 'build_journals')
 
   async function execute(grant, blueprintInput, execOptions = {}) {
     const origin = grant.origin
-    if (!origin) throw new Error('Build grant must specify origin coordinates')
+    if (!origin || typeof origin.x !== 'number' || typeof origin.y !== 'number' || typeof origin.z !== 'number') {
+      throw new Error('Build grant must specify valid origin coordinates')
+    }
 
     let blueprint
     if (blueprintInput) {
@@ -134,6 +186,47 @@ function createBlueprintBuilder(options = {}) {
       throw new Error(`Blueprint data not supplied for ${grant.blueprintId}`)
     }
 
+    // 1. Strict Grant Scoping Validations
+    if (grant.blueprintId && blueprint.blueprint_id && grant.blueprintId !== blueprint.blueprint_id) {
+      return {
+        ok: false,
+        status: 'blocked',
+        reason: 'blueprint_id_mismatch',
+        message: `Grant blueprintId '${grant.blueprintId}' does not match blueprint '${blueprint.blueprint_id}'`
+      }
+    }
+
+    if (grant.origin && (origin.x !== grant.origin.x || origin.y !== grant.origin.y || origin.z !== grant.origin.z)) {
+      return {
+        ok: false,
+        status: 'blocked',
+        reason: 'origin_mismatch',
+        message: `Specified origin coordinates do not match signed grant origin`
+      }
+    }
+
+    if (grant.maxBlocks !== undefined && blueprint.blocks.length > grant.maxBlocks) {
+      return {
+        ok: false,
+        status: 'blocked',
+        reason: 'exceeds_authorized_block_budget',
+        message: `Blueprint total blocks (${blueprint.blocks.length}) exceeds authorized grant budget (${grant.maxBlocks})`
+      }
+    }
+
+    if (grant.blueprintSha256) {
+      const computedHash = computeBlueprintSha256(blueprint.blocks)
+      if (grant.blueprintSha256 !== computedHash) {
+        return {
+          ok: false,
+          status: 'blocked',
+          reason: 'blueprint_hash_mismatch',
+          message: `Blueprint SHA-256 (${computedHash}) does not match authorized grant hash (${grant.blueprintSha256})`
+        }
+      }
+    }
+
+    // 2. Pre-flight Preview & Materials Verification
     const preview = previewBlueprint(blueprint, origin, execOptions.inventory || execOptions.bot?.inventory)
     if (!preview.inventoryHasSufficient && execOptions.requireSufficientInventory !== false) {
       return {
@@ -172,9 +265,13 @@ function createBlueprintBuilder(options = {}) {
       }
     }
 
-    // Recoverable write-ahead build journal
+    // 3. Durable Write-Ahead Build Journal Initialization
+    const journalDir = execOptions.journalDir || defaultJournalDir
+    const buildId = grant.nonce || `build_${Date.now()}`
+    const journalPath = execOptions.journalPath || path.join(journalDir, `${buildId}.json`)
+
     const journal = {
-      buildId: grant.nonce || `build_${Date.now()}`,
+      buildId,
       blueprintId: grant.blueprintId,
       origin: { ...origin },
       status: 'in_progress',
@@ -185,6 +282,7 @@ function createBlueprintBuilder(options = {}) {
       batchesCompleted: 0,
       timestamp: Date.now()
     }
+    writeDurableJournal(journalPath, journal)
 
     // Physical bot placement
     let totalPlaced = 0
@@ -192,22 +290,26 @@ function createBlueprintBuilder(options = {}) {
     const placedBatches = []
 
     for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-      if (execOptions.isCancelled?.()) {
-        journal.status = 'cancelled'
-        journal.cancellationReason = 'operator_cancelled'
-        return {
-          ok: false,
-          status: 'cancelled',
-          reason: 'build_cancelled_by_operator',
-          journal
-        }
-      }
-
       const batch = batches[batchIdx]
       let batchPlaced = 0
       let batchSkipped = 0
 
       for (const b of batch) {
+        // Continuous cancellation check before every single block placement
+        if (execOptions.isCancelled?.() || execOptions.signal?.aborted) {
+          journal.status = 'cancelled'
+          journal.cancellationReason = 'operator_cancelled'
+          writeDurableJournal(journalPath, journal)
+          return {
+            ok: false,
+            status: 'cancelled',
+            reason: 'build_cancelled_by_operator',
+            totalPlaced: totalPlaced + batchPlaced,
+            totalSkippedExisting: totalSkippedExisting + batchSkipped,
+            journal
+          }
+        }
+
         const worldTarget = new Vec3(origin.x + b.x, origin.y + b.y, origin.z + b.z)
 
         // 1. Check existing block state in world
@@ -217,6 +319,7 @@ function createBlueprintBuilder(options = {}) {
         if (existing && existing.name === b.block) {
           batchSkipped++
           journal.skippedExisting.push({ x: b.x, y: b.y, z: b.z, block: b.block })
+          writeDurableJournal(journalPath, journal)
           continue
         }
 
@@ -225,6 +328,7 @@ function createBlueprintBuilder(options = {}) {
           if (!execOptions.allowOverwrite) {
             journal.status = 'failed'
             journal.error = `world_collision: existing ${existing.name} at (${worldTarget.x}, ${worldTarget.y}, ${worldTarget.z})`
+            writeDurableJournal(journalPath, journal)
             return {
               ok: false,
               reason: 'world_collision',
@@ -267,6 +371,7 @@ function createBlueprintBuilder(options = {}) {
           if (!belowBlock || belowBlock.name === 'air') {
             journal.status = 'failed'
             journal.error = `gravity_unsupported: ${b.block} at (${worldTarget.x}, ${worldTarget.y}, ${worldTarget.z})`
+            writeDurableJournal(journalPath, journal)
             throw new Error(`Cannot place gravity block ${b.block} without solid support below at ${belowPos}`)
           }
         }
@@ -279,26 +384,44 @@ function createBlueprintBuilder(options = {}) {
           await bot.placeBlock(supportBlock, placeFace)
         }
 
-        // 6. Post-placement world state verification
+        // 6. Post-placement physical world state verification
         const postBlock = typeof bot.blockAt === 'function' ? bot.blockAt(worldTarget) : null
         if (postBlock && postBlock.name === b.block) {
-          batchPlaced++
-          journal.placedBlocks.push({ x: b.x, y: b.y, z: b.z, block: b.block })
-        } else if (!bot.blockAt) {
           batchPlaced++
           journal.placedBlocks.push({ x: b.x, y: b.y, z: b.z, block: b.block })
         } else {
           journal.failedBlocks.push({ x: b.x, y: b.y, z: b.z, block: b.block, reason: 'placement_unverified' })
         }
+        writeDurableJournal(journalPath, journal)
       }
 
       totalPlaced += batchPlaced
       totalSkippedExisting += batchSkipped
       journal.batchesCompleted++
       placedBatches.push({ batch: batchIdx, placed: batchPlaced, skippedExisting: batchSkipped })
+      writeDurableJournal(journalPath, journal)
+    }
+
+    // 4. Final verification: fail closed if any block placement failed
+    if (journal.failedBlocks.length > 0) {
+      journal.status = 'partial_failure'
+      writeDurableJournal(journalPath, journal)
+      return {
+        ok: false,
+        status: 'partial_failure',
+        reason: 'unverified_blocks_encountered',
+        blueprintId: grant.blueprintId,
+        origin,
+        totalPlaced,
+        totalSkippedExisting,
+        failedBlocks: journal.failedBlocks,
+        batches: placedBatches,
+        journal
+      }
     }
 
     journal.status = 'completed'
+    writeDurableJournal(journalPath, journal)
     return {
       ok: true,
       action: 'build_execute',
@@ -324,6 +447,9 @@ module.exports = {
   orderBlocksTopologically,
   createBatches,
   previewBlueprint,
+  writeDurableJournal,
+  recoverBuildJournal,
+  computeBlueprintSha256,
   MAX_BATCH_SIZE,
   MAX_PLACE_DISTANCE,
   ATTACHMENT_BLOCKS,

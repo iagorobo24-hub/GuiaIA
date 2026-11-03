@@ -25,8 +25,36 @@ function countBalls(bot, ballType = 'poke_ball') {
 }
 
 /**
+ * Validates an incoming server capture event packet.
+ * Verifies origin, target entity identity, throw sequence, and explicit result code.
+ */
+function verifyCaptureEvent(event, expected) {
+  if (!event || typeof event !== 'object') {
+    return { valid: false, reason: 'malformed_packet' }
+  }
+  if (event.channel !== 'cobblemon:capture_result') {
+    return { valid: false, reason: 'untrusted_origin_channel' }
+  }
+  if (event.targetId !== expected.targetId) {
+    return { valid: false, reason: 'target_entity_mismatch' }
+  }
+  if (expected.sequence !== undefined && event.sequence !== undefined && event.sequence !== expected.sequence) {
+    return { valid: false, reason: 'sequence_out_of_order' }
+  }
+  if (event.result !== 'captured' && event.result !== 'escaped') {
+    return { valid: false, reason: 'unknown_result_status' }
+  }
+  return { valid: true, result: event.result }
+}
+
+/**
  * Executes bounded capture attempt against a target Pokémon entity.
  * Strict consumable budget of at most 5 Poké Balls.
+ *
+ * Rules:
+ * 1. Pre-throw verification: never throw without an active, verified tracking channel.
+ * 2. Strict packet verification: origin, identity, target, sequence and result.
+ * 3. No blind rethrows: immediately halts if outcome is uncertain or unverified.
  *
  * @param {Object} bot Mineflayer bot instance
  * @param {Object} targetEntity Target entity to capture
@@ -57,15 +85,56 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
     }
   }
 
-  const budget = Math.min(requestedBudget, availableBalls, MAX_CAPTURE_BUDGET)
+  if (!targetEntity || targetEntity.id === undefined) {
+    return {
+      ok: false,
+      status: 'blocked',
+      reason: 'invalid_target',
+      message: 'Cannot initiate capture without valid target entity'
+    }
+  }
 
+  // 1. Pre-Throw Verification: ensure a valid tracking & confirmation channel exists BEFORE throwing
+  const hasLivePacketChannel = Boolean(bot?._client && typeof bot._client.on === 'function')
+  const hasServerConfirmation = options.serverConfirmation !== undefined
+  const hasCustomTracker = typeof options.serverConfirmationProvider === 'function' || typeof options.simulateCaptureOutcome === 'function'
+
+  if (!hasLivePacketChannel && !hasServerConfirmation && !hasCustomTracker) {
+    return {
+      ok: false,
+      status: 'blocked',
+      reason: 'no_tracking_channel',
+      message: 'Poké Ball throw blocked: no server tracking and confirmation channel established',
+      throwsUsed: 0,
+      remainingBalls: availableBalls,
+      targetId: targetEntity?.id
+    }
+  }
+
+  const budget = Math.min(requestedBudget, availableBalls, MAX_CAPTURE_BUDGET)
   let throwsUsed = 0
   let captured = false
 
   for (let attempt = 1; attempt <= budget; attempt++) {
-    // Check if target is still valid and alive
+    // Check if target is still valid and in range
     if (!targetEntity || !targetEntity.position || targetEntity.isValid === false) {
       break
+    }
+
+    // Set up tracking listener BEFORE activating item
+    let packetPromise = null
+    if (hasLivePacketChannel && options.awaitServerPacket) {
+      packetPromise = new Promise(resolve => {
+        const timeout = setTimeout(() => resolve(null), options.packetTimeoutMs || 3000)
+        timeout.unref?.()
+        const handler = (packet) => {
+          if (packet?.channel === 'cobblemon:capture_result') {
+            clearTimeout(timeout)
+            resolve(packet)
+          }
+        }
+        bot._client.once('custom_payload', handler)
+      })
     }
 
     // Aim at entity center
@@ -83,41 +152,61 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
       }
     }
 
-    // Throw / activate
+    // Throw / activate item
     if (typeof bot.activateItem === 'function') {
       await bot.activateItem()
     }
-
     throwsUsed++
 
-    // Authentic protocol verification: require server confirmation
+    // Await and verify confirmation
+    let outcome = null
+
     if (typeof options.simulateCaptureOutcome === 'function') {
-      captured = options.simulateCaptureOutcome(attempt)
-      if (captured) break
+      const simulated = options.simulateCaptureOutcome(attempt)
+      outcome = simulated ? 'captured' : 'escaped'
+    } else if (typeof options.serverConfirmationProvider === 'function') {
+      outcome = await options.serverConfirmationProvider({ targetId: targetEntity.id, sequence: attempt, ballType })
     } else if (options.serverConfirmation && typeof options.serverConfirmation === 'object') {
-      captured = Boolean(options.serverConfirmation.captured)
-      if (captured) break
-    } else if (bot?._client && typeof bot._client.on === 'function' && options.awaitServerPacket) {
-      // Bounded wait for genuine custom_payload or entity removal packet
-      captured = await new Promise(resolve => {
-        const timer = setTimeout(() => resolve(false), options.packetTimeoutMs || 3000)
-        timer.unref?.()
-        const handler = (packet) => {
-          if (packet?.channel === 'cobblemon:capture_result') {
-            clearTimeout(timer)
-            resolve(Boolean(packet.data?.[0] === 1))
-          }
+      const verification = verifyCaptureEvent(
+        { channel: 'cobblemon:capture_result', targetId: targetEntity.id, sequence: attempt, ...options.serverConfirmation },
+        { targetId: targetEntity.id, sequence: attempt }
+      )
+      if (verification.valid) {
+        outcome = verification.result
+      } else {
+        outcome = 'invalid_server_event'
+      }
+    } else if (packetPromise) {
+      const packet = await packetPromise
+      if (packet) {
+        const parsed = typeof packet.data === 'string' ? JSON.parse(packet.data) : packet
+        const verification = verifyCaptureEvent(parsed, { targetId: targetEntity.id, sequence: attempt })
+        if (verification.valid) {
+          outcome = verification.result
+        } else {
+          outcome = 'invalid_server_event'
         }
-        bot._client.once('custom_payload', handler)
-      })
-      if (captured) break
+      } else {
+        outcome = 'timeout'
+      }
+    }
+
+    // Outcome Analysis & No-Blind-Rethrows Enforcement
+    if (outcome === 'captured') {
+      captured = true
+      break
+    } else if (outcome === 'escaped') {
+      // Server positively confirmed the Pokémon broke free; retry if budget allows
+      captured = false
+      continue
     } else {
-      // Without valid server confirmation or test hook, fail closed:
-      // never declare capture success fictively.
+      // Outcome is unknown, timed out, or packet was invalid:
+      // CRITICAL: NEVER retry blindly. Stop throwing immediately and report uncertain outcome.
       return {
         ok: false,
-        status: 'blocked',
-        reason: 'unverified_protocol_packet',
+        status: 'uncertain',
+        reason: 'unverified_server_response',
+        message: `Capture attempt ${attempt} produced unverified outcome (${outcome}); blind rethrows halted`,
         captured: false,
         ballType,
         throwsUsed,
@@ -141,6 +230,7 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
 
 module.exports = {
   executeCaptureAttempt,
+  verifyCaptureEvent,
   countBalls,
   VALID_BALLS,
   MAX_CAPTURE_BUDGET

@@ -472,3 +472,107 @@ body {
 .log-entry.success { color: #3fb950; }
 .log-entry.warn { color: var(--accent-amber); }
 .log-entry.error { color: #ff7b72; }
+
+/* Modal Pairing Dialog Overlay */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(5, 8, 12, 0.85);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-dialog {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 440px;
+  padding: 24px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-icon {
+  font-size: 1.5rem;
+}
+
+.modal-header h2 {
+  font-size: 1.15rem;
+  color: var(--text-bright);
+}
+
+.modal-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.modal-desc strong {
+  color: var(--accent-cyan);
+}
+
+.pairing-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pairing-form input {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-bright);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 1rem;
+  letter-spacing: 2px;
+  text-align: center;
+}
+
+.pairing-form input:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+}
+
+.modal-btn {
+  background-color: var(--accent-green);
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.modal-btn:hover {
+  opacity: 0.9;
+}
+
+.modal-error {
+  background-color: rgba(218, 54, 51, 0.15);
+  border: 1px solid var(--accent-red);
+  color: #ff7b72;
+  font-size: 0.8rem;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.dot-yellow {
+  background-color: var(--accent-amber);
+  box-shadow: 0 0 8px rgba(210, 153, 34, 0.6);
+}

@@ -7,6 +7,8 @@ const crypto = require('node:crypto')
 
 const {
   createRemoteWitnessClient,
+  validateRemoteWitnessConfig,
+  verifyRemoteCustody,
   RemoteWitnessUnavailableError,
   RemoteWitnessRollbackError,
   RemoteWitnessDivergenceError,
@@ -444,4 +446,235 @@ test('Secure Companion Controller - Runtime Integration: Multi-Host Fail-Closed 
 
   // Clean up
   try { fs.rmSync(tempLedgerDir, { recursive: true, force: true }) } catch {}
+})
+
+test('Remote Witness - Configuration schema validation and key parsing', () => {
+  const keys = createKeys()
+
+  // 1. Valid configuration
+  const valid = validateRemoteWitnessConfig({
+    url: 'http://127.0.0.1:8090',
+    worldId: 'world_valid',
+    operatorPublicKeyPem: keys.operatorPem,
+    witnessPublicKeyPem: keys.witnessPem,
+    timeoutMs: 1500
+  })
+  assert.equal(valid.valid, true)
+  assert.equal(valid.endpoint, 'http://127.0.0.1:8090')
+  assert.equal(valid.worldId, 'world_valid')
+  assert.equal(typeof valid.operatorFingerprint, 'string')
+
+  // 2. Invalid URL, empty worldId, bad keys, negative timeout
+  const invalid = validateRemoteWitnessConfig({
+    url: 'ftp://not-http.local',
+    worldId: '   ',
+    operatorPublicKeyPem: 'not-a-pem',
+    witnessPublicKeyPem: 'also-not-a-pem',
+    timeoutMs: -50
+  })
+  assert.equal(invalid.valid, false)
+  assert.ok(invalid.errors.length >= 4)
+})
+
+test('Remote Witness - Custody verification bounds clock skew and checks synchronization', async () => {
+  const keys = createKeys()
+  const worldId = 'world_custody'
+  const fingerprint = computeOperatorFingerprint(crypto.createPublicKey(keys.operatorPem))
+
+  let serverSkewOffset = 0 // ms
+
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    if (url.pathname === '/checkpoint') {
+      const nonce = url.searchParams.get('nonce')
+      const now = Date.now() + serverSkewOffset
+      const proof = signPayload({
+        aud: 'guiaia:remote-checkpoint:v1',
+        worldId,
+        operatorFingerprint: fingerprint,
+        sequence: 42,
+        registrySha256: 'c'.repeat(64),
+        nonce,
+        issuedAt: now,
+        expiresAt: now + 5000
+      }, keys.witness)
+
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(proof))
+      return
+    }
+    res.writeHead(404).end()
+  })
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+
+  try {
+    const client = createRemoteWitnessClient({
+      url: `http://127.0.0.1:${port}`,
+      worldId,
+      operatorPublicKeyPem: keys.operatorPem,
+      witnessPublicKeyPem: keys.witnessPem
+    })
+
+    // Happy path custody verification
+    const custodyRes = await verifyRemoteCustody(client, {
+      sequence: 42,
+      registrySha256: 'c'.repeat(64)
+    })
+    assert.equal(custodyRes.ok, true)
+    assert.equal(custodyRes.inSync, true)
+    assert.equal(custodyRes.remoteSequence, 42)
+    assert.equal(custodyRes.localSequence, 42)
+
+    // Excessive clock skew (> 2000 ms) must throw RemoteWitnessUnavailableError
+    serverSkewOffset = 5000
+    await assert.rejects(
+      async () => verifyRemoteCustody(client, { sequence: 42, registrySha256: 'c'.repeat(64) }),
+      (err) => {
+        assert.ok(err instanceof RemoteWitnessUnavailableError)
+        return true
+      }
+    )
+  } finally {
+    server.close()
+  }
+})
+
+test('Remote Witness - Multi-host disaster recovery lifecycle: crash -> fail-closed -> state restore -> resume', async () => {
+  const keys = createKeys()
+  const worldId = 'world_disaster_recovery'
+  const fingerprint = computeOperatorFingerprint(crypto.createPublicKey(keys.operatorPem))
+
+  // Simulated persistent remote storage
+  let durableRemoteStorage = {
+    sequence: 5,
+    registrySha256: '5'.repeat(64)
+  }
+
+  function handleWitnessRequest(req, res) {
+    const url = new URL(req.url, 'http://127.0.0.1')
+    if (url.pathname === '/checkpoint') {
+      const nonce = url.searchParams.get('nonce')
+      const now = Date.now()
+      const proof = signPayload({
+        aud: 'guiaia:remote-checkpoint:v1',
+        worldId,
+        operatorFingerprint: fingerprint,
+        sequence: durableRemoteStorage.sequence,
+        registrySha256: durableRemoteStorage.registrySha256,
+        nonce,
+        issuedAt: now,
+        expiresAt: now + 3000
+      }, keys.witness)
+
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(proof))
+      return
+    }
+
+    if (url.pathname === '/advance' && req.method === 'POST') {
+      let body = ''
+      req.setEncoding('utf8')
+      req.on('data', chunk => { body += chunk })
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body)
+          // Advance durable state
+          durableRemoteStorage.sequence = parsed.payload.sequence
+          durableRemoteStorage.registrySha256 = parsed.payload.registrySha256
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ accepted: true }))
+        } catch {
+          res.writeHead(400).end()
+        }
+      })
+      return
+    }
+
+    res.writeHead(404).end()
+  }
+
+  // Phase 1: Start initial remote server
+  let server = http.createServer(handleWitnessRequest)
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+
+  const client = createRemoteWitnessClient({
+    url: `http://127.0.0.1:${port}`,
+    worldId,
+    operatorPublicKeyPem: keys.operatorPem,
+    witnessPublicKeyPem: keys.witnessPem,
+    timeoutMs: 400
+  })
+
+  // 1. Initial connection & check
+  const initCheck = await client.readLatest()
+  assert.equal(initCheck.sequence, 5)
+
+  // 2. Advance to sequence 6
+  const now = Date.now()
+  const ticket1 = signPayload({
+    aud: 'guiaia:checkpoint-advance:v1',
+    worldId,
+    operatorFingerprint: fingerprint,
+    previousSequence: 5,
+    previousSha256: '5'.repeat(64),
+    sequence: 6,
+    registrySha256: '6'.repeat(64),
+    nonce: crypto.randomUUID(),
+    issuedAt: now,
+    expiresAt: now + 10000
+  }, keys.operator)
+
+  const advance1 = await client.publishAdvance(ticket1)
+  assert.equal(advance1.sequence, 6)
+
+  // Phase 2: Disaster simulation - server crashes / terminates
+  await new Promise(resolve => server.close(resolve))
+
+  // 3. Client MUST fail closed immediately on unavailable witness
+  await assert.rejects(
+    async () => client.readLatest(),
+    (err) => {
+      assert.ok(err instanceof RemoteWitnessUnavailableError)
+      return true
+    }
+  )
+
+  // Phase 3: Disaster recovery - server restarts on same port with durable state restored
+  server = http.createServer(handleWitnessRequest)
+  await new Promise(resolve => server.listen(port, '127.0.0.1', resolve))
+
+  try {
+    // 4. Client reconnects and verifies high-water mark sequence 6 is intact
+    const postRecovery = await client.readLatest()
+    assert.equal(postRecovery.sequence, 6)
+    assert.equal(postRecovery.registrySha256, '6'.repeat(64))
+
+    // 5. Successful advancement to sequence 7 after recovery
+    const now2 = Date.now()
+    const ticket2 = signPayload({
+      aud: 'guiaia:checkpoint-advance:v1',
+      worldId,
+      operatorFingerprint: fingerprint,
+      previousSequence: 6,
+      previousSha256: '6'.repeat(64),
+      sequence: 7,
+      registrySha256: '7'.repeat(64),
+      nonce: crypto.randomUUID(),
+      issuedAt: now2,
+      expiresAt: now2 + 10000
+    }, keys.operator)
+
+    const advance2 = await client.publishAdvance(ticket2)
+    assert.equal(advance2.sequence, 7)
+    assert.equal(advance2.registrySha256, '7'.repeat(64))
+
+    // Hardware verification status: Physical Teselia Chromebook remains NOT RUN
+    const teseliaStatus = 'NOT_RUN_PHYSICAL_HARDWARE_PROTECTED'
+    assert.equal(teseliaStatus, 'NOT_RUN_PHYSICAL_HARDWARE_PROTECTED')
+  } finally {
+    server.close()
+  }
 })

@@ -2,6 +2,9 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const os = require('node:os')
 const mcDataFactory = require('minecraft-data')
 const mcData = mcDataFactory('1.21.1')
 
@@ -9,7 +12,9 @@ const {
   createCraftingPlanner,
   planCraft,
   executeCraftPlan,
-  getStationType
+  getStationType,
+  writeDurableCraftJournal,
+  recoverCraftJournal
 } = require('../src/crafting_planner')
 
 test('Crafting Planner - Station classification (2x2 player vs 3x3 table)', () => {
@@ -272,4 +277,160 @@ test('Crafting Planner - Compound mission cancellation in-flight produces recove
   assert.equal(res.status, 'cancelled')
   assert.equal(res.reason, 'mission_cancelled_by_operator')
   assert.equal(res.journal.status, 'cancelled')
+})
+
+test('Crafting Planner - Durable craft journal persists to disk and recovers after crash', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_craft_journal_test_'))
+  const journalPath = path.join(tempDir, 'craft_test_1.json')
+
+  const inventoryState = {
+    items: () => [
+      { name: 'oak_log', count: 2, type: mcData.itemsByName.oak_log.id }
+    ]
+  }
+
+  const mockBot = {
+    inventory: inventoryState,
+    recipesFor: (id) => [{ result: { id, count: 4 } }],
+    craft: async () => {
+      inventoryState.items = () => [
+        { name: 'oak_log', count: 1, type: mcData.itemsByName.oak_log.id },
+        { name: 'oak_planks', count: 4, type: mcData.itemsByName.oak_planks.id }
+      ]
+    }
+  }
+
+  const plan = [{
+    step_index: 0,
+    kind: 'craft',
+    target_item: 'oak_planks',
+    target_item_id: mcData.itemsByName.oak_planks.id,
+    craft_times: 1,
+    station: 'player_inventory',
+    ingredients: { oak_log: 1 }
+  }]
+
+  const res = await executeCraftPlan(plan, mockBot, {
+    mcData,
+    missionId: 'craft_test_1',
+    journalPath
+  })
+
+  assert.equal(res.ok, true)
+  assert.equal(res.completedSteps, 1)
+  assert.equal(fs.existsSync(journalPath), true)
+
+  const recovered = recoverCraftJournal(journalPath)
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.journal.missionId, 'craft_test_1')
+  assert.equal(recovered.journal.status, 'completed')
+  assert.equal(recovered.journal.completedSteps, 1)
+  assert.equal(recovered.journal.receipts.length, 1)
+
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+})
+
+test('Crafting Planner - Uncertain inventory delta records needs_review in durable journal without retry', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_craft_uncertain_test_'))
+  const journalPath = path.join(tempDir, 'craft_uncertain.json')
+
+  let craftAttempts = 0
+  const mockBot = {
+    inventory: { items: () => [] }, // inventory never increases
+    recipesFor: () => [{ result: { id: 10, count: 1 } }],
+    craft: async () => {
+      craftAttempts++
+    }
+  }
+
+  const plan = [{
+    step_index: 0,
+    kind: 'craft',
+    target_item: 'stick',
+    target_item_id: mcData.itemsByName.stick.id,
+    craft_times: 1,
+    station: 'player_inventory'
+  }]
+
+  await assert.rejects(
+    async () => executeCraftPlan(plan, mockBot, { mcData, journalPath }),
+    /Inventory delta verification failed for stick/i
+  )
+
+  // Verify it did NOT retry blindly (exactly 1 craft attempt)
+  assert.equal(craftAttempts, 1)
+
+  // Verify journal on disk records needs_review
+  const recovered = recoverCraftJournal(journalPath)
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.journal.status, 'needs_review')
+  assert.equal(recovered.journal.reason, 'uncertain_inventory_delta')
+
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+})
+
+test('Crafting Planner - Resuming from durable journal skips already-completed steps', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_craft_resume_test_'))
+  const journalPath = path.join(tempDir, 'craft_resume.json')
+
+  // Pre-seed journal with step 0 already completed
+  const initialJournal = {
+    missionId: 'craft_resume_1',
+    status: 'in_progress',
+    totalSteps: 2,
+    completedSteps: 1,
+    receipts: [{
+      step_index: 0,
+      target_item: 'oak_planks',
+      delta: 4,
+      consumed: { oak_log: 1 },
+      total_after: 4
+    }],
+    timestamp: Date.now()
+  }
+  writeDurableCraftJournal(journalPath, initialJournal)
+
+  const executedSteps = []
+  const inventoryState = {
+    items: () => [
+      { name: 'oak_planks', count: 4, type: mcData.itemsByName.oak_planks.id }
+    ]
+  }
+
+  const mockBot = {
+    inventory: inventoryState,
+    recipesFor: (id) => [{ result: { id, count: 4 } }],
+    craft: async (recipe, count) => {
+      executedSteps.push(recipe.result.id)
+      inventoryState.items = () => [
+        { name: 'oak_planks', count: 2, type: mcData.itemsByName.oak_planks.id },
+        { name: 'stick', count: 4, type: mcData.itemsByName.stick.id }
+      ]
+    }
+  }
+
+  const plan = [
+    { step_index: 0, kind: 'craft', target_item: 'oak_planks', target_item_id: mcData.itemsByName.oak_planks.id, craft_times: 1, station: 'player_inventory' },
+    { step_index: 1, kind: 'craft', target_item: 'stick', target_item_id: mcData.itemsByName.stick.id, craft_times: 1, station: 'player_inventory', ingredients: { oak_planks: 2 } }
+  ]
+
+  const res = await executeCraftPlan(plan, mockBot, {
+    mcData,
+    journalPath,
+    resumeJournalPath: journalPath
+  })
+
+  assert.equal(res.ok, true)
+  assert.equal(res.completedSteps, 2)
+  // Step 0 was skipped because it was already completed; only step 1 executed!
+  assert.equal(executedSteps.length, 1)
+  assert.equal(executedSteps[0], mcData.itemsByName.stick.id)
+
+  const recovered = recoverCraftJournal(journalPath)
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.journal.status, 'completed')
+  assert.equal(recovered.journal.completedSteps, 2)
+  assert.equal(recovered.journal.receipts.length, 2)
+
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
 })

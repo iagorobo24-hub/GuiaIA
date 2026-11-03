@@ -111,21 +111,32 @@ test('Cobblemon Capture - Consumable budget capped at <= 5 and checks inventory'
     /Capture budget must be an integer between 1 and 5/i
   )
 
-  // Fail closed without server confirmation: no fictive success
+  // 1. Pre-throw block: fails closed BEFORE throwing if no tracking channel exists
   const unverifiedRes = await executeCaptureAttempt(mockBot, target, {
     ballType: 'poke_ball',
     maxAttempts: 2
   })
   assert.equal(unverifiedRes.ok, false)
   assert.equal(unverifiedRes.status, 'blocked')
-  assert.equal(unverifiedRes.reason, 'unverified_protocol_packet')
-  assert.equal(unverifiedRes.captured, false)
+  assert.equal(unverifiedRes.reason, 'no_tracking_channel')
+  assert.equal(unverifiedRes.throwsUsed, 0, 'No Poké Ball should be thrown without tracking channel')
 
-  // Valid capture execution with authentic server confirmation
+  // 2. No blind rethrows: unknown/unverified outcome immediately halts further throws
+  const uncertainRes = await executeCaptureAttempt(mockBot, target, {
+    ballType: 'poke_ball',
+    maxAttempts: 3,
+    serverConfirmation: { result: 'corrupted_status' } // unverified event
+  })
+  assert.equal(uncertainRes.ok, false)
+  assert.equal(uncertainRes.status, 'uncertain')
+  assert.equal(uncertainRes.reason, 'unverified_server_response')
+  assert.equal(uncertainRes.throwsUsed, 1, 'Must halt after first uncertain outcome; no blind rethrow')
+
+  // 3. Valid capture execution with authentic server confirmation
   const res = await executeCaptureAttempt(mockBot, target, {
     ballType: 'poke_ball',
     maxAttempts: 2,
-    serverConfirmation: { captured: true }
+    serverConfirmation: { result: 'captured' }
   })
 
   assert.equal(res.ok, true)
@@ -154,17 +165,23 @@ test('Cobblemon Battle FSM - Unverified challenge is blocked fail-closed', async
   const blockedRes = await controller.challengeWild({ id: 45 })
   assert.equal(blockedRes.ok, false)
   assert.equal(blockedRes.status, 'blocked')
-  assert.equal(blockedRes.reason, 'unverified_protocol_packet')
+  assert.equal(blockedRes.reason, 'unverified_server_source_of_truth')
   assert.equal(controller.getStatus().state, 'idle')
 })
 
-test('Cobblemon Battle FSM - Turn cycle and victory outcome with confirmed challenge', async () => {
+test('Cobblemon Battle FSM - Turn cycle and victory outcome with authentic server packet', async () => {
   const controller = createCobblemonBattleController({})
   assert.equal(controller.getStatus().state, 'idle')
 
-  // Start battle against wild Pokémon with verified confirmation
-  const challengeRes = await controller.challengeWild({ id: 50 }, { serverConfirmation: true })
+  // Start battle against wild Pokémon with verified server packet
+  const validServerPacket = {
+    channel: 'cobblemon:battle_start',
+    battleId: 'battle_alpha_99',
+    opponentId: 50
+  }
+  const challengeRes = await controller.challengeWild({ id: 50 }, { serverBattlePacket: validServerPacket })
   assert.equal(challengeRes.ok, true)
+  assert.equal(challengeRes.battleId, 'battle_alpha_99')
   assert.equal(controller.getStatus().state, 'in_battle')
 
   // Turn 1
@@ -194,7 +211,7 @@ test('Cobblemon Battle FSM - P0 Emergency Stop halts battle instantly', async ()
   }
 
   const controller = createCobblemonBattleController({ bot: mockBot })
-  await controller.challengeWild({ id: 55 }, { serverConfirmation: true })
+  await controller.challengeWild({ id: 55 }, { serverBattlePacket: { channel: 'cobblemon:battle_start', opponentId: 55 } })
   controller.startTurn()
   assert.equal(controller.getStatus().state, 'turn_active')
 
@@ -208,7 +225,7 @@ test('Cobblemon Battle FSM - P0 Emergency Stop halts battle instantly', async ()
 
 test('Cobblemon Battle FSM - Turn timeout triggers automatic flee', async () => {
   const controller = createCobblemonBattleController({})
-  await controller.challengeWild({ id: 60 }, { serverConfirmation: true })
+  await controller.challengeWild({ id: 60 }, { serverBattlePacket: { channel: 'cobblemon:battle_start', opponentId: 60 } })
   controller.startTurn()
 
   // Simulate timeout trigger
@@ -218,39 +235,52 @@ test('Cobblemon Battle FSM - Turn timeout triggers automatic flee', async () => 
   assert.equal(fleeRes.reason, 'turn_timeout_exceeded')
 })
 
-test('Cobblemon PC Controller - Fails closed when server data is unverified', () => {
+test('Cobblemon PC Controller - Fails closed when server packet is unverified', () => {
   const unverifiedPc = createCobblemonPcController({})
   const queryRes = unverifiedPc.queryBox(0)
   assert.equal(queryRes.ok, false)
   assert.equal(queryRes.status, 'blocked')
-  assert.equal(queryRes.reason, 'unverified_protocol_packet')
+  assert.equal(queryRes.reason, 'unverified_server_source_of_truth')
 
   const depRes = unverifiedPc.depositFromParty(0, 0, 0)
   assert.equal(depRes.ok, false)
   assert.equal(depRes.status, 'blocked')
-  assert.equal(depRes.reason, 'unverified_protocol_packet')
+  assert.equal(depRes.reason, 'unverified_server_source_of_truth')
 
   const withRes = unverifiedPc.withdrawToParty(0, 0)
   assert.equal(withRes.ok, false)
   assert.equal(withRes.status, 'blocked')
-  assert.equal(withRes.reason, 'unverified_protocol_packet')
+  assert.equal(withRes.reason, 'unverified_server_source_of_truth')
 })
 
-test('Cobblemon PC Controller - Bounds validation, deposit and withdrawal with attested server data', () => {
+test('Cobblemon PC Controller - Bounds validation, deposit and withdrawal with authentic server packet', () => {
   // Bounds check
   assert.doesNotThrow(() => validateBoxBounds(0))
   assert.doesNotThrow(() => validateBoxBounds(31))
   assert.throws(() => validateBoxBounds(32), /Invalid PC box index: 32/i)
   assert.throws(() => validateBoxBounds(-1), /Invalid PC box index: -1/i)
 
+  const botUuid = '11111111-2222-3333-4444-555555555555'
   const realParty = {
     1: { species: 'pikachu', level: 25, ivs: { hp: 31 } }
   }
 
   const pc = createCobblemonPcController({
-    serverAttested: true,
+    playerUuid: botUuid,
     party: realParty
   })
+
+  // Ingest authentic server packet
+  const serverPacket = {
+    channel: 'cobblemon:pc_data',
+    playerUuid: botUuid,
+    boxes: {
+      '0': new Array(30).fill(null)
+    }
+  }
+  const ingestRes = pc.ingestServerStoragePacket(serverPacket)
+  assert.equal(ingestRes.ok, true)
+  assert.equal(pc.isVerified(), true)
 
   // Query empty box 0
   const emptyQuery = pc.queryBox(0)
@@ -309,24 +339,33 @@ test('Cobblemon Unified Adapter - Dispatches inspect, capture, battle and PC act
   assert.equal(inspectRes.count, 1)
   assert.equal(inspectRes.pokemon[0].species, 'snorlax lv. 30')
 
-  // 2. Capture (fail-closed when unverified)
+  // 2. Capture (fail-closed when no tracking channel)
   const unverifiedCap = await adapter.execute({ action: 'capture', target: 10 })
   assert.equal(unverifiedCap.ok, false)
   assert.equal(unverifiedCap.status, 'blocked')
-  assert.equal(unverifiedCap.reason, 'unverified_protocol_packet')
+  assert.equal(unverifiedCap.reason, 'no_tracking_channel')
 
-  // 2b. Capture (confirmed)
-  const captureRes = await adapter.execute({ action: 'capture', target: 10 }, { serverConfirmation: { captured: true } })
+  // 2b. Capture (confirmed with verified server packet)
+  const captureRes = await adapter.execute(
+    { action: 'capture', target: 10 },
+    { serverConfirmation: { result: 'captured' } }
+  )
   assert.equal(captureRes.ok, true)
   assert.equal(captureRes.captured, true)
 
-  // 3. Battle (confirmed)
-  const battleRes = await adapter.execute({ action: 'battle_wild', target: 10 }, { serverConfirmation: true })
+  // 3. Battle (confirmed with authentic server battle packet)
+  const battleRes = await adapter.execute(
+    { action: 'battle_wild', target: 10 },
+    { serverBattlePacket: { channel: 'cobblemon:battle_start', opponentId: 10 } }
+  )
   assert.equal(battleRes.ok, true)
   assert.equal(battleRes.state, 'in_battle')
 
-  // 4. PC Deposit (with server attested data)
-  adapter.pc.loadServerStorageData({ boxes: {} })
+  // 4. PC Deposit (with authentic server storage packet)
+  adapter.pc.ingestServerStoragePacket({
+    channel: 'cobblemon:pc_data',
+    boxes: { '1': new Array(30).fill(null) }
+  })
   const pcDepRes = await adapter.execute(
     { action: 'pc_deposit' },
     { partySlot: 0, box: 1, partyMember: { species: 'snorlax', level: 30 } }

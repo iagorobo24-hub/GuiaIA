@@ -1,6 +1,41 @@
 'use strict'
 
+const fs = require('node:fs')
+const path = require('node:path')
 const mcDataFactory = require('minecraft-data')
+
+/**
+ * Persists craft journal to disk atomically.
+ */
+function writeDurableCraftJournal(journalPath, journalData) {
+  if (!journalPath) return
+  const dir = path.dirname(journalPath)
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+  const tempPath = `${journalPath}.${process.pid}.${Date.now()}.tmp`
+  fs.writeFileSync(tempPath, JSON.stringify(journalData, null, 2), 'utf8')
+  fs.renameSync(tempPath, journalPath)
+}
+
+/**
+ * Recovers craft journal from disk and validates integrity.
+ */
+function recoverCraftJournal(journalPath) {
+  if (!journalPath || !fs.existsSync(journalPath)) {
+    return { ok: false, reason: 'journal_not_found' }
+  }
+  try {
+    const content = fs.readFileSync(journalPath, 'utf8')
+    const journal = JSON.parse(content)
+    if (!journal || typeof journal !== 'object' || !journal.missionId) {
+      return { ok: false, reason: 'corrupt_journal' }
+    }
+    return { ok: true, journal }
+  } catch (err) {
+    return { ok: false, reason: 'unreadable_journal', error: err.message }
+  }
+}
 
 const STATION_MAP = Object.freeze({
   player: 'player_inventory',
@@ -293,21 +328,44 @@ async function executeCraftPlan(plan, bot, options = {}) {
     throw new Error('Craft plan must be a non-empty array of steps')
   }
 
-  const journal = {
-    missionId: options.missionId || `craft_mission_${Date.now()}`,
-    status: 'in_progress',
-    totalSteps: plan.length,
-    completedSteps: 0,
-    receipts: [],
-    timestamp: Date.now()
+  const journalDir = options.journalDir || path.join(process.cwd(), '.guiaia', 'craft_journals')
+  const missionId = options.missionId || `craft_mission_${Date.now()}`
+  const journalPath = options.journalPath || path.join(journalDir, `${missionId}.json`)
+
+  let journal
+  let startIndex = 0
+
+  if (options.resumeFromJournal && typeof options.resumeFromJournal === 'object') {
+    journal = { ...options.resumeFromJournal }
+    startIndex = journal.completedSteps || 0
+  } else if (options.resumeJournalPath) {
+    const recovered = recoverCraftJournal(options.resumeJournalPath)
+    if (recovered.ok) {
+      journal = recovered.journal
+      startIndex = journal.completedSteps || 0
+    }
   }
 
-  const receipts = []
+  if (!journal) {
+    journal = {
+      missionId,
+      status: 'in_progress',
+      totalSteps: plan.length,
+      completedSteps: 0,
+      receipts: [],
+      timestamp: Date.now()
+    }
+  }
+  writeDurableCraftJournal(journalPath, journal)
 
-  for (const step of plan) {
-    if (options.isCancelled?.()) {
+  const receipts = [...(journal.receipts || [])]
+
+  for (let i = startIndex; i < plan.length; i++) {
+    const step = plan[i]
+    if (options.isCancelled?.() || options.signal?.aborted) {
       journal.status = 'cancelled'
       journal.reason = 'operator_cancelled'
+      writeDurableCraftJournal(journalPath, journal)
       return {
         ok: false,
         status: 'cancelled',
@@ -355,6 +413,7 @@ async function executeCraftPlan(plan, bot, options = {}) {
       if (!stationBlock) {
         journal.status = 'failed'
         journal.error = `missing_station: crafting_table for step ${step.step_index}`
+        writeDurableCraftJournal(journalPath, journal)
         throw new Error(`Step ${step.step_index} (${targetName}) requires nearby crafting_table station, none found in world or inventory`)
       }
     }
@@ -366,6 +425,7 @@ async function executeCraftPlan(plan, bot, options = {}) {
       if (!availableMfRecipes || availableMfRecipes.length === 0) {
         journal.status = 'failed'
         journal.error = `missing_recipe_or_ingredients: step ${step.step_index}`
+        writeDurableCraftJournal(journalPath, journal)
         throw new Error(`Bot lacks ingredients or recipe for step ${step.step_index}: ${targetName}`)
       }
       mfRecipe = availableMfRecipes[0]
@@ -380,8 +440,10 @@ async function executeCraftPlan(plan, bot, options = {}) {
     const afterCount = countInventoryItem(bot.inventory, targetName, options.mcData)
     const delta = afterCount - initialCount
     if (delta <= 0) {
-      journal.status = 'failed'
-      journal.error = `output_delta_verification_failed: ${targetName}`
+      journal.status = 'needs_review'
+      journal.reason = 'uncertain_inventory_delta'
+      journal.error = `Inventory delta verification failed for ${targetName}: expected >= 1, got delta ${delta}`
+      writeDurableCraftJournal(journalPath, journal)
       throw new Error(`Inventory delta verification failed for ${targetName}: expected >= 1, got delta ${delta}`)
     }
 
@@ -391,8 +453,10 @@ async function executeCraftPlan(plan, bot, options = {}) {
         const afterIngCount = countInventoryItem(bot.inventory, ingName, options.mcData)
         const consumed = beforeInputs[ingName] - afterIngCount
         if (consumed <= 0) {
-          journal.status = 'failed'
-          journal.error = `input_delta_verification_failed: ${ingName}`
+          journal.status = 'needs_review'
+          journal.reason = 'uncertain_ingredient_consumption'
+          journal.error = `Inventory two-sided delta verification failed: ingredient ${ingName} was not consumed`
+          writeDurableCraftJournal(journalPath, journal)
           throw new Error(`Inventory two-sided delta verification failed: ingredient ${ingName} was not consumed`)
         }
         consumedDeltas[ingName] = consumed
@@ -410,9 +474,11 @@ async function executeCraftPlan(plan, bot, options = {}) {
     receipts.push(receipt)
     journal.completedSteps = receipts.length
     journal.receipts = receipts
+    writeDurableCraftJournal(journalPath, journal)
   }
 
   journal.status = 'completed'
+  writeDurableCraftJournal(journalPath, journal)
   return {
     ok: true,
     completedSteps: receipts.length,
@@ -458,5 +524,7 @@ module.exports = {
   executeCraftPlan,
   getStationType,
   extractRecipeIngredients,
+  writeDurableCraftJournal,
+  recoverCraftJournal,
   STATION_MAP
 }
