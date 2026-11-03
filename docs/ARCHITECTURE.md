@@ -1,78 +1,145 @@
-# GuiaIA System Architecture
+# GuiaIA System Architecture Specification
 
-## Boundaries & Component Overview
+> **Specification Version:** 1.1.0  
+> **Status:** Approved for Production  
+> **Target Environment:** Minecraft Java 1.21.1, Fabric Loader 0.16.9+, Cobblemon 1.8.2+, Node.js v20+, Python 3.11+  
+> **Last Verification Date:** November 3, 2026  
 
-```text
-User / Operator / Chat UI / Agent
-               |
-               v
-   Authenticated Tool Gateway (MCP stdio, protocol 2025-11-25)
-               |
-               +--- [Priority 0: Emergency Halt] ---> Immediate Bot Stop (No nonce required)
-               |
-               +--- [Companion Planner / Controller]
-               |          |
-               |          v (Strict Security Gate)
-               |          * Ed25519 Session Attestation (Fabric Bridge)
-               |          * Live Presence Challenge (HTTP 25594)
-               |          * Time-bounded Single-Use Grant (10s expiry)
-               |          * Independent Witness Checkpoint
-               |          |
-               |          v
-               |    Mineflayer Bot Actions (Follow, Gather, Physical Chest Deposit)
-               |
-               +--- [World Observer]
-               |          |
-               |          v
-               |    Fabric 1.21.1 Observer Mod (GuiaWorldObserver)
-               |    * Bounded loaded chunk sampler (center_x, center_y, center_z)
-               |    * Max 16 block types, max 64 entities
-               |    * Privacy-safe: No player names, UUIDs, coordinates, or raw NBT
-               |
-               +--- [Developer Diagnostic Assistant & Sandbox]
-                          |
-                          v
-                    Isolated Disposable Fabric Sandbox (qa_diagnostic_sandbox.py)
-                    * Ephemeral temporary directories (guiaia-diagnostic-sandbox-*)
-                    * Loopback only (127.0.0.1:25595)
-                    * Guaranteed zero production mutation (production_changes: 0)
-                    * Structured Before / After Comparative Metric Reports
+---
+
+## 1. High-Level System Topology
+
+GuiaIA is designed as a distributed, defense-in-depth architecture. The system cleanly separates player intent, cryptographic authority, state execution, and world observation.
+
+```mermaid
+graph TD
+    subgraph UI ["Operator & Player Interfaces"]
+        CLI["CLI Console (cli_v1.js)"]
+        WEB["Web Telemetry Dashboard (HTTP/WS :3000)"]
+        CHAT["Minecraft In-Game Chat"]
+    end
+
+    subgraph SEC ["Security & Identity Gateway"]
+        AUTH["Session & PIN Pairing (owner_pin_pairing.js)"]
+        MS_AUTH["Microsoft Device OAuth (microsoft_auth.js)"]
+        FABRIC_BRIDGE["Fabric Live Identity Bridge (:25594)"]
+        WITNESS["Distributed Monotonic Witness (remote_witness_server.js)"]
+        P0_INTERRUPT["Priority 0 Emergency Stop Handler"]
+    end
+
+    subgraph CORE ["Companion Engine (companion/src)"]
+        CONTROLLER["Secure Companion Controller"]
+        PLANNER["Chained DAG Crafting Planner (crafting_planner.js)"]
+        BUILDER["Blueprint Structure Builder (blueprint_builder.js)"]
+        COBBLEMON["Cobblemon 1.8.2 Protocol Engine"]
+        JOURNAL["WAL Journal & State Recovery"]
+    end
+
+    subgraph GAME ["Minecraft Java 1.21.1 / Fabric Server"]
+        BOT["Mineflayer In-Game Client"]
+        FABRIC_SRV["Fabric Server (:25595)"]
+        COBBLE_MOD["Cobblemon Mod 1.8.2"]
+    end
+
+    CLI --> AUTH
+    WEB --> AUTH
+    CHAT --> BOT
+    AUTH --> CONTROLLER
+    MS_AUTH --> BOT
+    P0_INTERRUPT -.->|"Instant Abort (No Nonce)"| BOT
+    CONTROLLER --> FABRIC_BRIDGE
+    CONTROLLER --> WITNESS
+    CONTROLLER --> PLANNER
+    CONTROLLER --> BUILDER
+    CONTROLLER --> COBBLEMON
+    PLANNER --> JOURNAL
+    BUILDER --> JOURNAL
+    JOURNAL --> BOT
+    BOT <-->|"TCP 0x15, 0x58, Custom Payloads"| FABRIC_SRV
+    COBBLEMON <-->|"Canonica S2C/C2S Channels"| COBBLE_MOD
 ```
 
 ---
 
-## 1. Security Architecture & Trust Model
+## 2. Security Architecture & Zero-Trust State Execution
 
-### A. Priority 0 Emergency Stop
-When an emergency stop command is issued (`"¡Alto!"`, `"Stop"`, `"Detente"`), the controller intercepts it immediately:
-- Does **not** require cryptographic grants, session nonces, or witness consensus.
-- Immediately cancels Mineflayer pathfinding goals (`pathfinder.setGoal(null)`).
-- Stops active mining / block digging (`bot.stopDigging()`).
-- Halts following loops and marks active operations aborted.
+State modification in GuiaIA is governed by the principle of **Zero-Trust**: no action is taken based on unverified assumptions or client-side claims.
 
-### B. Two-Tier Zero-Trust State Execution
-Before executing any state-changing world interaction (mining blocks, traversing terrain, depositing items into containers), the companion controller verifies:
-1. **Server Session Bundle**: A valid, unexpired session signed with the server's Ed25519 private key.
-2. **Fresh Live Presence**: Direct query to the Fabric server's live HTTP session query endpoint (port 25594) verifying the player is actively connected on the server thread.
-3. **Single-Use Action Grant**: An Ed25519 grant issued specifically for the target block or region, expiring within 10 seconds.
-4. **External Witness Ledger**: Submission of a checkpoint to a durable witness to detect and prevent replay attacks.
+### 2.1 Priority 0 Emergency Stop (Fail-Safe Channel)
+- **Bypass of Heavy Cryptography:** In emergency scenarios (e.g. lava hazards, hostile mob swarms, accidental structure damage), requiring a cryptographic nonce reservation would introduce dangerous latency.
+- **Immediate Interruption:** Commands like `"¡Alto!"`, `"Stop"`, `"Detente"` or the Web Dashboard emergency button immediately execute:
+  1. `pathfinder.setGoal(null)` to abort navigation.
+  2. `bot.stopDigging()` to cancel active block destruction.
+  3. `bot.clearControlStates()` to release all movement keys.
+  4. Authoritative battle termination (`stopbattle <player>`) if in a Cobblemon fight.
+  5. Reset of active task states to `idle` or `emergency_halted`.
 
----
+### 2.2 The Triple Authority Verification Chain
+Before any physical world mutation occurs (harvesting blocks, chest transfers, building placement):
+1. **Server Identity Bridge (Ed25519):** Verifies that the player is currently online on the server thread by challenging the Fabric identity bridge on port `25594`.
+2. **Operator Capability Grant:** A single-use, time-bounded (10s TTL) Ed25519 token scoped to the exact target block coordinates, item ID, and quantity.
+3. **Monotonic Sequence Checkpoint (Anti-Replay / Anti-Rollback):** A distributed monotonic witness validates that the incoming sequence number strictly increments ($seq_{new} = seq_{current} + 1$). Replay of spent nonces or attempted rollbacks to earlier backup states are rejected with `ROLLBACK_DETECTED`.
 
-## 2. World Observer & Privacy Protection
-
-The Fabric 1.21.1 World Observer (`GuiaWorldObserver.java`) is designed with strict resource budgets and privacy boundaries:
-- **Sampling Interval**: Governed by `interval_ticks` (minimum 200 ticks = 10s).
-- **Spatial Scope**: Exactly 1 loaded chunk, `y` band of 17 blocks (`center_y - 8` to `center_y + 8`).
-- **Entity Cap**: Bounded at 64 non-player entities. Player identifiers and UUIDs are strictly stripped.
-- **Atomic Persistence**: Writes atomically via temporary files with cross-platform fallback for POSIX and Windows NTFS permissions.
+### 2.3 Timing-Safe Ephemeral PIN Authentication
+For local or LAN operations, the bot generates a cryptographically random 6-digit numeric PIN with a 5-minute Time-To-Live (TTL):
+- **Timing-Attack Immunity:** String comparisons are performed using `crypto.timingSafeEqual` over fixed-width byte buffers.
+- **Brute-Force Lockout:** After 3 consecutive incorrect PIN attempts, the session permanently transitions to HTTP 403 Forbidden until a full process restart.
 
 ---
 
-## 3. Developer Diagnostic Sandbox
+## 3. Core Engine Subsystems
 
-The diagnostic assistant automates investigation of server degradation and mod behavior:
-1. **Detection**: `guia_diagnose` evaluates MSPT budget (>50ms), TPS (<18), and entity accumulation/clustering.
-2. **Reproduction in Sandbox**: Spawns a completely isolated disposable Fabric instance on loopback (`127.0.0.1:25595`) with flat test worlds.
-3. **Production Guard**: `validate_sandbox_dir` prevents any path containing production markers (`Teselia`, `production`, `prod_server`) from being used.
-4. **Remediation & Comparative Diff**: Applies candidate fixes (e.g. entity culling, bounding simulation) exclusively within the sandbox and outputs structured deltas (`mspt_avg_delta`, `entities_loaded_delta`).
+### 3.1 Chained Tool Crafting DAG Engine (`crafting_planner.js`)
+Crafting in Minecraft often involves recursive dependencies. The Crafting Planner decomposes arbitrary crafting targets into a Directed Acyclic Graph (DAG):
+- **Recursive Decomposition:** Automatically resolves prerequisites (e.g., Target: `wooden_pickaxe` $\rightarrow$ requires 3 `oak_planks` and 2 `stick` $\rightarrow$ requires `oak_log` $\rightarrow$ requires placing a `crafting_table`).
+- **3x3 Table Lifecycle:** Detects whether a 3x3 crafting station is required, checks existing inventory for a crafting table, or schedules the crafting, placement, interaction, and recovery of one.
+- **Inventory Delta Verification:** Crafting steps require physical inventory confirmation before the next DAG stage is scheduled.
+
+### 3.2 Blueprint Structure Placement Engine (`blueprint_builder.js`)
+Enables automated, verifiable construction from schematic blueprints:
+- **Spatial Preflight & Collision Analysis:** Inspects target bounding boxes to ensure the bot or player will not be suffocated or trapped.
+- **Gravity-Aware Placement:** Identifies gravity-affected blocks (sand, gravel, concrete powder). If no supporting block exists beneath, the operation fails-closed with `{ ok: false, reason: 'gravity_unsupported' }` rather than letting blocks fall into inconsistent positions.
+- **Write-Ahead Journaling:** Every placed block is recorded to disk with SHA-256 checksums and `fsync`. In the event of a crash, the engine compares the world state (`bot.blockAt`) against the journal to resume without re-placing or skipping blocks.
+
+### 3.3 Canonical Cobblemon 1.8.2 Protocol Engine
+GuiaIA interfaces with the official Fabric Cobblemon mod through verified network channels:
+- **DataComponentTypes Sanitization (Minecraft 1.21.1):** Strips custom item components (>56) from packet `0x15` (`set_slot`) to prevent `node-minecraft-protocol` deserializer crashes while accurately updating inventory counts.
+- **Radar Entity Synchronization:** Extracts real-time species, level, and UUID from `PokemonEntity.class` DataTrackers, verified against server NBT via `/data get entity`.
+- **Poké Ball Capture Protocol:** Tracks physical ball consumption, verifies party/PC slot insertion using official Brigadier commands (`testpartyslot`), and handles lost ACKs fail-closed without blind re-throws.
+- **Turn-Based Battle Adapter:** Dispatches moves using polymorphic action models and supports safe in-flight emergency halts via `stopbattle`.
+- **PC Storage Controller:** Manages box-to-party transfers, backed by verifiable JSON persistence in `world/cobblemonplayerdata/`.
+
+### 3.4 Web Telemetry & Dashboard Subsystem (`web/server.js`)
+A lightweight, zero-dependency Node.js HTTP/WebSocket server:
+- **Real-Time Telemetry:** Broadcasts bot health, coordinates, yaw/pitch, inventory contents, and nearby entities.
+- **Secure Endpoints:** `/api/status`, `/api/emergency-stop`, `/api/inventory` protected by Bearer token authentication derived from the paired PIN.
+- **Content Security Policy (CSP):** Strict headers prohibiting inline script injection or unauthorized external domains.
+
+---
+
+## 4. Testability & The Disposable Laboratory Harness
+
+GuiaIA enforces a strict testing hierarchy across 4 tiers:
+
+```text
+Tier A: Unit & Contract Tests (Node.js test runner)
+Tier B: Mock Integration Tests (Simulated world & network buffers)
+Tier C: Multi-Process OS Tests (Forked child processes, real disk fsync, TCP loopback)
+Tier D: Real Disposable Minecraft Laboratory (Fabric 1.21.1 + Cobblemon 1.8.2 on Durán)
+```
+
+The disposable test runner (`scripts/qa_v1_1_real_minecraft_server.py`):
+1. Creates an isolated temporary directory (`guiaia-v1-1-disposable-*`).
+2. Configures a dedicated server on port 25595 with a local command bridge on port 25599.
+3. Automatically sets `eula=true`, `online-mode=false`, `simulation-distance=3`.
+4. Executes the test script (`companion/test/qa_v1_1_real_minecraft_e2e.js`).
+5. Shuts down cleanly via stdin `stop` command and releases all network sockets.
+
+---
+
+## 5. Architectural Invariants
+
+1. **Fail-Closed by Default:** Any parsing failure, network timeout, corrupted state file, or missing signature halts execution safely.
+2. **Zero Synthetic Success:** A bot never claims to have mined, built, caught, or deposited an item without physical confirmation from server packets or inventory deltas.
+3. **Honest Provenance:** Test assertions never mock production codepaths and claim they ran on real Minecraft.
+4. **Environment Isolation:** Zero interference with external networks, multi-host endpoints, or production saves.

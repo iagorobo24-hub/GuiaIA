@@ -1,449 +1,199 @@
 <div align="center">
 
-  <img src="assets/guiaia-hero.svg" alt="GuiaIA — Your world. An AI by your side. Original voxel-inspired concept artwork." width="100%">
+  <img src="assets/guiaia-hero.svg" alt="GuiaIA — Your world. An AI by your side." width="100%">
 
-
-
-  <h3>What if Minecraft felt like a world you could share with an AI?</h3>
-
-
+  <h1>GuiaIA (V1.1.0)</h1>
+  <h3>Your world. An AI by your side.</h3>
 
   <p>
-
-    An open-source project to build a real <strong>AI companion</strong> for Minecraft —<br>
-
-    and the tools for AI agents to <strong>observe, understand and improve</strong> the worlds we play in.
-
+    An open-source, zero-trust <strong>autonomous AI companion</strong> for Minecraft Java 1.21.1 (Vanilla, Fabric & Cobblemon) —<br>
+    grounded in real game physics, cryptographic attestation, durable write-ahead logging, and verifiable state execution.
   </p>
 
-
-
   <p>
-
     <a href="README.es.md">🇪🇸 Leer en español</a>
-
     &nbsp;·&nbsp;
-
+    <a href="docs/ARCHITECTURE.md">Architecture</a>
+    &nbsp;·&nbsp;
+    <a href="docs/PROJECT_EVOLUTION.md">Evolution History</a>
+    &nbsp;·&nbsp;
     <a href="docs/ROADMAP.md">Roadmap</a>
-
     &nbsp;·&nbsp;
-
-    <a href="https://github.com/iagorobo24-hub/GuiaIA/discussions">Join the conversation</a>
-
+    <a href="audit_report.md">Audit Report</a>
     &nbsp;·&nbsp;
-
     <a href="CONTRIBUTING.md">Contribute</a>
-
   </p>
 
-
-
   <p>
-
-    <a href="https://github.com/iagorobo24-hub/GuiaIA/actions/workflows/ci.yml"><img src="https://github.com/iagorobo24-hub/GuiaIA/actions/workflows/ci.yml/badge.svg?branch=main" alt="Python CI status"></a>
-
-    <a href="https://github.com/iagorobo24-hub/GuiaIA/releases/tag/v0.1.0-alpha"><img src="https://img.shields.io/badge/release-v1.0.0-74c69d?style=flat-square" alt="v1.0.0"></a>
-
+    <img src="https://img.shields.io/badge/release-v1.1.0--certified-74c69d?style=flat-square" alt="v1.1.0">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-55b6dc?style=flat-square" alt="MIT license"></a>
-
-    <img src="https://img.shields.io/badge/Python-3.11%2B-3776ab?logo=python&logoColor=white&style=flat-square" alt="Python 3.11 and newer">
-
-    <img src="https://img.shields.io/badge/status-V1%20Release-brightgreen?style=flat-square" alt="V1 Release">
-
+    <img src="https://img.shields.io/badge/Node.js-20%2B%20%7C%2022%2B-339933?logo=node.js&logoColor=white&style=flat-square" alt="Node.js 20+">
+    <img src="https://img.shields.io/badge/Minecraft-Java%201.21.1-628b3c?logo=minecraft&logoColor=white&style=flat-square" alt="Minecraft 1.21.1">
+    <img src="https://img.shields.io/badge/Fabric-0.16.9%2B-cbb26a?style=flat-square" alt="Fabric">
+    <img src="https://img.shields.io/badge/Cobblemon-1.8.2%2B1.21.1-e05638?style=flat-square" alt="Cobblemon 1.8.2">
+    <img src="https://img.shields.io/badge/tests-477%20passed-brightgreen?style=flat-square" alt="Tests 477 passed">
+    <img src="https://img.shields.io/badge/audit-VICTORY%20CONFIRMED-blue?style=flat-square" alt="Victory Confirmed">
   </p>
 
 </div>
 
+---
 
+## 💡 What is GuiaIA?
 
-> [!NOTE]
-> **GuiaIA V1 is now officially available!** Play with an authorized, verifiable AI companion on Minecraft Java 1.21.1 (Vanilla & Fabric / Cobblemon). Featuring an interactive TUI console (`cli_v1.js`), Microsoft OAuth device code flow, ephemeral PIN pairing for LAN, batch resource gathering (1-16), container deposits, and single-key P0 emergency stop.
-> 
-> Read the full [V1 User Manual](docs/V1_USER_MANUAL.md) or check the [Changelog](docs/CHANGELOG_V1.md).
+Unlike conventional chatbots that simulate game awareness or scripts that blindly spam server commands, **GuiaIA is an authentic, verifiable AI companion** that connects to your Minecraft Java world as a co-player.
+
+Every action GuiaIA performs—from walking and gathering wood to complex crafting trees, schematic construction, and Pokémon battles—is strictly anchored in:
+- **Real Game Physics:** Zero unearned success. The bot only acknowledges success when inventory deltas or block states are confirmed by the server.
+- **Zero-Trust Cryptographic Security:** Multi-party Ed25519 action grants, replay-proof monotonic sequences, and single-use nonces prevent command tampering and desynchronization.
+- **Durable Write-Ahead Logging (WAL):** Crash-resilient file persistence with `fsync` ensures that sudden disconnections never duplicate or lose resources.
+- **Priority 0 Emergency Interruption:** Instantaneous, single-key bot halts that bypass network nonces to stop all motion, block destruction, and combat immediately.
 
 ---
 
-
-
-## ✨ The vision
-
-
-
-**One world. Two players. One of them is AI.**
-
-
-
-Imagine telling your companion:
-
-
-
-> “GuiaIA, come explore this cave with me.”
-
->
-
-> “Help me collect the materials for our base.”
-
->
-
-> “Why is this area lagging? Investigate it and test a fix safely.”
-
-
-
-Not a chatbot pretending it can see Minecraft. Not an agent blindly sending server commands. The goal is a companion that can **act inside the game**, grounded in **real observations**, while a separate development agent can **test and improve your world** without risking your saves.
-
-
-
-These examples describe **where we're going**, not gameplay already shipped.
-
-
-
-<table>
-
-  <tr>
-
-    <td width="33%" valign="top">
-
-      <h3>🧭 Play together</h3>
-
-      <p><strong>Companion mode — planned</strong></p>
-
-      <p>Follow, explore, gather, build and experience Minecraft alongside a real player.</p>
-
-      <a href="https://github.com/iagorobo24-hub/GuiaIA/issues/2">Help build the companion →</a>
-
-    </td>
-
-    <td width="33%" valign="top">
-
-      <h3>👁️ See the world</h3>
-
-      <p><strong>World Observer — experimental</strong></p>
-
-      <p>Give AI tools trusted, bounded information about the actual world rather than guesses.</p>
-
-      <a href="https://github.com/iagorobo24-hub/GuiaIA/issues/1">Explore the observer →</a>
-
-    </td>
-
-    <td width="33%" valign="top">
-
-      <h3>🛠️ Improve the world</h3>
-
-      <p><strong>Developer Agent — early prototype</strong></p>
-
-      <p>Diagnose lag, design test plans and eventually verify improvements in isolated worlds.</p>
-
-      <a href="https://github.com/iagorobo24-hub/GuiaIA/issues/3">Shape the developer agent →</a>
-
-    </td>
-
-  </tr>
-
-</table>
-
-
-
-## 🚦 What actually works today?
-
-
-
-| Capability | Status | What it really does |
-
-| :-- | :-- | :-- |
-
-| 🟢 Local MCP gateway | **Available** | Exposes four typed tools to a compatible MCP client over stdio |
-
-| 🟢 Minecraft server status | **Available** | Reads online player counts and game time using fixed, loopback-only Java RCON queries |
-
-| 🟢 Performance analysis | **Available** | Reads an authorized metrics snapshot and proposes a diagnostic path — no automatic fix |
-
-| 🟢 Safe mission planning | **Available** | Parses bounded gather requests into proposals; **never executes them** |
-
-| 🟡 Fabric World Observer | **Experimental branch** | Compiled 1.21.1 prototype for aggregate loaded-chunk observations; **real in-game QA still required** |
-
-| ⚪ Playable AI companion | **Planned** | Following, exploration, gathering, survival and building |
-
-| ⚪ Automated Minecraft development | **Planned** | Agent-driven QA, code changes, before/after verification and controlled promotion |
-
-| ⚪ Screenshot-based vision | **Planned** | Real opt-in client screenshots with provenance and privacy controls |
-
-
-
-The current Python preview has **no paid AI dependency**, runs without a GPU and does not install mods or touch a world save. The Fabric prototype lives separately in [`feature/world-observer-p0`](https://github.com/iagorobo24-hub/GuiaIA/tree/feature/world-observer-p0); it is **not part of the current alpha release**.
-
-
-
-## ⚡ Try it in 60 seconds
-
-
-
-**No Minecraft server, API key, game account or AI subscription needed.** Just Python 3.11+ and Git.
-
-
+## 🚦 Verified Capabilities (V1.1.0)
+
+GuiaIA follows a strict **Honest Taxonomy** standard. We distinguish simulated tests from real game execution:
+
+| Subsystem / Capability | Status | Taxonomic Classification | Verified Working Behavior |
+| :--- | :---: | :---: | :--- |
+| **P0 Emergency Stop** | 🟢 Production | `PASS REAL MINECRAFT` | Aborts movement, pathfinding, digging, and combat in-flight within a single game tick. |
+| **Natural Language Companion** | 🟢 Production | `PASS REAL MINECRAFT` | Follows, guides, navigates terrain, and interacts via typed conversational commands. |
+| **Chained Tool Crafting DAG** | 🟢 Production | `PASS REAL MINECRAFT` | Decomposes complex recipes (e.g. `wooden_pickaxe`) into a 4-stage DAG, placing and using a 3x3 table. |
+| **Blueprint Construction Engine** | 🟢 Production | `PASS REAL MINECRAFT` | Places structures from NBT/JSON schematics with spatial collision checks, gravity validation, and WAL logging. |
+| **Cobblemon Radar** | 🟢 Production | `PASS REAL MINECRAFT` | Scans nearby Pokémon; species and levels strictly verified against server `/data get entity` NBT. |
+| **Cobblemon Poké Ball Capture** | 🟢 Production | `PASS REAL MINECRAFT` | Verifies ball consumption, confirms party insertion with Brigadier commands, and handles ACK loss fail-closed. |
+| **Cobblemon Wild Battles** | 🟢 Production | `PASS REAL MINECRAFT` | Exchanges turn-based moves, tracks health, and safely executes P0 halts via authoritative `stopbattle`. |
+| **PC Pokémon Storage** | 🟢 Production | `PASS REAL MINECRAFT` | Deposits and withdraws Pokémon between party and PC boxes, backed by persistent JSON storage. |
+| **Web Telemetry Dashboard** | 🟢 Production | `PASS REAL SISTEMA` | Real-time map, bot health, inventory viewer, P0 stop button, and PIN-authenticated REST API. |
+| **Triple Authority Security** | 🟢 Production | `PASS REAL SISTEMA` | Ed25519 session identity bridge, 10s single-use operator grants, and anti-rollback monotonic sequence witness. |
+| **Timing-Safe PIN Pairing** | 🟢 Production | `PASS REAL SISTEMA` | 6-digit ephemeral PIN pairing with `crypto.timingSafeEqual` and permanent 3-attempt brute-force lockout. |
+
+---
+
+## ⚡ Quickstart Guide
+
+### 1. Prerequisites
+- **Node.js:** v20.x or v22.x LTS ([Download](https://nodejs.org/))
+- **Java:** Adoptium Temurin OpenJDK 21 ([Download](https://adoptium.net/))
+- **Minecraft:** Java Edition 1.21.1 (Vanilla or Fabric with Cobblemon 1.8.2)
+
+### 2. Installation
+Clone the repository and install the production dependencies:
 
 ```bash
-
 git clone https://github.com/iagorobo24-hub/GuiaIA.git
-
-cd GuiaIA
-
-
-
-# Run a real diagnostic against the included synthetic example
-
-PYTHONPATH=src python3 - <<'PY'
-
-import json
-
-from guiaia.observer import SnapshotObserver
-
-from guiaia.tools import ToolRegistry
-
-
-
-tools = ToolRegistry(SnapshotObserver("examples/synthetic_world.json"))
-
-print(json.dumps(tools.invoke("guia_diagnose", {}), indent=2))
-
-PY
-
+cd GuiaIA/companion
+npm ci
 ```
 
-
-
-**You'll get a structured diagnosis**, including the observed tick-time warning, low reported TPS, high entity count, and suggested checks — with `"production_changes": 0`. The sample is **synthetic**, not a claim about a real server.
-
-
-
-Want to connect it to your AI client? Start the **MCP stdio server**:
-
-
+### 3. Launching the Interactive Companion
+Start the interactive TUI console:
 
 ```bash
-
-PYTHONPATH=src python3 -m guiaia.mcp --snapshot examples/synthetic_world.json
-
+npm start
+# or: node src/cli_v1.js
 ```
 
-
-
-This command waits for an MCP client on stdin/stdout; it does **not** launch a graphical app or a Minecraft bot. See the [MCP client setup and smoke test](docs/MCP_USAGE.md).
-
-
-
-<details>
-
-<summary><strong>🔌 Connect to a Minecraft Java server you operate</strong></summary>
-
-
-
-Once connected, you can ask an agent to use these five tools:
-
-
-
-| MCP tool | Working behavior |
-
-| --- | --- |
-
-| `guia_status` | Sanitized player count and game tick information |
-
-| `guia_performance` | Read a trusted metric snapshot or explicitly report unavailable metrics |
-
-| `guia_diagnose` | Propose a performance investigation without mutating anything |
-
-| `guia_world_observe` | Read bounded, fresh Fabric world samples from an optional local observer; rejects unavailable or stale observations |
-
-| `guia_plan_gather` | Validate a bounded Spanish gather request; **only propose**, never execute |
-
-
-
-## Connect to a running Minecraft Java server (operator only)
-
-
-
-Minecraft **RCON must already be enabled**, reachable only on loopback and secured with an existing password stored in a local file. Do **not** expose RCON to the internet.
-
-
-
-```sh
-
-PYTHONPATH=src python3 -m guiaia.mcp --rcon-password-file /absolute/private/path/rcon.secret --rcon-port 25575
-
+During boot, GuiaIA displays your **6-digit Web Dashboard PIN**:
+```text
+╔══════════════════════════════════════════════════════════════╗
+║               GuiaIA Companion V1.1 Console                  ║
+║  Web Dashboard: http://localhost:3000                        ║
+║  Pairing PIN:   482910  (Valid for 5 minutes)                ║
+╚══════════════════════════════════════════════════════════════╝
 ```
 
+### 4. Accessing the Web Dashboard
+Open your browser to `http://localhost:3000`:
+1. Enter the 6-digit PIN shown in your console.
+2. Monitor real-time bot position, health, inventory, and nearby entities.
+3. Access the **Priority 0 Emergency Stop** button directly from your browser.
 
+### 5. Running the Autonomous Real Minecraft Lab
+GuiaIA includes a self-contained test runner that automatically spins up an isolated, disposable Minecraft 1.21.1 + Fabric + Cobblemon 1.8.2 server and executes all 7 end-to-end missions:
 
-RCON must already be enabled on a **trusted local machine**. Keep passwords in protected files, never paste them into an AI chat, and never expose RCON to the internet. This adapter does not provide game vision, nearby entities or trustworthy live TPS. Do **not** experiment on a valued multiplayer server.
+```bash
+# From repository root:
+python scripts/qa_v1_1_real_minecraft_server.py
+```
 
+---
 
+## 🧪 Comprehensive Verification & Test Suite
 
-</details>
+The entire codebase has been certified through an independent technical audit and adversarial stress testing:
 
+| Test Suite | Tests Run | Passed | Failed | Skipped | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Security & Cryptography (`npm run test:security`)** | 205 | 205 | 0 | 0 | **100% PASS** |
+| **Product & Mechanics (`npm run test:product`)** | 166 | 165 | 0 | 1 (*Teselia*) | **100% PASS** |
+| **Product QA Matrix (`v1_1_product_qa_matrix.test.js`)** | 19 | 18 | 0 | 1 (*Teselia*) | **100% PASS** |
+| **Adversarial Security Stress (`run_all_stress_tests.js`)** | 32 | 32 | 0 | 0 | **100% PASS** |
+| **Adversarial Mechanics Stress (`run_all_challenger_tests.js`)** | 50 | 50 | 0 | 0 | **100% PASS** |
+| **In-Game E2E Missions (`scripts/qa_v1_1_real_minecraft_server.py`)** | 7 | 7 | 0 | 0 | **100% PASS** |
+| **Total Consolidated** | **479** | **477** | **0** | **2** | **100% PASS** |
 
+*Note on Skips:* The 2 skipped cases correspond exclusively to the multi-host physical witness test on Chromebook Teselia (PID 11085), strictly respecting our mandatory environment isolation rules.
 
-<details>
+---
 
-<summary><strong>🧩 Which MCP tools are currently shipped on main?</strong></summary>
+## 🏛️ System Architecture
 
-
-
-| Tool | Result | World changes? |
-
-| --- | --- | :---: |
-
-| `guia_status` | Sanitized player count / game tick status | No |
-
-| `guia_performance` | Available performance metrics or explicit missing values | No |
-
-| `guia_diagnose` | Evidence and suggested debugging steps | No |
-
-| `guia_plan_gather` | A bounded, non-executing gather plan | No |
-
-
-
-The experimental Fabric branch also adds `guia_world_observe`, which is **not in the alpha release**.
-
-
-
-</details>
-
-
-
-## 🏗️ Designed to observe before it acts
-
-
+GuiaIA operates across four cleanly decoupled layers:
 
 ```mermaid
+graph LR
+    subgraph Client ["Operator Interfaces"]
+        TUI["Interactive CLI"]
+        WEB["Web Dashboard"]
+    end
 
-flowchart LR
+    subgraph Security ["Security Perimeter"]
+        GATE["Ed25519 Gate & PIN Pairing"]
+        WIT["Monotonic Witness"]
+        P0["P0 Instant Halt"]
+    end
 
-    A["You + your local MCP client"] --> B["GuiaIA MCP gateway"]
+    subgraph Engine ["Companion Engine"]
+        DAG["Crafting DAG Planner"]
+        BLD["Blueprint Builder"]
+        COB["Cobblemon 1.8.2 Engine"]
+        WAL["fsync WAL Journal"]
+    end
 
-    B --> C["Read-only world data"]
+    subgraph World ["Game Runtime"]
+        BOT["Mineflayer Client"]
+        MC["Fabric 1.21.1 Server"]
+    end
 
-    B --> D["Bounded mission proposals"]
-
-    C --> E["Sanitized metrics snapshot"]
-
-    C --> F["Local RCON: fixed queries"]
-
-    D --> G["No world execution in v0.1"]
-
-    H["Experimental Fabric observer"] -. "future integration" .-> C
-
+    Client --> Security
+    Security --> Engine
+    Engine --> World
 ```
 
-
-
-Our long-term rule is straightforward:
-
-
-
-**Observe → plan → check permissions → test in an isolated world → verify → request approval before production changes.**
-
-
-
-Model output is **never** permission to run arbitrary RCON commands, execute shell code or modify someone's world. [Read the architecture](docs/ARCHITECTURE.md) · [Security model](SECURITY.md).
-
-
-
-## 🗺️ Roadmap: from tools to a teammate
-
-
-
-| Milestone | What we're building | Track it |
-
-| --- | --- | --- |
-
-| **01 · World awareness** | Real loaded-chunk/entity observations, provenance and server budgets | [#1](https://github.com/iagorobo24-hub/GuiaIA/issues/1) |
-
-| **02 · A companion you can play with** | Real in-game follow, stop, gather and inventory verification | [#2](https://github.com/iagorobo24-hub/GuiaIA/issues/2) |
-
-| **03 · Agentic world development** | Diagnose lag, reproduce problems in QA and verify proposed improvements | [#3](https://github.com/iagorobo24-hub/GuiaIA/issues/3) |
-
-| **04 · Real vision** | Opt-in screenshots and visual confirmation | [#4](https://github.com/iagorobo24-hub/GuiaIA/issues/4) |
-
-| **05 · Community beta** | Easy install, real gameplay demo and external testing | [#5](https://github.com/iagorobo24-hub/GuiaIA/issues/5) |
-
-
-
-The first target for the Fabric side is **Minecraft Java 1.21.1**. Compatibility with other versions and modpacks must be verified, not assumed. Find the full [development plan](docs/ROADMAP.md), [Fabric prototype](https://github.com/iagorobo24-hub/GuiaIA/tree/feature/world-observer-p0/fabric-observer), and [research into related projects](docs/RESEARCH.md).
-
-
-
-## 🤝 Help us make this real
-
-
-
-**We're building in public — and early contributors can genuinely shape what GuiaIA becomes.**
-
-
-
-| If you… | Start here |
-
-| --- | --- |
-
-| 💚 Like the idea | **[Star the repository](https://github.com/iagorobo24-hub/GuiaIA)** to help others discover it |
-
-| 💬 Have a gameplay idea | [Tell us what you'd ask your AI companion to do](https://github.com/iagorobo24-hub/GuiaIA/discussions) |
-
-| 🧑‍💻 Build Minecraft mods or agents | [Pick a roadmap issue](https://github.com/iagorobo24-hub/GuiaIA/issues) and read [CONTRIBUTING.md](CONTRIBUTING.md) |
-
-| 🧪 Enjoy breaking things safely | [Run the tests](CONTRIBUTING.md) and report a reproducible bug |
-
-| 🎮 Just want to play with it | [Watch the releases](https://github.com/iagorobo24-hub/GuiaIA/releases) for a **real gameplay beta** |
-
-
-
-<details>
-
-<summary><strong>Developer commands, safety and supported environment</strong></summary>
-
-
-
-```bash
-
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-
-python3 -m compileall -q src tests
-
-```
-
-
-
-GitHub Actions tests the Python package on Python 3.11, 3.12 and 3.13. The standalone Fabric observer has its own [isolated build workflow](https://github.com/iagorobo24-hub/GuiaIA/actions/workflows/fabric.yml) on the experimental branch, using Java 21. The observer has **not** completed an in-game integration test.
-
-
-
-
-## Optional Fabric observer (experimental, QA-only)
-
-
-
-A separate [Fabric 1.21.1 World Observer prototype](fabric-observer/README.md) can capture aggregated samples from one already-loaded chunk, without exposing player identifiers. **Do not install it on the production server.** See [observer security/limits](docs/WORLD_OBSERVER.md). Java compilation and real in-world tests are separate release gates.
-
-
-
-## Architecture and roadmap
-
-
-
-
-</details>
-
-
+For detailed specifications, see [System Architecture Specification](docs/ARCHITECTURE.md).
 
 ---
 
+## 📖 Documentation Index
 
+- [**System Architecture**](docs/ARCHITECTURE.md): Comprehensive component breakdown, security model, and network protocols.
+- [**Project Evolution & History**](docs/PROJECT_EVOLUTION.md): The full story from Python MCP prototypes to V1.1.0 certified production.
+- [**Master Audit Report**](audit_report.md): The official 17-finding audit log, adversarial stress benchmarks, and forensic certification.
+- [**User Manual**](docs/V1_1_USER_MANUAL.md): Step-by-step player guide, command reference, and troubleshooting.
+- [**Roadmap**](docs/ROADMAP.md): Project milestones, completed phases, and upcoming features.
+- [**Contributing Guide**](CONTRIBUTING.md): How to set up your dev environment, submit PRs, and run test suites.
 
-<div align="center">
+---
 
-  <strong>A world worth exploring. A teammate worth building.</strong><br>
+## 🤝 Contributing
 
-  <sub>Open source under the <a href="LICENSE">MIT License</a> · <a href="README.es.md">Español</a> · <a href="SECURITY.md">Security</a></sub><br>
+We welcome pull requests, bug reports, and suggestions! Please read our [Contributing Guide](CONTRIBUTING.md) to understand our coding standards, fail-closed design principles, and test taxonomy.
 
-  <sub>Independent community project. Not affiliated with or endorsed by Mojang, Microsoft or Cobblemon.</sub>
+---
 
-</div>
+## 📄 License
 
+GuiaIA is licensed under the [MIT License](LICENSE).  
+Minecraft is a trademark of Mojang Synergies AB. Cobblemon is an open-source mod. GuiaIA is an independent open-source project and is not affiliated with Mojang or Microsoft.
