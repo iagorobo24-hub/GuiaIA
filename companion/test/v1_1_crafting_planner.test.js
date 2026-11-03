@@ -14,7 +14,8 @@ const {
   executeCraftPlan,
   getStationType,
   writeDurableCraftJournal,
-  recoverCraftJournal
+  recoverCraftJournal,
+  reconcileCraftJournal
 } = require('../src/crafting_planner')
 
 test('Crafting Planner - Station classification (2x2 player vs 3x3 table)', () => {
@@ -432,5 +433,61 @@ test('Crafting Planner - Resuming from durable journal skips already-completed s
   assert.equal(recovered.journal.completedSteps, 2)
   assert.equal(recovered.journal.receipts.length, 2)
 
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+})
+
+
+test('Crafting Planner - Reconciles interrupted in_progress journal to needs_review with inventory check', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_craft_reconcile_test_'))
+  const journalPath = path.join(tempDir, 'craft_interrupted.json')
+  const inFlightJournal = {
+    missionId: 'craft_crash_01',
+    status: 'in_progress',
+    totalSteps: 2,
+    completedSteps: 1,
+    receipts: [{
+      step_index: 0,
+      target_item: 'oak_planks',
+      delta: 4,
+      consumed: { oak_log: 1 },
+      total_after: 4
+    }],
+    timestamp: Date.now() - 5000
+  }
+  writeDurableCraftJournal(journalPath, inFlightJournal)
+  const mockInventory = { oak_planks: 2 }
+  const reconcileRes = reconcileCraftJournal(journalPath, { inventory: mockInventory, mcData })
+  assert.equal(reconcileRes.ok, true)
+  assert.equal(reconcileRes.reconciled, true)
+  assert.equal(reconcileRes.status, 'needs_review')
+  assert.equal(reconcileRes.discrepanciesCount, 1)
+  assert.equal(reconcileRes.discrepancies[0].target_item, 'oak_planks')
+  assert.equal(reconcileRes.discrepancies[0].expectedMin, 4)
+  assert.equal(reconcileRes.discrepancies[0].found, 2)
+  const diskState = recoverCraftJournal(journalPath)
+  assert.equal(diskState.journal.status, 'needs_review')
+  assert.equal(diskState.journal.interruptedReason, 'process_terminated_in_flight')
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+})
+
+test('Crafting Planner - Corruption detection and automatic recovery from .bak file', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_craft_corrupt_test_'))
+  const journalPath = path.join(tempDir, 'craft_corrupt.json')
+  const validJournal = {
+    missionId: 'craft_valid_01',
+    status: 'completed',
+    totalSteps: 1,
+    completedSteps: 1,
+    receipts: [],
+    timestamp: Date.now()
+  }
+  writeDurableCraftJournal(journalPath, validJournal)
+  const updatedJournal = { ...validJournal, completedSteps: 2 }
+  writeDurableCraftJournal(journalPath, updatedJournal)
+  fs.writeFileSync(journalPath, 'corrupted bytes that are not json', 'utf8')
+  const recovered = recoverCraftJournal(journalPath)
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.recoveredFromBackup, true)
+  assert.equal(recovered.journal.missionId, 'craft_valid_01')
   try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
 })

@@ -57,13 +57,13 @@ function createCobblemonAdapter(options = {}) {
     if (action === 'pc_deposit') {
       const partySlot = execOptions.partySlot !== undefined ? execOptions.partySlot : 0
       const box = execOptions.box !== undefined ? execOptions.box : 0
-      return pcController.depositFromParty(partySlot, box, execOptions.slot, execOptions)
+      return await pcController.depositFromParty(partySlot, box, execOptions.slot, execOptions)
     }
 
     if (action === 'pc_withdraw') {
       const box = execOptions.box !== undefined ? execOptions.box : 0
       const slot = execOptions.slot !== undefined ? execOptions.slot : 0
-      return pcController.withdrawToParty(box, slot, execOptions.partySlot)
+      return await pcController.withdrawToParty(box, slot, execOptions.partySlot, execOptions)
     }
 
     throw new Error(`Unsupported Cobblemon action: ${action}`)

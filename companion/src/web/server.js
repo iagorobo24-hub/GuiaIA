@@ -69,6 +69,11 @@ function createWebDashboardServer(options = {}) {
   const pairingPin = options.pairingPin !== undefined
     ? String(options.pairingPin)
     : String(crypto.randomInt(100000, 999999))
+  const pinCreatedAt = options.pinCreatedAt !== undefined ? options.pinCreatedAt : Date.now()
+  const pinTtlMs = options.pinTtlMs !== undefined ? options.pinTtlMs : 300000 // 5 minutes TTL
+  const maxPinAttempts = options.maxPinAttempts !== undefined ? options.maxPinAttempts : 3
+  let failedPinAttempts = 0
+  let pinRevoked = false
   let pinUsed = false
   const controller = options.controller
   const bot = options.bot
@@ -241,6 +246,16 @@ function createWebDashboardServer(options = {}) {
           return
         }
 
+        if (pinRevoked || failedPinAttempts >= maxPinAttempts) {
+          sendError(res, 403, 'Forbidden: Pairing PIN is locked due to too many failed attempts')
+          return
+        }
+
+        if (Date.now() > pinCreatedAt + pinTtlMs) {
+          sendError(res, 401, 'Unauthorized: Pairing PIN has expired')
+          return
+        }
+
         if (!pairingPin || pinUsed) {
           sendError(res, 401, 'Unauthorized: Pairing PIN is expired or already consumed')
           return
@@ -248,7 +263,18 @@ function createWebDashboardServer(options = {}) {
 
         const candidatePin = typeof parsedBody?.pin === 'string' ? parsedBody.pin.trim() : ''
         if (!candidatePin || !timingSafeEqualStr(candidatePin, pairingPin)) {
-          sendError(res, 401, 'Unauthorized: Incorrect pairing PIN')
+          failedPinAttempts++
+          if (failedPinAttempts >= maxPinAttempts) {
+            pinRevoked = true
+            sendError(res, 403, 'Forbidden: Pairing PIN locked due to maximum failed attempts exceeded')
+            return
+          }
+          const remaining = maxPinAttempts - failedPinAttempts
+          sendJson(res, 401, {
+            ok: false,
+            error: 'Unauthorized: Incorrect pairing PIN',
+            attemptsRemaining: remaining
+          })
           return
         }
 
@@ -454,6 +480,11 @@ function createWebDashboardServer(options = {}) {
     broadcast,
     token,
     pairingPin,
+    pinCreatedAt,
+    pinTtlMs,
+    maxPinAttempts,
+    getFailedAttempts: () => failedPinAttempts,
+    isPinRevoked: () => pinRevoked,
     isPinUsed: () => pinUsed,
     host,
     port,

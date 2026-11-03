@@ -499,3 +499,135 @@ test('Web Dashboard - Negative Tests: Oversized Payloads Rejected with 413', asy
     await dashboard.close()
   }
 })
+
+test('Web Dashboard - PIN TTL expiration and brute-force lockout after 3 failed attempts', async () => {
+  const controller = createMockController()
+
+  // 1. PIN TTL Expiration test (pinTtlMs = 50ms)
+  const expiringDashboard = createWebDashboardServer({
+    port: 0,
+    controller,
+    pairingPin: '998877',
+    pinTtlMs: 50
+  })
+  const expAddr = await expiringDashboard.listenPromise
+
+  try {
+    // Wait 70ms for PIN to expire
+    await new Promise(r => setTimeout(r, 70))
+
+    const expRes = await request({
+      hostname: '127.0.0.1',
+      port: expAddr.port,
+      path: '/api/session/pair',
+      method: 'POST',
+      headers: {
+        'Host': `127.0.0.1:${expAddr.port}`,
+        'Content-Type': 'application/json'
+      }
+    }, JSON.stringify({ pin: '998877' }))
+
+    assert.equal(expRes.statusCode, 401)
+    assert.match(JSON.parse(expRes.body).error, /Pairing PIN has expired/i)
+  } finally {
+    await expiringDashboard.close()
+  }
+
+  // 2. Brute-Force lockout test (3 failed attempts -> HTTP 403 permanent lock)
+  const lockDashboard = createWebDashboardServer({
+    port: 0,
+    controller,
+    pairingPin: '654321',
+    maxPinAttempts: 3
+  })
+  const lockAddr = await lockDashboard.listenPromise
+
+  try {
+    // Attempt 1: wrong PIN -> HTTP 401, attemptsRemaining = 2
+    const att1 = await request({
+      hostname: '127.0.0.1',
+      port: lockAddr.port,
+      path: '/api/session/pair',
+      method: 'POST',
+      headers: { 'Host': `127.0.0.1:${lockAddr.port}`, 'Content-Type': 'application/json' }
+    }, JSON.stringify({ pin: '000001' }))
+    assert.equal(att1.statusCode, 401)
+    assert.equal(JSON.parse(att1.body).attemptsRemaining, 2)
+
+    // Attempt 2: wrong PIN -> HTTP 401, attemptsRemaining = 1
+    const att2 = await request({
+      hostname: '127.0.0.1',
+      port: lockAddr.port,
+      path: '/api/session/pair',
+      method: 'POST',
+      headers: { 'Host': `127.0.0.1:${lockAddr.port}`, 'Content-Type': 'application/json' }
+    }, JSON.stringify({ pin: '000002' }))
+    assert.equal(att2.statusCode, 401)
+    assert.equal(JSON.parse(att2.body).attemptsRemaining, 1)
+
+    // Attempt 3: wrong PIN -> HTTP 403, locked out!
+    const att3 = await request({
+      hostname: '127.0.0.1',
+      port: lockAddr.port,
+      path: '/api/session/pair',
+      method: 'POST',
+      headers: { 'Host': `127.0.0.1:${lockAddr.port}`, 'Content-Type': 'application/json' }
+    }, JSON.stringify({ pin: '000003' }))
+    assert.equal(att3.statusCode, 403)
+    assert.match(JSON.parse(att3.body).error, /Pairing PIN locked/i)
+    assert.equal(lockDashboard.isPinRevoked(), true)
+
+    // Attempt 4: Even with the CORRECT PIN, request MUST be rejected with HTTP 403
+    const att4 = await request({
+      hostname: '127.0.0.1',
+      port: lockAddr.port,
+      path: '/api/session/pair',
+      method: 'POST',
+      headers: { 'Host': `127.0.0.1:${lockAddr.port}`, 'Content-Type': 'application/json' }
+    }, JSON.stringify({ pin: '654321' }))
+    assert.equal(att4.statusCode, 403)
+    assert.match(JSON.parse(att4.body).error, /Pairing PIN is locked/i)
+  } finally {
+    await lockDashboard.close()
+  }
+})
+
+test('Web Dashboard - Negative Tests: Unauthenticated endpoints strictly fail-closed with 401', async () => {
+  const controller = createMockController()
+  const dashboard = createWebDashboardServer({ port: 0, controller })
+  const addr = await dashboard.listenPromise
+
+  try {
+    // 1. Unauthenticated /api/status -> 401
+    const resStatus = await request({
+      hostname: '127.0.0.1',
+      port: addr.port,
+      path: '/api/status',
+      method: 'GET',
+      headers: { 'Host': `127.0.0.1:${addr.port}` }
+    })
+    assert.equal(resStatus.statusCode, 401)
+
+    // 2. Unauthenticated /api/action -> 401
+    const resAction = await request({
+      hostname: '127.0.0.1',
+      port: addr.port,
+      path: '/api/action',
+      method: 'POST',
+      headers: { 'Host': `127.0.0.1:${addr.port}`, 'Content-Type': 'application/json' }
+    }, JSON.stringify({ instruction: 'sigue' }))
+    assert.equal(resAction.statusCode, 401)
+
+    // 3. Unauthenticated /api/emergency-stop -> 401
+    const resStop = await request({
+      hostname: '127.0.0.1',
+      port: addr.port,
+      path: '/api/emergency-stop',
+      method: 'POST',
+      headers: { 'Host': `127.0.0.1:${addr.port}` }
+    })
+    assert.equal(resStop.statusCode, 401)
+  } finally {
+    await dashboard.close()
+  }
+})

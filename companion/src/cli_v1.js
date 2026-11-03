@@ -19,6 +19,7 @@ const { buildMineflayerAuthOptions, getAuthStorageDir } = require('./auth/micros
 const { createOwnerPinPairing } = require('./auth/owner_pin_pairing')
 const { attachProfileDetector, ensureRecipeCompatibility } = require('./cobblemon_profile')
 const { createLocalMonotonicWitness } = require('./local_monotonic_witness')
+const { createRemoteWitnessClient, validateRemoteWitnessConfig } = require('./remote_witness_client')
 
 // ANSI Color Helpers
 const C = {
@@ -48,7 +49,10 @@ function parseCliArgs(args) {
     v1Batch: true,
     interactive: true,
     dashboard: false,
-    dashboardPort: 8080
+    dashboardPort: 8080,
+    witnessUrl: process.env.GUIAIA_REMOTE_WITNESS_URL || null,
+    witnessKey: process.env.GUIAIA_REMOTE_WITNESS_KEY || null,
+    witnessTimeout: process.env.GUIAIA_REMOTE_WITNESS_TIMEOUT_MS ? parseInt(process.env.GUIAIA_REMOTE_WITNESS_TIMEOUT_MS, 10) : 2000
   }
 
   for (let i = 0; i < args.length; i++) {
@@ -59,6 +63,9 @@ function parseCliArgs(args) {
     else if (arg === '--auth' && args[i + 1]) options.auth = args[++i].toLowerCase()
     else if (arg === '--owner' && args[i + 1]) options.owner = args[++i]
     else if (arg === '--mode' && args[i + 1]) options.identityMode = args[++i]
+    else if (arg === '--witness-url' && args[i + 1]) options.witnessUrl = args[++i]
+    else if (arg === '--witness-key' && args[i + 1]) options.witnessKey = args[++i]
+    else if (arg === '--witness-timeout' && args[i + 1]) options.witnessTimeout = parseInt(args[++i], 10)
     else if (arg === '--dashboard' || arg === '--web') {
       options.dashboard = true
       if (args[i + 1] && /^\d+$/.test(args[i + 1])) {
@@ -89,6 +96,9 @@ Opciones:
   --auth <modo>           Modo de autenticacion: 'offline' o 'microsoft' (default: offline)
   --owner <nombre>        Nombre del jugador operador autorizado (opcional si se usa PIN)
   --mode <modo>           Modo de seguridad: 'vanilla_paired_operator' o 'trusted_server_bridge_lab'
+  --witness-url <url>     URL del testigo remoto (ej: http://127.0.0.1:8090)
+  --witness-key <path>    Ruta a clave pública Ed25519 o PEM del testigo remoto
+  --witness-timeout <ms>  Timeout máximo de red para el testigo remoto (default: 2000)
   --non-interactive       Ejecuta sin prompt interactivo de configuracion
   --help, -h              Muestra esta ayuda
 
@@ -161,6 +171,31 @@ async function startInteractiveCli(options) {
     worldId,
     operatorPublicKeyPem
   })
+
+  // Optional Remote Monotonic Witness for distributed multi-host deployments
+  let remoteWitnessClient = null
+  if (options.witnessUrl) {
+    let witnessKeyPem = options.witnessKey
+    if (witnessKeyPem && !witnessKeyPem.includes('BEGIN PUBLIC KEY')) {
+      if (fs.existsSync(witnessKeyPem)) {
+        witnessKeyPem = fs.readFileSync(witnessKeyPem, 'utf8')
+      }
+    }
+    const witnessConfig = {
+      url: options.witnessUrl,
+      worldId,
+      operatorPublicKeyPem,
+      witnessPublicKeyPem: witnessKeyPem,
+      timeoutMs: options.witnessTimeout || 2000
+    }
+    const validation = validateRemoteWitnessConfig(witnessConfig)
+    if (!validation.valid) {
+      console.error(`${C.red}Configuración de testigo remoto inválida: ${validation.error}${C.reset}`)
+      process.exit(1)
+    }
+    remoteWitnessClient = createRemoteWitnessClient(witnessConfig)
+    console.log(`${C.green}✔ Testigo remoto distribuido configurado: ${options.witnessUrl}${C.reset}`)
+  }
 
   // PIN Pairing manager for offline / LAN authentication
   const pairingManager = createOwnerPinPairing({
@@ -241,7 +276,9 @@ async function startInteractiveCli(options) {
       },
       isRevoked: () => false,
       ledgerDirectory: ledgerDir,
-      v1Batch: true
+      v1Batch: true,
+      multiHostEnabled: Boolean(remoteWitnessClient),
+      remoteWitnessClient: remoteWitnessClient || null
     }
 
     controller = createSecureCompanionController({

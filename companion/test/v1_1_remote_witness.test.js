@@ -4,6 +4,10 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const http = require('node:http')
 const crypto = require('node:crypto')
+const fs = require('node:fs')
+const path = require('node:path')
+const os = require('node:os')
+const { fork } = require('node:child_process')
 
 const {
   createRemoteWitnessClient,
@@ -676,5 +680,116 @@ test('Remote Witness - Multi-host disaster recovery lifecycle: crash -> fail-clo
     assert.equal(teseliaStatus, 'NOT_RUN_PHYSICAL_HARDWARE_PROTECTED')
   } finally {
     server.close()
+  }
+})
+
+test('Remote Witness - Multi-process deployment: OS child process, fail-closed on kill and state recovery', async () => {
+  const keys = createKeys()
+  const worldId = 'world_multiprocess_test'
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_witness_proc_'))
+  const statePath = path.join(tempDir, 'durable_witness.json')
+  const serverScript = path.join(__dirname, '..', 'src', 'remote_witness_server.js')
+
+  // Initial persistent state
+  const initialSequence = 15
+  const initialSha = 'f'.repeat(64)
+  fs.writeFileSync(statePath, JSON.stringify({
+    sequence: initialSequence,
+    registrySha256: initialSha
+  }, null, 2), 'utf8')
+
+  function spawnWitnessProcess(targetPort = 0) {
+    return new Promise((resolve, reject) => {
+      const child = fork(serverScript, [
+        '--port', String(targetPort),
+        '--world', worldId,
+        '--state', statePath,
+        '--witness-priv-key', keys.witness.privateKey.export({ format: 'pem', type: 'pkcs8' }),
+        '--operator-pub-key', keys.operatorPem
+      ], {
+        stdio: ['ignore', 'ignore', 'inherit', 'ipc']
+      })
+
+      child.once('message', (msg) => {
+        if (msg && msg.type === 'ready') {
+          resolve({ child, port: msg.port })
+        }
+      })
+
+      child.once('error', reject)
+    })
+  }
+
+  // 1. Spawn Process 1 (Child OS process running witness server)
+  const proc1 = await spawnWitnessProcess(0)
+  const boundPort = proc1.port
+  assert.ok(boundPort > 0)
+  assert.ok(proc1.child.pid > 0)
+
+  const client = createRemoteWitnessClient({
+    url: `http://127.0.0.1:${boundPort}`,
+    worldId,
+    operatorPublicKeyPem: keys.operatorPem,
+    witnessPublicKeyPem: keys.witnessPem,
+    timeoutMs: 400
+  })
+
+  try {
+    // 2. Query child process from main process over TCP
+    const latest = await client.readLatest()
+    assert.equal(latest.sequence, 15)
+    assert.equal(latest.registrySha256, initialSha)
+
+    // 3. Abrupt termination of the child OS process
+    const exitPromise = new Promise(resolve => proc1.child.once('exit', resolve))
+    proc1.child.kill()
+    await exitPromise
+
+    // 4. Client MUST fail closed immediately (fail-closed, no silent fallback)
+    await assert.rejects(
+      async () => client.readLatest(),
+      (err) => {
+        assert.ok(err instanceof RemoteWitnessUnavailableError)
+        return true
+      }
+    )
+
+    // 5. Recovery: Restart child OS process on exact same port pointing to same durable storage
+    const proc2 = await spawnWitnessProcess(boundPort)
+    assert.equal(proc2.port, boundPort)
+
+    try {
+      // 6. Client reconnects to restarted child process and reads intact high-water mark
+      const postRestart = await client.readLatest()
+      assert.equal(postRestart.sequence, 15)
+
+      // 7. Advance sequence to 16 through separate process
+      const now = Date.now()
+      const fingerprint = computeOperatorFingerprint(crypto.createPublicKey(keys.operatorPem))
+      const ticket = signPayload({
+        aud: 'guiaia:checkpoint-advance:v1',
+        worldId,
+        operatorFingerprint: fingerprint,
+        previousSequence: 15,
+        previousSha256: initialSha,
+        sequence: 16,
+        registrySha256: '1'.repeat(64),
+        nonce: crypto.randomUUID(),
+        issuedAt: now,
+        expiresAt: now + 5000
+      }, keys.operator)
+
+      const advanceRes = await client.publishAdvance(ticket)
+      assert.equal(advanceRes.sequence, 16)
+
+      // 8. Verify physical state on disk was updated durably by child process
+      const onDisk = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+      assert.equal(onDisk.sequence, 16)
+      assert.equal(onDisk.registrySha256, '1'.repeat(64))
+    } finally {
+      proc2.child.kill()
+    }
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
   }
 })

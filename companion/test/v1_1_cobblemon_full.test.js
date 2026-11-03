@@ -235,25 +235,25 @@ test('Cobblemon Battle FSM - Turn timeout triggers automatic flee', async () => 
   assert.equal(fleeRes.reason, 'turn_timeout_exceeded')
 })
 
-test('Cobblemon PC Controller - Fails closed when server packet is unverified', () => {
+test('Cobblemon PC Controller - Fails closed when server packet is unverified', async () => {
   const unverifiedPc = createCobblemonPcController({})
   const queryRes = unverifiedPc.queryBox(0)
   assert.equal(queryRes.ok, false)
   assert.equal(queryRes.status, 'blocked')
   assert.equal(queryRes.reason, 'unverified_server_source_of_truth')
 
-  const depRes = unverifiedPc.depositFromParty(0, 0, 0)
+  const depRes = await unverifiedPc.depositFromParty(0, 0, 0)
   assert.equal(depRes.ok, false)
   assert.equal(depRes.status, 'blocked')
   assert.equal(depRes.reason, 'unverified_server_source_of_truth')
 
-  const withRes = unverifiedPc.withdrawToParty(0, 0)
+  const withRes = await unverifiedPc.withdrawToParty(0, 0)
   assert.equal(withRes.ok, false)
   assert.equal(withRes.status, 'blocked')
   assert.equal(withRes.reason, 'unverified_server_source_of_truth')
 })
 
-test('Cobblemon PC Controller - Bounds validation, deposit and withdrawal with authentic server packet', () => {
+test('Cobblemon PC Controller - Bounds validation, deposit and withdrawal with authentic server packet', async () => {
   // Bounds check
   assert.doesNotThrow(() => validateBoxBounds(0))
   assert.doesNotThrow(() => validateBoxBounds(31))
@@ -288,9 +288,29 @@ test('Cobblemon PC Controller - Bounds validation, deposit and withdrawal with a
   assert.equal(emptyQuery.totalStored, 0)
   assert.equal(emptyQuery.freeSlots, 30)
 
-  // Deposit genuine pokemon from party slot 1 into box 0 slot 5
-  const depositRes = pc.depositFromParty(1, 0, 5)
+  // 1. Attempt deposit WITHOUT server channel or confirmation -> must fail closed
+  const blockedDep = await pc.depositFromParty(1, 0, 5)
+  assert.equal(blockedDep.ok, false)
+  assert.equal(blockedDep.status, 'blocked')
+  assert.equal(blockedDep.reason, 'unverified_server_storage_channel')
+
+  // 2. Deposit genuine pokemon from party slot 1 into box 0 slot 5 with server confirmation packet
+  const depositRes = await pc.depositFromParty(1, 0, 5, {
+    serverConfirmationPacket: {
+      channel: 'cobblemon:pc_data',
+      playerUuid: botUuid,
+      boxes: {
+        '0': [
+          ...new Array(5).fill(null),
+          { species: 'pikachu', level: 25 },
+          ...new Array(24).fill(null)
+        ]
+      }
+    }
+  })
   assert.equal(depositRes.ok, true)
+  assert.equal(depositRes.status, 'confirmed')
+  assert.equal(depositRes.observedServerState, true)
   assert.equal(depositRes.slot, 5)
   assert.equal(depositRes.pokemon.species, 'pikachu')
 
@@ -301,11 +321,27 @@ test('Cobblemon PC Controller - Bounds validation, deposit and withdrawal with a
   assert.equal(queryAfter.slots[0].pokemon.species, 'pikachu')
 
   // Re-depositing to same slot must throw
-  assert.throws(() => pc.depositFromParty(1, 0, 5), /already occupied/i)
+  await assert.rejects(async () => pc.depositFromParty(1, 0, 5), /already occupied/i)
 
-  // Withdraw back to party
-  const withdrawRes = pc.withdrawToParty(0, 5, 1)
+  // 3. Attempt withdrawal WITHOUT server channel or confirmation -> must fail closed
+  const blockedWith = await pc.withdrawToParty(0, 5, 1)
+  assert.equal(blockedWith.ok, false)
+  assert.equal(blockedWith.status, 'blocked')
+  assert.equal(blockedWith.reason, 'unverified_server_storage_channel')
+
+  // 4. Withdraw back to party with server confirmation packet
+  const withdrawRes = await pc.withdrawToParty(0, 5, 1, {
+    serverConfirmationPacket: {
+      channel: 'cobblemon:pc_data',
+      playerUuid: botUuid,
+      boxes: {
+        '0': new Array(30).fill(null) // Empty now
+      }
+    }
+  })
   assert.equal(withdrawRes.ok, true)
+  assert.equal(withdrawRes.status, 'confirmed')
+  assert.equal(withdrawRes.observedServerState, true)
   assert.equal(withdrawRes.boxSlot, 5)
   assert.equal(withdrawRes.pokemon.species, 'pikachu')
 
@@ -314,7 +350,7 @@ test('Cobblemon PC Controller - Bounds validation, deposit and withdrawal with a
   assert.equal(queryEmptyAgain.totalStored, 0)
 })
 
-test('Cobblemon Unified Adapter - Dispatches inspect, capture, battle and PC actions with server attestation', async () => {
+test('Cobblemon Unified Adapter - Dispatches inspect, capture, battle and PC actions with server protocol verification', async () => {
   const mockBot = {
     entity: { position: new Vec3(0, 64, 0) },
     inventory: { items: () => [{ name: 'poke_ball', count: 5 }] },
@@ -361,16 +397,27 @@ test('Cobblemon Unified Adapter - Dispatches inspect, capture, battle and PC act
   assert.equal(battleRes.ok, true)
   assert.equal(battleRes.state, 'in_battle')
 
-  // 4. PC Deposit (with authentic server storage packet)
+  // 4. PC Deposit (with authentic server storage packet and confirmation)
   adapter.pc.ingestServerStoragePacket({
     channel: 'cobblemon:pc_data',
     boxes: { '1': new Array(30).fill(null) }
   })
   const pcDepRes = await adapter.execute(
     { action: 'pc_deposit' },
-    { partySlot: 0, box: 1, partyMember: { species: 'snorlax', level: 30 } }
+    {
+      partySlot: 0,
+      box: 1,
+      partyMember: { species: 'snorlax', level: 30 },
+      serverConfirmationPacket: {
+        channel: 'cobblemon:pc_data',
+        boxes: {
+          '1': [{ species: 'snorlax', level: 30 }, ...new Array(29).fill(null)]
+        }
+      }
+    }
   )
   assert.equal(pcDepRes.ok, true)
   assert.equal(pcDepRes.box, 1)
+  assert.equal(pcDepRes.observedServerState, true)
   assert.equal(pcDepRes.pokemon.species, 'snorlax')
 })

@@ -2,10 +2,11 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const crypto = require('node:crypto')
 const mcDataFactory = require('minecraft-data')
 
 /**
- * Persists craft journal to disk atomically.
+ * Persists craft journal to disk atomically with fsync and cryptographic checksum.
  */
 function writeDurableCraftJournal(journalPath, journalData) {
   if (!journalPath) return
@@ -13,27 +14,135 @@ function writeDurableCraftJournal(journalPath, journalData) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
+
+  const payloadString = JSON.stringify(journalData)
+  const sha256 = crypto.createHash('sha256').update(payloadString).digest('hex')
+  const envelope = {
+    format: 'guiaia_durable_craft_journal_v1',
+    schemaVersion: 1,
+    sha256,
+    writtenAt: Date.now(),
+    payload: journalData
+  }
+
+  const envelopeJson = JSON.stringify(envelope, null, 2)
   const tempPath = `${journalPath}.${process.pid}.${Date.now()}.tmp`
-  fs.writeFileSync(tempPath, JSON.stringify(journalData, null, 2), 'utf8')
+  const fd = fs.openSync(tempPath, 'w')
+  try {
+    fs.writeSync(fd, envelopeJson, 0, 'utf8')
+    fs.fsyncSync(fd) // Flush OS buffers to physical storage media
+  } finally {
+    fs.closeSync(fd)
+  }
+
+  if (fs.existsSync(journalPath)) {
+    try {
+      fs.copyFileSync(journalPath, `${journalPath}.bak`)
+    } catch {}
+  }
+
   fs.renameSync(tempPath, journalPath)
 }
 
 /**
- * Recovers craft journal from disk and validates integrity.
+ * Recovers craft journal from disk, verifying cryptographic checksum envelope.
+ * Falls back to valid .bak file if primary was corrupted by torn writes.
  */
 function recoverCraftJournal(journalPath) {
   if (!journalPath || !fs.existsSync(journalPath)) {
     return { ok: false, reason: 'journal_not_found' }
   }
-  try {
-    const content = fs.readFileSync(journalPath, 'utf8')
-    const journal = JSON.parse(content)
-    if (!journal || typeof journal !== 'object' || !journal.missionId) {
+
+  function readAndValidate(targetPath) {
+    try {
+      const content = fs.readFileSync(targetPath, 'utf8')
+      const parsed = JSON.parse(content)
+
+      if (parsed && parsed.format === 'guiaia_durable_craft_journal_v1') {
+        const computedSha256 = crypto.createHash('sha256').update(JSON.stringify(parsed.payload)).digest('hex')
+        if (computedSha256 !== parsed.sha256) {
+          return { ok: false, reason: 'checksum_mismatch', error: 'Craft journal checksum mismatch' }
+        }
+        return { ok: true, journal: parsed.payload, verifiedChecksum: true }
+      }
+
+      // Legacy format backwards compatibility
+      if (parsed && typeof parsed === 'object' && parsed.missionId) {
+        return { ok: true, journal: parsed, verifiedChecksum: false }
+      }
+
       return { ok: false, reason: 'corrupt_journal' }
+    } catch (err) {
+      return { ok: false, reason: 'unreadable_journal', error: err.message }
     }
-    return { ok: true, journal }
-  } catch (err) {
-    return { ok: false, reason: 'unreadable_journal', error: err.message }
+  }
+
+  const primary = readAndValidate(journalPath)
+  if (primary.ok) return primary
+
+  const backupPath = `${journalPath}.bak`
+  if (fs.existsSync(backupPath)) {
+    const backupRes = readAndValidate(backupPath)
+    if (backupRes.ok) {
+      backupRes.recoveredFromBackup = true
+      return backupRes
+    }
+  }
+
+  return primary
+}
+
+/**
+ * Reconciles an interrupted crafting mission journal against inventory state.
+ * If left in_progress, transitions safely to needs_review.
+ */
+function reconcileCraftJournal(journalPath, options = {}) {
+  const recovered = recoverCraftJournal(journalPath)
+  if (!recovered.ok) {
+    return { ok: false, reason: recovered.reason, error: recovered.error }
+  }
+
+  const journal = recovered.journal
+  const inventory = options.inventory || options.bot?.inventory
+  const discrepancies = []
+
+  if (inventory && Array.isArray(journal.receipts)) {
+    for (const receipt of journal.receipts) {
+      const currentCount = countInventoryItem(inventory, receipt.target_item, options.mcData)
+      if (currentCount < receipt.delta) {
+        discrepancies.push({
+          target_item: receipt.target_item,
+          expectedMin: receipt.delta,
+          found: currentCount
+        })
+      }
+    }
+  }
+
+  if (journal.status === 'in_progress') {
+    journal.status = 'needs_review'
+    journal.interruptedReason = 'process_terminated_in_flight'
+    journal.reconciledAt = Date.now()
+    journal.discrepancies = discrepancies
+    writeDurableCraftJournal(journalPath, journal)
+    return {
+      ok: true,
+      reconciled: true,
+      action: 'quarantine_for_review',
+      status: 'needs_review',
+      discrepanciesCount: discrepancies.length,
+      discrepancies,
+      journal
+    }
+  }
+
+  return {
+    ok: true,
+    reconciled: false,
+    status: journal.status,
+    discrepanciesCount: discrepancies.length,
+    discrepancies,
+    journal
   }
 }
 
@@ -526,5 +635,6 @@ module.exports = {
   extractRecipeIngredients,
   writeDurableCraftJournal,
   recoverCraftJournal,
+  reconcileCraftJournal,
   STATION_MAP
 }

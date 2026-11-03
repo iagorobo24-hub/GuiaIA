@@ -23,6 +23,7 @@ const {
   previewBlueprint,
   writeDurableJournal,
   recoverBuildJournal,
+  reconcileBuildJournal,
   computeBlueprintSha256
 } = require('../src/blueprint_builder')
 
@@ -551,5 +552,71 @@ test('Blueprint Builder - Fails closed and reports partial_failure if block plac
   assert.equal(recovered.journal.status, 'partial_failure')
   assert.equal(recovered.journal.failedBlocks.length, 1)
 
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+})
+
+
+test('Blueprint Builder - Reconciles interrupted in_progress journal to needs_review with physical check', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_build_reconcile_test_'))
+  const journalPath = path.join(tempDir, 'build_interrupted.json')
+  const inFlightJournal = {
+    buildId: 'build_crash_01',
+    blueprintId: 'wall',
+    origin: { x: 10, y: 64, z: 10 },
+    status: 'in_progress',
+    totalBlocks: 3,
+    placedBlocks: [
+      { x: 0, y: 0, z: 0, block: 'cobblestone' },
+      { x: 1, y: 0, z: 0, block: 'cobblestone' }
+    ],
+    skippedExisting: [],
+    failedBlocks: [],
+    batchesCompleted: 0,
+    timestamp: Date.now() - 5000
+  }
+  writeDurableJournal(journalPath, inFlightJournal)
+  const world = new Map([['10,64,10', 'cobblestone']])
+  const mockBot = {
+    blockAt: (pos) => {
+      const key = `${pos.x},${pos.y},${pos.z}`
+      return world.has(key) ? { name: world.get(key), position: pos } : { name: 'air', position: pos }
+    }
+  }
+  const reconcileRes = reconcileBuildJournal(journalPath, { bot: mockBot })
+  assert.equal(reconcileRes.ok, true)
+  assert.equal(reconcileRes.reconciled, true)
+  assert.equal(reconcileRes.status, 'needs_review')
+  assert.equal(reconcileRes.discrepanciesCount, 1)
+  assert.equal(reconcileRes.discrepancies[0].expected, 'cobblestone')
+  assert.equal(reconcileRes.discrepancies[0].found, 'air')
+  const diskState = recoverBuildJournal(journalPath)
+  assert.equal(diskState.journal.status, 'needs_review')
+  assert.equal(diskState.journal.interruptedReason, 'process_terminated_in_flight')
+  try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+})
+
+test('Blueprint Builder - Corruption detection and automatic recovery from .bak file', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_build_corrupt_test_'))
+  const journalPath = path.join(tempDir, 'build_corrupt.json')
+  const validJournal = {
+    buildId: 'build_valid_01',
+    blueprintId: 'pillar',
+    origin: { x: 0, y: 64, z: 0 },
+    status: 'completed',
+    totalBlocks: 1,
+    placedBlocks: [{ x: 0, y: 0, z: 0, block: 'stone' }],
+    skippedExisting: [],
+    failedBlocks: [],
+    batchesCompleted: 1,
+    timestamp: Date.now()
+  }
+  writeDurableJournal(journalPath, validJournal)
+  const updatedJournal = { ...validJournal, batchesCompleted: 2 }
+  writeDurableJournal(journalPath, updatedJournal)
+  fs.writeFileSync(journalPath, 'corrupted bytes that are not json', 'utf8')
+  const recovered = recoverBuildJournal(journalPath)
+  assert.equal(recovered.ok, true)
+  assert.equal(recovered.recoveredFromBackup, true)
+  assert.equal(recovered.journal.buildId, 'build_valid_01')
   try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
 })

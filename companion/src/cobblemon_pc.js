@@ -23,7 +23,10 @@ function validatePartySlotBounds(slot) {
 }
 
 /**
- * Verifies and decodes an authentic Cobblemon PC server storage packet envelope.
+ * Verifies and decodes a canonical Cobblemon PC server storage packet envelope.
+ * Provenance is verified via custom payload protocol channels:
+ * - 'cobblemon:pc_data' (Cobblemon 1.8.x PC boxes snapshot)
+ * - 'cobblemon:storage_data' (Cobblemon storage sync)
  *
  * @param {Object} packet Incoming network packet or payload
  * @param {string} expectedPlayerUuid Expected player/bot UUID
@@ -123,7 +126,7 @@ function createCobblemonPcController(options = {}) {
     }
   }
 
-  function depositFromParty(partySlot, targetBox = 0, targetSlot = null, depositOptions = {}) {
+  async function depositFromParty(partySlot, targetBox = 0, targetSlot = null, depositOptions = {}) {
     if (!isVerified()) {
       return {
         ok: false,
@@ -156,20 +159,106 @@ function createCobblemonPcController(options = {}) {
       }
     }
 
-    const pokemon = { ...partyPokemon, depositedAt: Date.now(), sourcePartySlot: partySlot }
+    // Require authentic server storage communication channel or verified post-transfer packet
+    const hasServerChannel = Boolean(
+      (bot?._client && typeof bot._client.write === 'function') ||
+      (options.serverChannel && typeof options.serverChannel.write === 'function')
+    )
+    const serverConfirmationPacket = depositOptions.serverConfirmationPacket || depositOptions.serverPacket
+
+    if (!hasServerChannel && !serverConfirmationPacket) {
+      return {
+        ok: false,
+        status: 'blocked',
+        reason: 'unverified_server_storage_channel',
+        message: 'Cobblemon PC deposit blocked: no active server storage communication channel or verified post-transfer confirmation packet',
+        partySlot,
+        targetBox,
+        targetSlot: slot
+      }
+    }
+
+    if (hasServerChannel) {
+      const channel = options.serverChannel || bot._client
+      try {
+        channel.write('custom_payload', {
+          channel: 'cobblemon:pc_action',
+          data: Buffer.from(JSON.stringify({
+            action: 'deposit',
+            partySlot,
+            box: targetBox,
+            slot
+          }))
+        })
+      } catch {}
+    }
+
+    let confirmedObservation = null
+
+    if (serverConfirmationPacket) {
+      if (serverConfirmationPacket.channel === 'cobblemon:pc_data' || serverConfirmationPacket.channel === 'cobblemon:storage_data') {
+        const verified = verifyServerStoragePacket(serverConfirmationPacket, playerUuid)
+        if (verified.valid && verified.boxes[targetBox]?.[slot]) {
+          confirmedObservation = verified.boxes[targetBox][slot]
+        }
+      } else if (serverConfirmationPacket.channel === 'cobblemon:pc_action_result' || serverConfirmationPacket.action === 'deposit') {
+        if (serverConfirmationPacket.success !== false) {
+          confirmedObservation = serverConfirmationPacket.storedPokemon || partyPokemon
+        }
+      }
+    } else if (hasServerChannel && depositOptions.awaitServerPacket) {
+      const packet = await new Promise(resolve => {
+        const timeout = setTimeout(() => resolve(null), depositOptions.packetTimeoutMs || 3000)
+        timeout.unref?.()
+        bot._client.once('custom_payload', p => {
+          if (p?.channel === 'cobblemon:pc_data' || p?.channel === 'cobblemon:pc_action_result') {
+            clearTimeout(timeout)
+            resolve(p)
+          }
+        })
+      })
+      if (packet) {
+        const parsed = typeof packet.data === 'string' ? JSON.parse(packet.data) : packet
+        if (parsed.channel === 'cobblemon:pc_data') {
+          const verified = verifyServerStoragePacket(parsed, playerUuid)
+          if (verified.valid && verified.boxes[targetBox]?.[slot]) {
+            confirmedObservation = verified.boxes[targetBox][slot]
+          }
+        } else if (parsed.action === 'deposit' && parsed.success !== false) {
+          confirmedObservation = parsed.storedPokemon || partyPokemon
+        }
+      }
+    }
+
+    if (!confirmedObservation) {
+      return {
+        ok: false,
+        status: 'failed',
+        reason: 'server_transfer_unconfirmed',
+        message: 'Cobblemon PC deposit failed: server storage transfer confirmation not observed',
+        partySlot,
+        targetBox,
+        targetSlot: slot
+      }
+    }
+
+    // Update local cache ONLY upon verified post-transfer observation from server
+    const pokemon = { ...partyPokemon, ...confirmedObservation, depositedAt: Date.now(), sourcePartySlot: partySlot }
     box[slot] = pokemon
 
     return {
       ok: true,
+      status: 'confirmed',
       action: 'pc_deposit',
       partySlot,
       box: targetBox,
       slot,
-      pokemon
+      pokemon,
+      observedServerState: true
     }
   }
 
-  function withdrawToParty(boxIndex, boxSlot, targetPartySlot = null) {
+  async function withdrawToParty(boxIndex, boxSlot, targetPartySlot = null, withdrawOptions = {}) {
     if (!isVerified()) {
       return {
         ok: false,
@@ -194,15 +283,102 @@ function createCobblemonPcController(options = {}) {
       partySlot = 0
     }
 
+    // Require authentic server storage communication channel or verified post-transfer packet
+    const hasServerChannel = Boolean(
+      (bot?._client && typeof bot._client.write === 'function') ||
+      (options.serverChannel && typeof options.serverChannel.write === 'function')
+    )
+    const serverConfirmationPacket = withdrawOptions.serverConfirmationPacket || withdrawOptions.serverPacket
+
+    if (!hasServerChannel && !serverConfirmationPacket) {
+      return {
+        ok: false,
+        status: 'blocked',
+        reason: 'unverified_server_storage_channel',
+        message: 'Cobblemon PC withdrawal blocked: no active server storage communication channel or verified post-transfer confirmation packet',
+        box: boxIndex,
+        boxSlot,
+        targetPartySlot: partySlot
+      }
+    }
+
+    if (hasServerChannel) {
+      const channel = options.serverChannel || bot._client
+      try {
+        channel.write('custom_payload', {
+          channel: 'cobblemon:pc_action',
+          data: Buffer.from(JSON.stringify({
+            action: 'withdraw',
+            box: boxIndex,
+            slot: boxSlot,
+            targetPartySlot: partySlot
+          }))
+        })
+      } catch {}
+    }
+
+    let confirmedObservation = false
+
+    if (serverConfirmationPacket) {
+      if (serverConfirmationPacket.channel === 'cobblemon:pc_data' || serverConfirmationPacket.channel === 'cobblemon:storage_data') {
+        const verified = verifyServerStoragePacket(serverConfirmationPacket, playerUuid)
+        // Post-transfer observation: box slot must now be empty
+        if (verified.valid && (verified.boxes[boxIndex]?.[boxSlot] === null || verified.boxes[boxIndex]?.[boxSlot] === undefined)) {
+          confirmedObservation = true
+        }
+      } else if (serverConfirmationPacket.channel === 'cobblemon:pc_action_result' || serverConfirmationPacket.action === 'withdraw') {
+        if (serverConfirmationPacket.success !== false) {
+          confirmedObservation = true
+        }
+      }
+    } else if (hasServerChannel && withdrawOptions.awaitServerPacket) {
+      const packet = await new Promise(resolve => {
+        const timeout = setTimeout(() => resolve(null), withdrawOptions.packetTimeoutMs || 3000)
+        timeout.unref?.()
+        bot._client.once('custom_payload', p => {
+          if (p?.channel === 'cobblemon:pc_data' || p?.channel === 'cobblemon:pc_action_result') {
+            clearTimeout(timeout)
+            resolve(p)
+          }
+        })
+      })
+      if (packet) {
+        const parsed = typeof packet.data === 'string' ? JSON.parse(packet.data) : packet
+        if (parsed.channel === 'cobblemon:pc_data') {
+          const verified = verifyServerStoragePacket(parsed, playerUuid)
+          if (verified.valid && (verified.boxes[boxIndex]?.[boxSlot] === null || verified.boxes[boxIndex]?.[boxSlot] === undefined)) {
+            confirmedObservation = true
+          }
+        } else if (parsed.action === 'withdraw' && parsed.success !== false) {
+          confirmedObservation = true
+        }
+      }
+    }
+
+    if (!confirmedObservation) {
+      return {
+        ok: false,
+        status: 'failed',
+        reason: 'server_transfer_unconfirmed',
+        message: 'Cobblemon PC withdrawal failed: server storage transfer confirmation not observed',
+        box: boxIndex,
+        boxSlot,
+        targetPartySlot: partySlot
+      }
+    }
+
+    // Update local cache ONLY upon verified post-transfer observation from server
     box[boxSlot] = null
 
     return {
       ok: true,
+      status: 'confirmed',
       action: 'pc_withdraw',
       box: boxIndex,
       boxSlot,
       targetPartySlot: partySlot,
-      pokemon
+      pokemon,
+      observedServerState: true
     }
   }
 

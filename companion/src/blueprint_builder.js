@@ -26,7 +26,7 @@ const GRAVITY_BLOCKS = Object.freeze(new Set([
 ]))
 
 /**
- * Persists build journal to disk atomically with sync write.
+ * Persists build journal to disk atomically with fsync and cryptographic checksum.
  */
 function writeDurableJournal(journalPath, journalData) {
   if (!journalPath) return
@@ -34,27 +34,141 @@ function writeDurableJournal(journalPath, journalData) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true })
   }
+
+  const payloadString = JSON.stringify(journalData)
+  const sha256 = crypto.createHash('sha256').update(payloadString).digest('hex')
+  const envelope = {
+    format: 'guiaia_durable_build_journal_v1',
+    schemaVersion: 1,
+    sha256,
+    writtenAt: Date.now(),
+    payload: journalData
+  }
+
+  const envelopeJson = JSON.stringify(envelope, null, 2)
   const tempPath = `${journalPath}.${process.pid}.${Date.now()}.tmp`
-  fs.writeFileSync(tempPath, JSON.stringify(journalData, null, 2), 'utf8')
+  const fd = fs.openSync(tempPath, 'w')
+  try {
+    fs.writeSync(fd, envelopeJson, 0, 'utf8')
+    fs.fsyncSync(fd) // Flush OS buffers to physical storage media
+  } finally {
+    fs.closeSync(fd)
+  }
+
+  // Backup current intact file before atomic replace
+  if (fs.existsSync(journalPath)) {
+    try {
+      fs.copyFileSync(journalPath, `${journalPath}.bak`)
+    } catch {}
+  }
+
   fs.renameSync(tempPath, journalPath)
 }
 
 /**
- * Recovers build journal from disk and verifies structure.
+ * Recovers build journal from disk, verifying cryptographic checksum envelope.
+ * Falls back to valid .bak file if primary file was corrupted by torn writes.
  */
 function recoverBuildJournal(journalPath) {
   if (!journalPath || !fs.existsSync(journalPath)) {
     return { ok: false, reason: 'journal_not_found' }
   }
-  try {
-    const content = fs.readFileSync(journalPath, 'utf8')
-    const journal = JSON.parse(content)
-    if (!journal || typeof journal !== 'object' || !journal.buildId || !journal.blueprintId) {
+
+  function readAndValidate(targetPath) {
+    try {
+      const content = fs.readFileSync(targetPath, 'utf8')
+      const parsed = JSON.parse(content)
+
+      if (parsed && parsed.format === 'guiaia_durable_build_journal_v1') {
+        const computedSha256 = crypto.createHash('sha256').update(JSON.stringify(parsed.payload)).digest('hex')
+        if (computedSha256 !== parsed.sha256) {
+          return { ok: false, reason: 'checksum_mismatch', error: 'Journal checksum mismatch (corrupted content)' }
+        }
+        return { ok: true, journal: parsed.payload, verifiedChecksum: true }
+      }
+
+      // Legacy plain journal format backwards compatibility
+      if (parsed && typeof parsed === 'object' && parsed.buildId && parsed.blueprintId) {
+        return { ok: true, journal: parsed, verifiedChecksum: false }
+      }
+
       return { ok: false, reason: 'corrupt_journal' }
+    } catch (err) {
+      return { ok: false, reason: 'unreadable_journal', error: err.message }
     }
-    return { ok: true, journal }
-  } catch (err) {
-    return { ok: false, reason: 'unreadable_journal', error: err.message }
+  }
+
+  const primary = readAndValidate(journalPath)
+  if (primary.ok) return primary
+
+  // Attempt backup recovery if primary corrupted
+  const backupPath = `${journalPath}.bak`
+  if (fs.existsSync(backupPath)) {
+    const backupRes = readAndValidate(backupPath)
+    if (backupRes.ok) {
+      backupRes.recoveredFromBackup = true
+      return backupRes
+    }
+  }
+
+  return primary
+}
+
+/**
+ * Reconciles an interrupted build journal against physical world observation.
+ * If the process was terminated mid-flight, transitions to 'needs_review' rather
+ * than permitting blind resumption.
+ */
+function reconcileBuildJournal(journalPath, options = {}) {
+  const recovered = recoverBuildJournal(journalPath)
+  if (!recovered.ok) {
+    return { ok: false, reason: recovered.reason, error: recovered.error }
+  }
+
+  const journal = recovered.journal
+  const blockAt = options.blockAt || (options.bot && typeof options.bot.blockAt === 'function' ? pos => options.bot.blockAt(pos) : null)
+
+  const discrepancies = []
+
+  // Check physical world consistency for all placed blocks if world observer is available
+  if (blockAt && Array.isArray(journal.placedBlocks) && journal.origin) {
+    for (const b of journal.placedBlocks) {
+      const worldPos = new Vec3(journal.origin.x + b.x, journal.origin.y + b.y, journal.origin.z + b.z)
+      const currentBlock = blockAt(worldPos)
+      if (!currentBlock || currentBlock.name !== b.block) {
+        discrepancies.push({
+          position: { x: worldPos.x, y: worldPos.y, z: worldPos.z },
+          expected: b.block,
+          found: currentBlock ? currentBlock.name : 'unknown'
+        })
+      }
+    }
+  }
+
+  if (journal.status === 'in_progress') {
+    journal.status = 'needs_review'
+    journal.interruptedReason = 'process_terminated_in_flight'
+    journal.reconciledAt = Date.now()
+    journal.discrepancies = discrepancies
+    writeDurableJournal(journalPath, journal)
+    return {
+      ok: true,
+      reconciled: true,
+      action: 'quarantine_for_review',
+      status: 'needs_review',
+      discrepanciesCount: discrepancies.length,
+      discrepancies,
+      journal
+    }
+  }
+
+  return {
+    ok: true,
+    reconciled: false,
+    status: journal.status,
+    discrepanciesCount: discrepancies.length,
+    discrepancies,
+    journal
   }
 }
 
@@ -449,6 +563,7 @@ module.exports = {
   previewBlueprint,
   writeDurableJournal,
   recoverBuildJournal,
+  reconcileBuildJournal,
   computeBlueprintSha256,
   MAX_BATCH_SIZE,
   MAX_PLACE_DISTANCE,
