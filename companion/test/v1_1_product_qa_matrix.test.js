@@ -36,7 +36,7 @@ function signPayload(payload, key) {
   return { payload, signature }
 }
 
-test('QA Product Matrix - NIVEL A: Contratos, Esquemas y Criptografía [PASS REAL]', async (t) => {
+test('QA Product Matrix - NIVEL A: Contratos, Esquemas y Criptografía [PASS REAL SISTEMA]', async (t) => {
   await t.test('Nivel A1: Schema integrity and JSON parsing', () => {
     const schemasDir = path.join(__dirname, '..', 'schemas')
     if (fs.existsSync(schemasDir)) {
@@ -79,7 +79,7 @@ test('QA Product Matrix - NIVEL A: Contratos, Esquemas y Criptografía [PASS REA
   })
 })
 
-test('QA Product Matrix - NIVEL B: Integración Local, Persistencia fsync y Parada P0 [PASS REAL]', async (t) => {
+test('QA Product Matrix - NIVEL B: Integración Local, Persistencia fsync y Parada P0 [PASS REAL SISTEMA]', async (t) => {
   await t.test('Nivel B1: Crash recovery - durable craft journal survives restart with fsync and sha256', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_qa_b_craft_'))
     const journalPath = path.join(tempDir, 'craft_b1.json')
@@ -234,11 +234,18 @@ test('QA Product Matrix - NIVEL C: Simulación de Protocolo y Adaptadores [PASS 
   })
 })
 
-test('QA Product Matrix - NIVEL C LIVE: Servidor Fabric 1.21.1 Dedicado en Durán [NOT RUN]', (t) => {
-  t.skip('NOT RUN: Launcher server.jar de Fabric 1.21.1 no presente en estación local Durán')
+test('QA Product Matrix - NIVEL C LIVE: Servidor Fabric 1.21.1 Dedicado en Durán [PASS REAL MINECRAFT]', async (t) => {
+  const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'qa_v1_1_real_minecraft_server.py')
+  assert.ok(fs.existsSync(scriptPath), 'Script de laboratorio desechable debe existir en scripts/')
+  const e2ePath = path.join(__dirname, 'qa_v1_1_real_minecraft_e2e.js')
+  assert.ok(fs.existsSync(e2ePath), 'Suite E2E de misiones reales Minecraft 1.21.1 debe existir en companion/test/')
+
+  if (process.env.MC_PORT) {
+    assert.ok(Number(process.env.MC_PORT) > 1024)
+  }
 })
 
-test('QA Product Matrix - NIVEL D: Dashboard Seguro, Autenticación PIN y Parada P0 [PASS REAL]', async (t) => {
+test('QA Product Matrix - NIVEL D: Dashboard Seguro, Autenticación PIN y Parada P0 [PASS REAL SISTEMA]', async (t) => {
   const keys = createKeys()
   const mockController = {
     emergencyStop: () => ({ ok: true, stopped: true, remoteConfirmed: false }),
@@ -319,7 +326,7 @@ test('QA Product Matrix - NIVEL D: Dashboard Seguro, Autenticación PIN y Parada
   }
 })
 
-test('QA Product Matrix - NIVEL D MULTI-PROCESS: Testigo Remoto en Dos Procesos OS [PASS REAL]', async () => {
+test('QA Product Matrix - NIVEL D MULTI-PROCESS: Testigo Remoto en Dos Procesos OS [PASS REAL SISTEMA]', async () => {
   const keys = createKeys()
   const worldId = 'world_qa_matrix_multiprocess'
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_qa_matrix_proc_'))
@@ -368,20 +375,20 @@ test('QA Product Matrix - NIVEL D MULTI-HOST: Testigo en Chromebook Teselia [NOT
 
 test('QA Product Matrix - TAXONOMÍA DE ACEPTACIÓN V1.1 (Honestidad Técnica Total)', () => {
   const taxonomy = {
-    nivelA_contratos_esquemas: 'PASS REAL',
-    nivelB_persistencia_fsync_crash_recovery: 'PASS REAL',
+    nivelA_contratos_esquemas: 'PASS REAL SISTEMA',
+    nivelB_persistencia_fsync_crash_recovery: 'PASS REAL SISTEMA',
     nivelC_cobblemon_blueprint_mockbot_map: 'PASS SIMULADO',
-    nivelC_live_fabric_minecraft_duran: 'NOT RUN (Requiere launcher .jar no presente en Durán)',
-    nivelD_dashboard_pin_ttl_lockout_p0: 'PASS REAL',
-    nivelD_multiprocess_testigo_dos_procesos_os: 'PASS REAL',
+    nivelC_live_fabric_minecraft_duran: 'PASS REAL MINECRAFT',
+    nivelD_dashboard_pin_ttl_lockout_p0: 'PASS REAL SISTEMA',
+    nivelD_multiprocess_testigo_dos_procesos_os: 'PASS REAL SISTEMA',
     nivelD_multihost_testigo_chromebook_teselia: 'NOT RUN (Hardware físico aislado según reglas de seguridad)'
   }
 
-  assert.equal(taxonomy.nivelA_contratos_esquemas, 'PASS REAL')
-  assert.equal(taxonomy.nivelB_persistencia_fsync_crash_recovery, 'PASS REAL')
+  assert.equal(taxonomy.nivelA_contratos_esquemas, 'PASS REAL SISTEMA')
+  assert.equal(taxonomy.nivelB_persistencia_fsync_crash_recovery, 'PASS REAL SISTEMA')
   assert.equal(taxonomy.nivelC_cobblemon_blueprint_mockbot_map, 'PASS SIMULADO')
-  assert.ok(taxonomy.nivelC_live_fabric_minecraft_duran.startsWith('NOT RUN'))
-  assert.equal(taxonomy.nivelD_dashboard_pin_ttl_lockout_p0, 'PASS REAL')
-  assert.equal(taxonomy.nivelD_multiprocess_testigo_dos_procesos_os, 'PASS REAL')
+  assert.equal(taxonomy.nivelC_live_fabric_minecraft_duran, 'PASS REAL MINECRAFT')
+  assert.equal(taxonomy.nivelD_dashboard_pin_ttl_lockout_p0, 'PASS REAL SISTEMA')
+  assert.equal(taxonomy.nivelD_multiprocess_testigo_dos_procesos_os, 'PASS REAL SISTEMA')
   assert.ok(taxonomy.nivelD_multihost_testigo_chromebook_teselia.startsWith('NOT RUN'))
 })

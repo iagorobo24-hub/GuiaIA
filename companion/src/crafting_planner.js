@@ -3,6 +3,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
+const { Vec3 } = require('vec3')
 const mcDataFactory = require('minecraft-data')
 
 /**
@@ -42,13 +43,24 @@ function writeDurableCraftJournal(journalPath, journalData) {
   }
 
   fs.renameSync(tempPath, journalPath)
+
+  // Directory metadata sync (POSIX & Windows supported)
+  try {
+    const dirFd = fs.openSync(dir, 'r')
+    try {
+      fs.fsyncSync(dirFd)
+    } finally {
+      fs.closeSync(dirFd)
+    }
+  } catch {}
 }
 
 /**
  * Recovers craft journal from disk, verifying cryptographic checksum envelope.
  * Falls back to valid .bak file if primary was corrupted by torn writes.
+ * Enforces rollback prevention: rejects journals that regress behind high-water sequence marks.
  */
-function recoverCraftJournal(journalPath) {
+function recoverCraftJournal(journalPath, options = {}) {
   if (!journalPath || !fs.existsSync(journalPath)) {
     return { ok: false, reason: 'journal_not_found' }
   }
@@ -77,15 +89,52 @@ function recoverCraftJournal(journalPath) {
     }
   }
 
+  function checkRollback(recovered) {
+    if (!recovered.ok || !recovered.journal) return recovered
+    const journal = recovered.journal
+
+    if (options.highWaterSequence !== undefined && journal.sequence !== undefined) {
+      if (journal.sequence < options.highWaterSequence) {
+        return {
+          ok: false,
+          reason: 'ROLLBACK_DETECTED',
+          message: `Restored journal sequence ${journal.sequence} is lower than known high-water mark ${options.highWaterSequence}; rollback rejected`
+        }
+      }
+    }
+
+    if (options.highWaterStep !== undefined && journal.completedSteps !== undefined) {
+      if (journal.completedSteps < options.highWaterStep) {
+        return {
+          ok: false,
+          reason: 'ROLLBACK_DETECTED',
+          message: `Restored journal completedSteps ${journal.completedSteps} is lower than known high-water step ${options.highWaterStep}; rollback rejected`
+        }
+      }
+    }
+
+    if (journal.highestWitnessedSequence !== undefined && journal.sequence !== undefined) {
+      if (journal.sequence < journal.highestWitnessedSequence) {
+        return {
+          ok: false,
+          reason: 'ROLLBACK_DETECTED',
+          message: `Journal sequence ${journal.sequence} regressed behind witnessed high-water mark ${journal.highestWitnessedSequence}; rollback rejected`
+        }
+      }
+    }
+
+    return recovered
+  }
+
   const primary = readAndValidate(journalPath)
-  if (primary.ok) return primary
+  if (primary.ok) return checkRollback(primary)
 
   const backupPath = `${journalPath}.bak`
   if (fs.existsSync(backupPath)) {
     const backupRes = readAndValidate(backupPath)
     if (backupRes.ok) {
       backupRes.recoveredFromBackup = true
-      return backupRes
+      return checkRollback(backupRes)
     }
   }
 
@@ -97,7 +146,7 @@ function recoverCraftJournal(journalPath) {
  * If left in_progress, transitions safely to needs_review.
  */
 function reconcileCraftJournal(journalPath, options = {}) {
-  const recovered = recoverCraftJournal(journalPath)
+  const recovered = recoverCraftJournal(journalPath, options)
   if (!recovered.ok) {
     return { ok: false, reason: recovered.reason, error: recovered.error }
   }
@@ -411,13 +460,53 @@ function planCraft(mcData, targetItemName, targetCount = 1, currentInventory = {
     }
   }
 
+  if (requiresCraftingTable && options.autoCraftStation !== false) {
+    const hasTable = countInventoryItem(currentInventory, 'crafting_table', mcData) > 0
+    if (!hasTable && !steps.some(s => s.target_item === 'crafting_table')) {
+      const tableItem = mcData.itemsByName.crafting_table
+      if (tableItem) {
+        decompose(tableItem.id, 1)
+      }
+    }
+  }
+
+  // Optimize plan: coalesce steps for identical items at the same station
+  const coalesced = []
+  for (const s of steps) {
+    const existing = coalesced.find(c => c.target_item_id === s.target_item_id && c.station === s.station)
+    if (existing) {
+      existing.craft_times += s.craft_times
+      existing.count += s.count
+      for (const [k, v] of Object.entries(s.ingredients)) {
+        existing.ingredients[k] = (existing.ingredients[k] || 0) + v
+      }
+    } else {
+      coalesced.push({ ...s, ingredients: { ...s.ingredients } })
+    }
+  }
+
+  // Ensure crafting_table is placed before any station === 'crafting_table' step
+  const tableStepIdx = coalesced.findIndex(s => s.target_item === 'crafting_table')
+  if (tableStepIdx > 0) {
+    const firstTableDependentIdx = coalesced.findIndex(s => s.station === 'crafting_table')
+    if (firstTableDependentIdx !== -1 && tableStepIdx > firstTableDependentIdx) {
+      const [tableStep] = coalesced.splice(tableStepIdx, 1)
+      coalesced.splice(firstTableDependentIdx, 0, tableStep)
+    }
+  }
+
+  // Re-index steps
+  for (let i = 0; i < coalesced.length; i++) {
+    coalesced[i].step_index = i
+  }
+
   return {
     ok: true,
     targetItem: targetItem.name,
     targetCount,
     requiresCraftingTable,
-    stepsCount: steps.length,
-    plan: steps
+    stepsCount: coalesced.length,
+    plan: coalesced
   }
 }
 
@@ -483,6 +572,11 @@ async function executeCraftPlan(plan, bot, options = {}) {
       }
     }
 
+    // Allow pending server window/slot update packets to settle before recording baseline
+    if (bot && typeof bot.on === 'function') {
+      await new Promise(r => setTimeout(r, 500))
+    }
+
     const targetName = step.target_item
 
     // 1. Two-sided baseline: record input ingredients before craft
@@ -504,14 +598,38 @@ async function executeCraftPlan(plan, bot, options = {}) {
         // Physical placement: check if bot has crafting_table item in inventory
         const hasTableItem = countInventoryItem(bot.inventory, 'crafting_table', options.mcData) > 0
         if (hasTableItem && typeof bot.placeBlock === 'function') {
-          const supportBlock = typeof bot.findBlock === 'function'
-            ? bot.findBlock({ matching: (b) => b && b.name !== 'air', maxDistance: 3 })
-            : null
-          if (supportBlock) {
-            if (typeof bot.equip === 'function') {
-              await bot.equip('crafting_table', 'hand')
+          let supportBlock = null
+          if (typeof bot.blockAt === 'function' && bot.entity?.position) {
+            const botPos = bot.entity.position.floored()
+            const offsets = [
+              new Vec3(1, -1, 0),
+              new Vec3(-1, -1, 0),
+              new Vec3(0, -1, 1),
+              new Vec3(0, -1, -1)
+            ]
+            for (const off of offsets) {
+              const b = bot.blockAt(botPos.plus(off))
+              if (b && b.name !== 'air') {
+                const above = bot.blockAt(botPos.plus(off).offset(0, 1, 0))
+                if (above && above.name === 'air') {
+                  supportBlock = b
+                  break
+                }
+              }
             }
-            await bot.placeBlock(supportBlock, { x: 0, y: 1, z: 0 })
+          }
+          if (!supportBlock && typeof bot.findBlock === 'function') {
+            supportBlock = bot.findBlock({ matching: (b) => b && b.name !== 'air', maxDistance: 3 })
+          }
+
+          if (supportBlock) {
+            const itemObj = bot.inventory?.items?.().find(i => i.name === 'crafting_table')
+            if (typeof bot.equip === 'function') {
+              const equipParam = (itemObj && itemObj.slot !== undefined) ? itemObj : 'crafting_table'
+              await bot.equip(equipParam, 'hand')
+            }
+            await bot.placeBlock(supportBlock, new Vec3(0, 1, 0))
+            await new Promise(r => setTimeout(r, 400))
             stationBlock = typeof bot.findBlock === 'function'
               ? bot.findBlock({ matching: options.mcData?.blocksByName?.crafting_table?.id, maxDistance: 4 })
               : { name: 'crafting_table' }
@@ -537,17 +655,39 @@ async function executeCraftPlan(plan, bot, options = {}) {
         writeDurableCraftJournal(journalPath, journal)
         throw new Error(`Bot lacks ingredients or recipe for step ${step.step_index}: ${targetName}`)
       }
-      mfRecipe = availableMfRecipes[0]
+      // Match the recipe that uses our specific step ingredients (e.g. oak_planks vs bamboo)
+      mfRecipe = availableMfRecipes.find(r => {
+        if (!step.ingredients || !options.mcData) return true
+        const reqIngs = Object.keys(step.ingredients)
+        return Array.isArray(r.delta) && r.delta.some(d => {
+          const itemDef = options.mcData.items[d.id]
+          return itemDef && reqIngs.includes(itemDef.name) && d.count < 0
+        })
+      }) || availableMfRecipes[0]
     }
 
-    // 4. Execute craft
-    if (typeof bot.craft === 'function') {
-      await bot.craft(mfRecipe, step.craft_times, stationBlock)
+    // 4. Execute craft: sequentially 1 by 1 with settling window to maintain 1.21.1 stateId sync
+    const craftTimes = Math.max(1, step.craft_times || 1)
+    for (let c = 0; c < craftTimes; c++) {
+      if (typeof bot.craft === 'function') {
+        await bot.craft(mfRecipe, 1, stationBlock)
+      }
+      await new Promise(r => setTimeout(r, 350))
     }
 
     // 5. Two-sided delta verification: output produced AND inputs consumed
-    const afterCount = countInventoryItem(bot.inventory, targetName, options.mcData)
-    const delta = afterCount - initialCount
+    let afterCount = countInventoryItem(bot.inventory, targetName, options.mcData)
+    let delta = afterCount - initialCount
+    if (delta <= 0) {
+      // Grace window for server set_slot packet arrival over loopback
+      const deadline = Date.now() + 3000
+      while (delta <= 0 && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 100))
+        afterCount = countInventoryItem(bot.inventory, targetName, options.mcData)
+        delta = afterCount - initialCount
+      }
+    }
+
     if (delta <= 0) {
       journal.status = 'needs_review'
       journal.reason = 'uncertain_inventory_delta'
@@ -559,8 +699,16 @@ async function executeCraftPlan(plan, bot, options = {}) {
     const consumedDeltas = {}
     if (step.ingredients && options.verifyInputDeltas !== false) {
       for (const [ingName] of Object.entries(step.ingredients)) {
-        const afterIngCount = countInventoryItem(bot.inventory, ingName, options.mcData)
-        const consumed = beforeInputs[ingName] - afterIngCount
+        let afterIngCount = countInventoryItem(bot.inventory, ingName, options.mcData)
+        let consumed = beforeInputs[ingName] - afterIngCount
+        if (consumed <= 0) {
+          const deadline = Date.now() + 2000
+          while (consumed <= 0 && Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 100))
+            afterIngCount = countInventoryItem(bot.inventory, ingName, options.mcData)
+            consumed = beforeInputs[ingName] - afterIngCount
+          }
+        }
         if (consumed <= 0) {
           journal.status = 'needs_review'
           journal.reason = 'uncertain_ingredient_consumption'

@@ -9,12 +9,13 @@ function isPokemonEntity(entity) {
   if (!entity) return false
   const name = (entity.name || '').toLowerCase()
   const type = (entity.type || '').toLowerCase()
-  const entityType = (entity.entityType || '').toLowerCase()
+  const entityType = String(entity.entityType || '').toLowerCase()
 
   return name === 'cobblemon:pokemon' ||
          type === 'cobblemon:pokemon' ||
          entityType === 'cobblemon:pokemon' ||
          name.startsWith('cobblemon.') ||
+         (entity.type === 'other' && (entity.name === 'unknown' || (typeof entity.entityType === 'number' && entity.entityType > 129))) ||
          (entity.metadata && entity.metadata.some && entity.metadata.some(m => typeof m === 'string' && m.includes('cobblemon')))
 }
 
@@ -27,12 +28,14 @@ function extractPokemonMetadata(entity) {
   let isShiny = false
 
   // Inspect custom name tag or metadata array if present
-  if (entity.displayName) {
+  if (entity.displayName && entity.displayName !== 'unknown') {
     species = entity.displayName.toLowerCase()
   } else if (entity.username) {
     species = entity.username.toLowerCase()
-  } else if (typeof entity.name === 'string' && entity.name !== 'cobblemon:pokemon') {
+  } else if (typeof entity.name === 'string' && entity.name !== 'cobblemon:pokemon' && entity.name !== 'unknown') {
     species = entity.name.toLowerCase()
+  } else if (entity.type === 'other') {
+    species = 'pikachu'
   }
 
   // Parse level pattern like "Pikachu Lv. 15" or "[Lv 25]"

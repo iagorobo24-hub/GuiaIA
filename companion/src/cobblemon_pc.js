@@ -1,5 +1,14 @@
 'use strict'
 
+const {
+  CANONICAL_CHANNELS,
+  BRIDGE_CHANNELS,
+  LEGACY_CHANNELS,
+  verifyServerStoragePacket,
+  buildMovePartyToPcPacket,
+  buildMovePcToPartyPacket
+} = require('./cobblemon_protocol')
+
 const TOTAL_BOXES = 32
 const SLOTS_PER_BOX = 30
 const PARTY_SLOTS = 6
@@ -20,32 +29,6 @@ function validatePartySlotBounds(slot) {
   if (!Number.isInteger(slot) || slot < 0 || slot >= PARTY_SLOTS) {
     throw new Error(`Invalid party slot index: ${slot}. Must be between 0 and ${PARTY_SLOTS - 1}`)
   }
-}
-
-/**
- * Verifies and decodes a canonical Cobblemon PC server storage packet envelope.
- * Provenance is verified via custom payload protocol channels:
- * - 'cobblemon:pc_data' (Cobblemon 1.8.x PC boxes snapshot)
- * - 'cobblemon:storage_data' (Cobblemon storage sync)
- *
- * @param {Object} packet Incoming network packet or payload
- * @param {string} expectedPlayerUuid Expected player/bot UUID
- * @returns {Object} { valid: boolean, data?: Object, reason?: string }
- */
-function verifyServerStoragePacket(packet, expectedPlayerUuid) {
-  if (!packet || typeof packet !== 'object') {
-    return { valid: false, reason: 'malformed_packet' }
-  }
-  if (packet.channel !== 'cobblemon:pc_data' && packet.channel !== 'cobblemon:storage_data') {
-    return { valid: false, reason: 'untrusted_origin_channel' }
-  }
-  if (expectedPlayerUuid && packet.playerUuid !== expectedPlayerUuid) {
-    return { valid: false, reason: 'player_uuid_mismatch' }
-  }
-  if (!packet.boxes || typeof packet.boxes !== 'object') {
-    return { valid: false, reason: 'missing_boxes_structure' }
-  }
-  return { valid: true, boxes: packet.boxes }
 }
 
 /**
@@ -196,11 +179,9 @@ function createCobblemonPcController(options = {}) {
     let confirmedObservation = null
 
     if (serverConfirmationPacket) {
-      if (serverConfirmationPacket.channel === 'cobblemon:pc_data' || serverConfirmationPacket.channel === 'cobblemon:storage_data') {
-        const verified = verifyServerStoragePacket(serverConfirmationPacket, playerUuid)
-        if (verified.valid && verified.boxes[targetBox]?.[slot]) {
-          confirmedObservation = verified.boxes[targetBox][slot]
-        }
+      const verified = verifyServerStoragePacket(serverConfirmationPacket, playerUuid)
+      if (verified.valid && verified.boxes[targetBox]?.[slot]) {
+        confirmedObservation = verified.boxes[targetBox][slot]
       } else if (serverConfirmationPacket.channel === 'cobblemon:pc_action_result' || serverConfirmationPacket.action === 'deposit') {
         if (serverConfirmationPacket.success !== false) {
           confirmedObservation = serverConfirmationPacket.storedPokemon || partyPokemon
@@ -211,7 +192,11 @@ function createCobblemonPcController(options = {}) {
         const timeout = setTimeout(() => resolve(null), depositOptions.packetTimeoutMs || 3000)
         timeout.unref?.()
         bot._client.once('custom_payload', p => {
-          if (p?.channel === 'cobblemon:pc_data' || p?.channel === 'cobblemon:pc_action_result') {
+          if (p?.channel === CANONICAL_CHANNELS.SET_PC_BOX ||
+              p?.channel === CANONICAL_CHANNELS.INITIALIZE_PC ||
+              p?.channel === LEGACY_CHANNELS.PC_DATA ||
+              p?.channel === 'cobblemon:pc_action_result' ||
+              p?.channel === BRIDGE_CHANNELS.RESULT) {
             clearTimeout(timeout)
             resolve(p)
           }
@@ -219,11 +204,9 @@ function createCobblemonPcController(options = {}) {
       })
       if (packet) {
         const parsed = typeof packet.data === 'string' ? JSON.parse(packet.data) : packet
-        if (parsed.channel === 'cobblemon:pc_data') {
-          const verified = verifyServerStoragePacket(parsed, playerUuid)
-          if (verified.valid && verified.boxes[targetBox]?.[slot]) {
-            confirmedObservation = verified.boxes[targetBox][slot]
-          }
+        const verified = verifyServerStoragePacket(parsed, playerUuid)
+        if (verified.valid && verified.boxes[targetBox]?.[slot]) {
+          confirmedObservation = verified.boxes[targetBox][slot]
         } else if (parsed.action === 'deposit' && parsed.success !== false) {
           confirmedObservation = parsed.storedPokemon || partyPokemon
         }
@@ -320,12 +303,10 @@ function createCobblemonPcController(options = {}) {
     let confirmedObservation = false
 
     if (serverConfirmationPacket) {
-      if (serverConfirmationPacket.channel === 'cobblemon:pc_data' || serverConfirmationPacket.channel === 'cobblemon:storage_data') {
-        const verified = verifyServerStoragePacket(serverConfirmationPacket, playerUuid)
-        // Post-transfer observation: box slot must now be empty
-        if (verified.valid && (verified.boxes[boxIndex]?.[boxSlot] === null || verified.boxes[boxIndex]?.[boxSlot] === undefined)) {
-          confirmedObservation = true
-        }
+      const verified = verifyServerStoragePacket(serverConfirmationPacket, playerUuid)
+      // Post-transfer observation: box slot must now be empty
+      if (verified.valid && (verified.boxes[boxIndex]?.[boxSlot] === null || verified.boxes[boxIndex]?.[boxSlot] === undefined)) {
+        confirmedObservation = true
       } else if (serverConfirmationPacket.channel === 'cobblemon:pc_action_result' || serverConfirmationPacket.action === 'withdraw') {
         if (serverConfirmationPacket.success !== false) {
           confirmedObservation = true
@@ -336,7 +317,11 @@ function createCobblemonPcController(options = {}) {
         const timeout = setTimeout(() => resolve(null), withdrawOptions.packetTimeoutMs || 3000)
         timeout.unref?.()
         bot._client.once('custom_payload', p => {
-          if (p?.channel === 'cobblemon:pc_data' || p?.channel === 'cobblemon:pc_action_result') {
+          if (p?.channel === CANONICAL_CHANNELS.SET_PC_BOX ||
+              p?.channel === CANONICAL_CHANNELS.INITIALIZE_PC ||
+              p?.channel === LEGACY_CHANNELS.PC_DATA ||
+              p?.channel === 'cobblemon:pc_action_result' ||
+              p?.channel === BRIDGE_CHANNELS.RESULT) {
             clearTimeout(timeout)
             resolve(p)
           }
@@ -344,11 +329,9 @@ function createCobblemonPcController(options = {}) {
       })
       if (packet) {
         const parsed = typeof packet.data === 'string' ? JSON.parse(packet.data) : packet
-        if (parsed.channel === 'cobblemon:pc_data') {
-          const verified = verifyServerStoragePacket(parsed, playerUuid)
-          if (verified.valid && (verified.boxes[boxIndex]?.[boxSlot] === null || verified.boxes[boxIndex]?.[boxSlot] === undefined)) {
-            confirmedObservation = true
-          }
+        const verified = verifyServerStoragePacket(parsed, playerUuid)
+        if (verified.valid && (verified.boxes[boxIndex]?.[boxSlot] === null || verified.boxes[boxIndex]?.[boxSlot] === undefined)) {
+          confirmedObservation = true
         } else if (parsed.action === 'withdraw' && parsed.success !== false) {
           confirmedObservation = true
         }

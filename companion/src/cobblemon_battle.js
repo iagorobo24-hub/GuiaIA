@@ -1,5 +1,12 @@
 'use strict'
 
+const {
+  CANONICAL_CHANNELS,
+  BRIDGE_CHANNELS,
+  LEGACY_CHANNELS,
+  verifyServerBattlePacket
+} = require('./cobblemon_protocol')
+
 const TURN_TIMEOUT_MS = 15000 // 15s per turn
 const BATTLE_TIMEOUT_MS = 60000 // 60s total
 
@@ -13,19 +20,6 @@ const BATTLE_STATES = Object.freeze(new Set([
   'defeated',
   'emergency_halted'
 ]))
-
-function verifyServerBattlePacket(packet, expected = {}) {
-  if (!packet || typeof packet !== 'object') {
-    return { valid: false, reason: 'malformed_packet' }
-  }
-  if (packet.channel !== 'cobblemon:battle_start' && packet.channel !== 'cobblemon:battle_init') {
-    return { valid: false, reason: 'untrusted_origin_channel' }
-  }
-  if (expected.opponentId !== undefined && packet.opponentId !== expected.opponentId) {
-    return { valid: false, reason: 'opponent_id_mismatch' }
-  }
-  return { valid: true, battleId: packet.battleId }
-}
 
 /**
  * Creates a Cobblemon Battle Controller FSM.
@@ -118,7 +112,10 @@ function createCobblemonBattleController(options = {}) {
         const timeout = setTimeout(() => resolve(null), battleOptions.packetTimeoutMs || 3000)
         timeout.unref?.()
         bot._client.once('custom_payload', (p) => {
-          if (p?.channel === 'cobblemon:battle_start') {
+          if (p?.channel === CANONICAL_CHANNELS.BATTLE_INITIALIZE ||
+              p?.channel === LEGACY_CHANNELS.BATTLE_START ||
+              p?.channel === LEGACY_CHANNELS.BATTLE_INIT ||
+              p?.channel === BRIDGE_CHANNELS.RESULT) {
             clearTimeout(timeout)
             resolve(p)
           }

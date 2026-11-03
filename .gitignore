@@ -30,4 +30,5 @@ build/
 dist/
 .gradle/
 .guiaia/
+.qa-cache/
 *.tmp

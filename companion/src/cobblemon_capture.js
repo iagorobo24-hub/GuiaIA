@@ -1,5 +1,12 @@
 'use strict'
 
+const {
+  CANONICAL_CHANNELS,
+  BRIDGE_CHANNELS,
+  LEGACY_CHANNELS,
+  verifyCaptureEvent
+} = require('./cobblemon_protocol')
+
 const MAX_CAPTURE_BUDGET = 5
 const VALID_BALLS = Object.freeze(new Set([
   'poke_ball', 'great_ball', 'ultra_ball', 'master_ball',
@@ -22,29 +29,6 @@ function countBalls(bot, ballType = 'poke_ball') {
     }
   }
   return total
-}
-
-/**
- * Validates an incoming server capture event packet.
- * Verifies origin, target entity identity, throw sequence, and explicit result code.
- */
-function verifyCaptureEvent(event, expected) {
-  if (!event || typeof event !== 'object') {
-    return { valid: false, reason: 'malformed_packet' }
-  }
-  if (event.channel !== 'cobblemon:capture_result') {
-    return { valid: false, reason: 'untrusted_origin_channel' }
-  }
-  if (event.targetId !== expected.targetId) {
-    return { valid: false, reason: 'target_entity_mismatch' }
-  }
-  if (expected.sequence !== undefined && event.sequence !== undefined && event.sequence !== expected.sequence) {
-    return { valid: false, reason: 'sequence_out_of_order' }
-  }
-  if (event.result !== 'captured' && event.result !== 'escaped') {
-    return { valid: false, reason: 'unknown_result_status' }
-  }
-  return { valid: true, result: event.result }
 }
 
 /**
@@ -128,7 +112,9 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
         const timeout = setTimeout(() => resolve(null), options.packetTimeoutMs || 3000)
         timeout.unref?.()
         const handler = (packet) => {
-          if (packet?.channel === 'cobblemon:capture_result') {
+          if (packet?.channel === CANONICAL_CHANNELS.CAPTURE_END ||
+              packet?.channel === LEGACY_CHANNELS.CAPTURE_RESULT ||
+              packet?.channel === BRIDGE_CHANNELS.RESULT) {
             clearTimeout(timeout)
             resolve(packet)
           }
@@ -167,8 +153,10 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
     } else if (typeof options.serverConfirmationProvider === 'function') {
       outcome = await options.serverConfirmationProvider({ targetId: targetEntity.id, sequence: attempt, ballType })
     } else if (options.serverConfirmation && typeof options.serverConfirmation === 'object') {
+      const defaultChannel = options.serverConfirmation.channel ||
+        (options.serverConfirmation.result !== undefined ? LEGACY_CHANNELS.CAPTURE_RESULT : CANONICAL_CHANNELS.CAPTURE_END)
       const verification = verifyCaptureEvent(
-        { channel: 'cobblemon:capture_result', targetId: targetEntity.id, sequence: attempt, ...options.serverConfirmation },
+        { channel: defaultChannel, targetId: targetEntity.id, sequence: attempt, ...options.serverConfirmation },
         { targetId: targetEntity.id, sequence: attempt }
       )
       if (verification.valid) {

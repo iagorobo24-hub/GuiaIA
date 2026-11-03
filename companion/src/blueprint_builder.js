@@ -63,13 +63,24 @@ function writeDurableJournal(journalPath, journalData) {
   }
 
   fs.renameSync(tempPath, journalPath)
+
+  // Directory metadata sync (POSIX & Windows supported)
+  try {
+    const dirFd = fs.openSync(dir, 'r')
+    try {
+      fs.fsyncSync(dirFd)
+    } finally {
+      fs.closeSync(dirFd)
+    }
+  } catch {}
 }
 
 /**
  * Recovers build journal from disk, verifying cryptographic checksum envelope.
  * Falls back to valid .bak file if primary file was corrupted by torn writes.
+ * Enforces rollback prevention: rejects journals that regress behind high-water sequence marks.
  */
-function recoverBuildJournal(journalPath) {
+function recoverBuildJournal(journalPath, options = {}) {
   if (!journalPath || !fs.existsSync(journalPath)) {
     return { ok: false, reason: 'journal_not_found' }
   }
@@ -98,8 +109,45 @@ function recoverBuildJournal(journalPath) {
     }
   }
 
+  function checkRollback(recovered) {
+    if (!recovered.ok || !recovered.journal) return recovered
+    const journal = recovered.journal
+
+    if (options.highWaterSequence !== undefined && journal.sequence !== undefined) {
+      if (journal.sequence < options.highWaterSequence) {
+        return {
+          ok: false,
+          reason: 'ROLLBACK_DETECTED',
+          message: `Restored build journal sequence ${journal.sequence} is lower than known high-water mark ${options.highWaterSequence}; rollback rejected`
+        }
+      }
+    }
+
+    if (options.highWaterPlaced !== undefined && Array.isArray(journal.placedBlocks)) {
+      if (journal.placedBlocks.length < options.highWaterPlaced) {
+        return {
+          ok: false,
+          reason: 'ROLLBACK_DETECTED',
+          message: `Restored build journal placedBlocks count ${journal.placedBlocks.length} is lower than known high-water count ${options.highWaterPlaced}; rollback rejected`
+        }
+      }
+    }
+
+    if (journal.highestWitnessedSequence !== undefined && journal.sequence !== undefined) {
+      if (journal.sequence < journal.highestWitnessedSequence) {
+        return {
+          ok: false,
+          reason: 'ROLLBACK_DETECTED',
+          message: `Build journal sequence ${journal.sequence} regressed behind witnessed high-water mark ${journal.highestWitnessedSequence}; rollback rejected`
+        }
+      }
+    }
+
+    return recovered
+  }
+
   const primary = readAndValidate(journalPath)
-  if (primary.ok) return primary
+  if (primary.ok) return checkRollback(primary)
 
   // Attempt backup recovery if primary corrupted
   const backupPath = `${journalPath}.bak`
@@ -107,7 +155,7 @@ function recoverBuildJournal(journalPath) {
     const backupRes = readAndValidate(backupPath)
     if (backupRes.ok) {
       backupRes.recoveredFromBackup = true
-      return backupRes
+      return checkRollback(backupRes)
     }
   }
 
@@ -120,7 +168,7 @@ function recoverBuildJournal(journalPath) {
  * than permitting blind resumption.
  */
 function reconcileBuildJournal(journalPath, options = {}) {
-  const recovered = recoverBuildJournal(journalPath)
+  const recovered = recoverBuildJournal(journalPath, options)
   if (!recovered.ok) {
     return { ok: false, reason: recovered.reason, error: recovered.error }
   }
@@ -492,14 +540,25 @@ function createBlueprintBuilder(options = {}) {
 
         // 5. Equip and place
         if (typeof bot.equip === 'function') {
-          await bot.equip(b.block, 'hand')
+          const itemToEquip = bot.inventory?.items?.().find(i => i.name === b.block)
+          if (itemToEquip) {
+            await bot.equip(itemToEquip, 'hand')
+          }
         }
         if (typeof bot.placeBlock === 'function' && supportBlock && placeFace) {
           await bot.placeBlock(supportBlock, placeFace)
+          await new Promise(r => setTimeout(r, 200))
         }
 
         // 6. Post-placement physical world state verification
-        const postBlock = typeof bot.blockAt === 'function' ? bot.blockAt(worldTarget) : null
+        let postBlock = typeof bot.blockAt === 'function' ? bot.blockAt(worldTarget) : null
+        if (!postBlock || postBlock.name !== b.block) {
+          const deadline = Date.now() + 1000
+          while ((!postBlock || postBlock.name !== b.block) && Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 100))
+            postBlock = typeof bot.blockAt === 'function' ? bot.blockAt(worldTarget) : null
+          }
+        }
         if (postBlock && postBlock.name === b.block) {
           batchPlaced++
           journal.placedBlocks.push({ x: b.x, y: b.y, z: b.z, block: b.block })
@@ -562,6 +621,7 @@ module.exports = {
   createBatches,
   previewBlueprint,
   writeDurableJournal,
+  writeDurableBuildJournal: writeDurableJournal,
   recoverBuildJournal,
   reconcileBuildJournal,
   computeBlueprintSha256,
