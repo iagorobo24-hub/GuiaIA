@@ -19,7 +19,7 @@ function securePath(file,{output=false}={}){
     throw Error('Absolute normalized external path required')
   const parent=path.dirname(file)
   const relative=path.relative(PROJECT,file)
-  if(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..'))
+  if(!path.isAbsolute(relative)&&(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..')))
     throw Error('Credential or handoff files inside Git project denied')
   // The POSIX 0700/0600 masks are not NTFS ACL verification. Do not read or
   // write principal/operator key material on native Windows until there is

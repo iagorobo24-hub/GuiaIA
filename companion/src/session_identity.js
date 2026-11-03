@@ -16,6 +16,13 @@ const FOLLOW_FIELDS=['aud','worldId','botName','ownerName','principalId',
   'connectionId','challenge','nonce','issuedAt','expiresAt']
 const GATHER_FIELDS=['aud','worldId','botName','ownerName','principalId',
   'connectionId','challenge','target','item','count','nonce','issuedAt','expiresAt']
+const CRAFT_FIELDS=['aud','worldId','botName','ownerName','principalId',
+  'connectionId','challenge','recipe','item','count','nonce','issuedAt','expiresAt']
+const BUILD_FIELDS=['aud','worldId','botName','ownerName','principalId',
+  'connectionId','challenge','blueprintId','origin','nonce','issuedAt','expiresAt']
+const POKEMON_FIELDS=['aud','worldId','botName','ownerName','principalId',
+  'connectionId','challenge','action','target','nonce','issuedAt','expiresAt']
+const VALID_POKEMON_ACTIONS = new Set(['inspect', 'capture', 'battle_wild', 'pc_deposit', 'pc_withdraw'])
 const EXACT_SESSION = ['bridge','owner']
 const EXACT_VANILLA_SESSION = ['owner']
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -159,6 +166,55 @@ function verifySessionGatherGrant(token,session,authority){
   verifySigned(token,authority.operatorPublicKeyPem)
   return p
 }
+function verifySessionCraftGrant(token,session,authority){
+  const p=token?.payload
+  const maxCount = authority?.v1Batch ? 64 : 16
+  if(!exact(p,CRAFT_FIELDS) || p.aud!=='guiaia:session-craft:v1' ||
+     p.worldId!==session.worldId || p.principalId!==session.principalId ||
+     p.connectionId!==session.connectionId || p.challenge!==session.challenge ||
+     p.ownerName!==session.username || p.botName!==authority.botName ||
+     !id.test(p.recipe||'') || !id.test(p.item||'') ||
+     !Number.isInteger(p.count) || p.count<1 || p.count>maxCount ||
+     !uuid.test(p.nonce||'') ||
+     !validWindow(p,Date.now(),120000)){
+    throw Error('Session-scoped craft capability invalid')
+  }
+  verifySigned(token,authority.operatorPublicKeyPem)
+  return p
+}
+function verifySessionBuildGrant(token,session,authority){
+  const p=token?.payload
+  if(!exact(p,BUILD_FIELDS) || p.aud!=='guiaia:session-build:v1' ||
+     p.worldId!==session.worldId || p.principalId!==session.principalId ||
+     p.connectionId!==session.connectionId || p.challenge!==session.challenge ||
+     p.ownerName!==session.username || p.botName!==authority.botName ||
+     !id.test(p.blueprintId||'') || !validChest(p.origin) ||
+     !uuid.test(p.nonce||'') ||
+     !validWindow(p,Date.now(),120000)){
+    throw Error('Session-scoped build capability invalid')
+  }
+  verifySigned(token,authority.operatorPublicKeyPem)
+  return p
+}
+function verifySessionPokemonGrant(token,session,authority){
+  const p=token?.payload
+  const validTarget = p && (
+    (typeof p.target === 'string' && id.test(p.target)) ||
+    (Number.isInteger(p.target) && p.target >= 0) ||
+    (typeof p.target === 'object' && p.target !== null && Object.keys(p.target).length <= 8)
+  )
+  if(!exact(p,POKEMON_FIELDS) || p.aud!=='guiaia:session-pokemon:v1' ||
+     p.worldId!==session.worldId || p.principalId!==session.principalId ||
+     p.connectionId!==session.connectionId || p.challenge!==session.challenge ||
+     p.ownerName!==session.username || p.botName!==authority.botName ||
+     !VALID_POKEMON_ACTIONS.has(p.action) || !validTarget ||
+     !uuid.test(p.nonce||'') ||
+     !validWindow(p,Date.now(),120000)){
+    throw Error('Session-scoped pokemon capability invalid')
+  }
+  verifySigned(token,authority.operatorPublicKeyPem)
+  return p
+}
 // Only public entrypoint offered by this security prototype.
 // Raw createQaChestDeposit is a historical sandbox test adapter, and must
 // NEVER be exported by any future production command/chat API.
@@ -273,6 +329,7 @@ function createQaStrictSessionActionGateway(bot,authority){
   return createQaSessionActionGateway(bot,Object.freeze({...authority}))
 }
 module.exports={verifySessionBundle,verifySessionDepositGrant,verifySessionFollowGrant,
-  verifySessionGatherGrant,
+  verifySessionGatherGrant,verifySessionCraftGrant,verifySessionBuildGrant,verifySessionPokemonGrant,
+  CRAFT_FIELDS,BUILD_FIELDS,POKEMON_FIELDS,VALID_POKEMON_ACTIONS,
   createSessionAuthorizedQaDeposit,createQaSessionActionGateway,
   createQaStrictSessionActionGateway}

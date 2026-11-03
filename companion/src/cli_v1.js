@@ -46,7 +46,9 @@ function parseCliArgs(args) {
     owner: null,
     identityMode: 'vanilla_paired_operator', // 'vanilla_paired_operator' | 'trusted_server_bridge_lab'
     v1Batch: true,
-    interactive: true
+    interactive: true,
+    dashboard: false,
+    dashboardPort: 8080
   }
 
   for (let i = 0; i < args.length; i++) {
@@ -57,6 +59,12 @@ function parseCliArgs(args) {
     else if (arg === '--auth' && args[i + 1]) options.auth = args[++i].toLowerCase()
     else if (arg === '--owner' && args[i + 1]) options.owner = args[++i]
     else if (arg === '--mode' && args[i + 1]) options.identityMode = args[++i]
+    else if (arg === '--dashboard' || arg === '--web') {
+      options.dashboard = true
+      if (args[i + 1] && /^\d+$/.test(args[i + 1])) {
+        options.dashboardPort = parseInt(args[++i], 10)
+      }
+    }
     else if (arg === '--non-interactive') options.interactive = false
     else if (arg === '--help' || arg === '-h') {
       printHelp()
@@ -108,6 +116,8 @@ ${C.cyan}╔══════════════════════�
 
 async function startInteractiveCli(options) {
   printBanner()
+
+  let webServer = null
 
   // Persistent operator keypair for session signing and witness continuity
   const fs = require('node:fs')
@@ -243,6 +253,26 @@ async function startInteractiveCli(options) {
         Movements
       }
     })
+
+    if (options.dashboard) {
+      const { createWebDashboardServer } = require('./web/server')
+      try {
+        webServer = createWebDashboardServer({
+          port: options.dashboardPort || 8080,
+          host: '127.0.0.1',
+          controller,
+          bot,
+          authority
+        })
+        console.log(`\n${C.cyan}╔════════════════════════════════════════════════════════════════════════════╗`)
+        console.log(`║ ${C.bold}PANEL DE CONTROL WEB ACTIVO (DASHBOARD LOCAL V1.1)${C.reset}${C.cyan}                        ║`)
+        console.log(`║ URL:   ${C.bold}http://127.0.0.1:${options.dashboardPort || 8080}${C.reset}${C.cyan}                                           ║`)
+        console.log(`║ Token: ${C.yellow}${webServer.token}${C.reset}${C.cyan}  ║`)
+        console.log(`╚════════════════════════════════════════════════════════════════════════════╝${C.reset}\n`)
+      } catch (err) {
+        console.error(`${C.red}[DASHBOARD] Fallo iniciando servidor web: ${err.message}${C.reset}`)
+      }
+    }
 
     if (options.auth === 'offline' && !options.owner) {
       const pinInfo = pairingManager.generateNewPin()
@@ -512,6 +542,55 @@ ${C.dim}────────────────────────
           issuedAt: now - 500,
           expiresAt: now + 60000
         }
+      } else if (parsed.kind === 'craft') {
+        aud = 'guiaia:session-craft:v1'
+        grantPayload = {
+          aud,
+          worldId: authority.worldId,
+          botName: bot.username,
+          ownerName: currentOwner,
+          principalId,
+          connectionId,
+          challenge,
+          recipe: parsed.recipe || parsed.item,
+          item: parsed.item,
+          count: parsed.count || 1,
+          nonce: crypto.randomUUID(),
+          issuedAt: now - 500,
+          expiresAt: now + 60000
+        }
+      } else if (parsed.kind === 'build') {
+        aud = 'guiaia:session-build:v1'
+        grantPayload = {
+          aud,
+          worldId: authority.worldId,
+          botName: bot.username,
+          ownerName: currentOwner,
+          principalId,
+          connectionId,
+          challenge,
+          blueprintId: parsed.blueprintId,
+          origin: parsed.origin || { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) },
+          nonce: crypto.randomUUID(),
+          issuedAt: now - 500,
+          expiresAt: now + 60000
+        }
+      } else if (parsed.kind === 'pokemon') {
+        aud = 'guiaia:session-pokemon:v1'
+        grantPayload = {
+          aud,
+          worldId: authority.worldId,
+          botName: bot.username,
+          ownerName: currentOwner,
+          principalId,
+          connectionId,
+          challenge,
+          action: parsed.action,
+          target: parsed.target,
+          nonce: crypto.randomUUID(),
+          issuedAt: now - 500,
+          expiresAt: now + 60000
+        }
       }
 
       let grant = null
@@ -540,6 +619,7 @@ ${C.dim}────────────────────────
   }
 
   function cleanup() {
+    try { webServer?.close() } catch {}
     try { detachPairing?.() } catch {}
     try { witness?.close() } catch {}
     try { bot?.quit() } catch {}

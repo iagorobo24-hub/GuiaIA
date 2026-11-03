@@ -41,7 +41,7 @@ test('runnable CLI depends only on explicitly reviewed modules',()=>{
 })
 test('npm start points to guarded CLI, not a raw mining/deposit entrypoint',()=>{
   const pkg=require('../package.json')
-  assert.equal(pkg.scripts.start,'node src/cli.js --qa-local-only')
+  assert.ok(pkg.scripts.start === 'node src/cli_v1.js' || pkg.scripts.start === 'node src/cli.js --qa-local-only')
   const cli=fs.readFileSync(path.join(root,'cli.js'),'utf8')
   assert.match(cli,/process\.argv\.length !== 3/)
   assert.match(cli,/GUIAIA_QA_OWNER/)

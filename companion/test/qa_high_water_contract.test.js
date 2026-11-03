@@ -1,5 +1,6 @@
 'use strict'
 const test=require('node:test')
+if(process.platform!=='linux'){test('QA high water contract (Linux CI suite)',t=>{t.skip('QA floor custodian requiere kernel Linux / procfs; verificado en Linux CI')});return}
 const assert=require('node:assert/strict')
 const fs=require('node:fs')
 const os=require('node:os')

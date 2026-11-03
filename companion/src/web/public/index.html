@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="guiaia-token" content="__GUIAIA_BOOTSTRAP_TOKEN__">
+  <title>GuiaIA V1.1 — Panel de Control y Telemetría</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hud-header">
+    <div class="hud-brand">
+      <span class="hud-logo">⚡</span>
+      <h1>GuiaIA <span class="version-tag">V1.1</span></h1>
+    </div>
+    <div class="hud-status-bar">
+      <div class="hud-metric">
+        <span class="metric-label">BOT</span>
+        <span id="bot-name" class="metric-value">GuiaIA_Bot</span>
+      </div>
+      <div class="hud-metric">
+        <span class="metric-label">VIDA</span>
+        <div class="bar-container">
+          <div id="health-bar" class="bar-fill health" style="width: 100%;"></div>
+        </div>
+        <span id="health-text" class="metric-value">20/20</span>
+      </div>
+      <div class="hud-metric">
+        <span class="metric-label">COMIDA</span>
+        <div class="bar-container">
+          <div id="food-bar" class="bar-fill food" style="width: 100%;"></div>
+        </div>
+        <span id="food-text" class="metric-value">20/20</span>
+      </div>
+      <div class="hud-metric">
+        <span class="metric-label">MODO</span>
+        <span id="bot-mode" class="badge badge-idle">idle</span>
+      </div>
+      <div class="hud-metric">
+        <span class="metric-label">CONEXIÓN SSE</span>
+        <span id="sse-status" class="badge badge-connecting">conectando...</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="dashboard-main">
+    <!-- P0 Emergency Stop Banner -->
+    <section class="emergency-section">
+      <div class="emergency-controls">
+        <button id="p0-stop-button" class="p0-btn" title="Parada de Emergencia Absoluta P0">
+          🛑 PARADA DE EMERGENCIA (P0)
+        </button>
+        <div class="p0-status-indicators">
+          <span class="indicator-group">
+            <span class="dot dot-green" id="local-halt-indicator"></span>
+            <span class="indicator-label">LOCAL:</span>
+            <strong id="local-halt-text">ACTIVO</strong>
+          </span>
+          <span class="indicator-group">
+            <span class="dot dot-green" id="remote-halt-indicator"></span>
+            <span class="indicator-label">REMOTO:</span>
+            <strong id="remote-halt-text">SINCRONIZADO</strong>
+          </span>
+          <span class="p0-reason" id="last-stop-reason">Motivo: Inicializado</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workspace Grid -->
+    <div class="workspace-grid">
+      <!-- Left Column: Minimap 2D Canvas -->
+      <section class="panel minimap-panel">
+        <div class="panel-header">
+          <h2>🧭 Minimapa Táctico 2D</h2>
+          <div class="map-controls">
+            <button id="zoom-in-btn" class="ctrl-btn" title="Aumentar zoom">+</button>
+            <button id="zoom-out-btn" class="ctrl-btn" title="Disminuir zoom">-</button>
+            <span id="zoom-level">1.0x</span>
+          </div>
+        </div>
+        <div class="canvas-wrapper">
+          <canvas id="minimap-canvas" width="400" height="400"></canvas>
+        </div>
+        <div class="map-footer">
+          <span>Posición: <strong id="coords-text">X: 0.0, Y: 64.0, Z: 0.0</strong></span>
+        </div>
+      </section>
+
+      <!-- Right Column: Inventory & Console -->
+      <div class="right-stack">
+        <!-- Inventory Grid -->
+        <section class="panel inventory-panel">
+          <div class="panel-header">
+            <h2>🎒 Inventario del Bot (36 slots)</h2>
+            <span id="inv-slots-count" class="badge">0 / 36 slots</span>
+          </div>
+          <div id="unauthorized-alert" class="alert alert-danger" style="display: none;">
+            ⚠️ ¡Atención! Detectados ítems no autorizados en el inventario.
+          </div>
+          <div class="inventory-grid" id="inventory-grid">
+            <!-- 36 slots rendered dynamically -->
+          </div>
+        </section>
+
+        <!-- Command Console -->
+        <section class="panel command-panel">
+          <div class="panel-header">
+            <h2>💬 Despacho de Instrucciones</h2>
+          </div>
+          <form id="command-form" class="command-bar">
+            <input type="text" id="command-input" placeholder="Escribe una instrucción (ej: 'sigue', 'fabrica 4 crafting_table', 'pokemon radar')" autocomplete="off">
+            <button type="submit" class="send-btn">Enviar</button>
+          </form>
+          <div class="quick-commands">
+            <button type="button" class="quick-btn" data-cmd="sigue">Sigue</button>
+            <button type="button" class="quick-btn" data-cmd="para">Para</button>
+            <button type="button" class="quick-btn" data-cmd="inventario">Inventario</button>
+            <button type="button" class="quick-btn" data-cmd="pokemon radar">Pokémon Radar</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Bottom: Live SSE Telemetry Log -->
+    <section class="panel log-panel">
+      <div class="panel-header">
+        <h2>📡 Registro de Telemetría en Tiempo Real (SSE)</h2>
+        <button id="clear-logs-btn" class="ctrl-btn">Limpiar</button>
+      </div>
+      <div class="terminal-log" id="telemetry-log">
+        <div class="log-entry info">[SISTEMA] Inicializando panel de control GuiaIA V1.1...</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

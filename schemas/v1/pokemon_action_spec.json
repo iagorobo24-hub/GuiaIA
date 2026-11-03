@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guiaia.dev/schemas/v1/pokemon_action_spec.json",
+  "title": "GuiaIA Cobblemon Action Specification",
+  "description": "Defines an authorized, bounded Cobblemon gameplay interaction contract for GuiaIA companion",
+  "type": "object",
+  "required": ["version", "actionId", "kind", "ownerName"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "default": 1
+    },
+    "actionId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["inspect", "capture", "battle_wild", "pc_query", "pc_deposit", "pc_withdraw"],
+      "description": "The specific authorized Cobblemon action type"
+    },
+    "ownerName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_]{3,16}$"
+    },
+    "targetEntityId": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "targetUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "species": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_]+$"
+    },
+    "maxConsumables": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "default": 3,
+      "description": "Strict upper budget of Poké Balls allowed to consume"
+    },
+    "ballType": {
+      "type": "string",
+      "enum": ["poke_ball", "great_ball", "ultra_ball"],
+      "default": "poke_ball"
+    },
+    "selectedMoveIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "pcBox": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 30
+    },
+    "pcSlot": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 29
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 120,
+      "default": 30
+    }
+  },
+  "additionalProperties": false
+}

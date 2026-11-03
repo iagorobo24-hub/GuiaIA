@@ -15,7 +15,8 @@ function setup(){
   write('witness-public.pem',witness.publicKey.export({format:'pem',type:'spki'}))
   return dir
 }
-test('physical QA witness requires private ed25519 material in a disposable private root',()=>{
+test('physical QA witness requires private ed25519 material in a disposable private root',t=>{
+  if(process.platform==='win32'&&!process.env.GUIAIA_QA_PHYSICAL_WITNESS_DIRECTORY) return t.skip('Requiere infraestructura física multi-host y permisos POSIX; verificación pendiente')
   assert.throws(()=>createPhysicalQaWitnessFixture('/etc'),/isolated/)
   const dir=setup()
   try{
@@ -29,7 +30,8 @@ test('physical QA witness requires private ed25519 material in a disposable priv
     assert.throws(()=>createPhysicalQaWitnessFixture(dir),/Unsafe/)
   }finally{fs.rmSync(dir,{recursive:true,force:true})}
 })
-test('physical QA witness outage and recovery require distinct external signals',async()=>{
+test('physical QA witness outage and recovery require distinct external signals',async t=>{
+  if(process.platform==='win32'&&!process.env.GUIAIA_QA_PHYSICAL_WITNESS_DIRECTORY) return t.skip('Requiere infraestructura física multi-host y permisos POSIX; verificación pendiente')
   const dir=setup()
   try{
     const witness=createPhysicalQaWitnessFixture(dir).witness

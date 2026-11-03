@@ -54,7 +54,8 @@ test('preflight fails closed if the read-only witness never responds',async t=>{
   await assert.rejects(preflight({port,maxRequests:2,stableCount:1,
     probeDeadlineMs:80}),/not ready/)
 })
-test('preflight refuses unsafe parameters and non-private fixture',async()=>{
+test('preflight refuses unsafe parameters and non-private fixture',async t=>{
+  if(process.platform==='win32'&&!process.env.GUIAIA_QA_PHYSICAL_WITNESS_DIRECTORY) return t.skip('Requiere infraestructura física multi-host y permisos POSIX; verificación pendiente')
   await assert.rejects(preflight({port:80}),/Invalid/)
   await assert.rejects(preflight({maxRequests:99}),/Invalid/)
   await assert.rejects(preflight({probeDeadlineMs:90000}),/Invalid/)

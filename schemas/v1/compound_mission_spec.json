@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guiaia.dev/schemas/v1/compound_mission_spec.json",
+  "title": "GuiaIA Compound Mission Specification",
+  "description": "Defines an authorized multi-step compound mission DAG for GuiaIA companion",
+  "type": "object",
+  "required": ["version", "ownerName", "goalResource", "goalCount", "steps"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "default": 1
+    },
+    "ownerName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_]{3,16}$",
+      "description": "Minecraft username of authorized owner"
+    },
+    "ownerUuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "goalResource": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "Target resulting item or resource identifier"
+    },
+    "goalCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16,
+      "description": "Target quantity to achieve"
+    },
+    "maxSteps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 10
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 600,
+      "default": 120
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["stepId", "kind", "resource", "count"],
+        "properties": {
+          "stepId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,32}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["gather", "craft", "smelt", "place", "deposit"]
+          },
+          "resource": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,32}$"
+            },
+            "default": []
+          },
+          "recipe": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "station": {
+            "type": "string",
+            "enum": ["inventory_2x2", "crafting_table_3x3", "furnace"],
+            "default": "inventory_2x2"
+          },
+          "targetPosition": {
+            "type": "object",
+            "required": ["x", "y", "z"],
+            "properties": {
+              "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+              "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

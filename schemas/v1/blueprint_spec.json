@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guiaia.dev/schemas/v1/blueprint_spec.json",
+  "title": "GuiaIA Blueprint Specification",
+  "description": "Defines an authorized, bounded blueprint structure and construction contract for GuiaIA companion",
+  "type": "object",
+  "required": ["version", "blueprintId", "format", "dimensions", "origin", "palette", "blocks"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "default": 1
+    },
+    "blueprintId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+    },
+    "format": {
+      "type": "string",
+      "enum": ["schem", "schematic", "json"],
+      "default": "json"
+    },
+    "dimensions": {
+      "type": "object",
+      "required": ["width", "height", "length"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "length": { "type": "integer", "minimum": 1, "maximum": 16 }
+      },
+      "additionalProperties": false
+    },
+    "origin": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+        "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "dimension": { "type": "string", "default": "minecraft:overworld" }
+      },
+      "additionalProperties": false
+    },
+    "maxBlocks": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 64,
+      "description": "Strict maximum block placements authorized per execution batch in V1.1"
+    },
+    "requirePreview": {
+      "type": "boolean",
+      "default": true
+    },
+    "palette": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9_:]+$"
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["dx", "dy", "dz", "blockIndex"],
+        "properties": {
+          "dx": { "type": "integer", "minimum": 0, "maximum": 15 },
+          "dy": { "type": "integer", "minimum": 0, "maximum": 15 },
+          "dz": { "type": "integer", "minimum": 0, "maximum": 15 },
+          "blockIndex": { "type": "integer", "minimum": 0, "maximum": 31 },
+          "facing": { "type": "string", "enum": ["north", "south", "east", "west", "up", "down"] },
+          "half": { "type": "string", "enum": ["top", "bottom", "upper", "lower"] },
+          "axis": { "type": "string", "enum": ["x", "y", "z"] },
+          "waterlogged": { "type": "boolean", "default": false }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

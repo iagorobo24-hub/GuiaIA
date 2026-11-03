@@ -35,7 +35,7 @@ function confidentialPath(file,{base=null}={}){
   if(typeof file!=='string'||!path.isAbsolute(file)||
      path.normalize(file)!==file)throw Error('Normalized absolute QA file required')
   const parent=path.dirname(file),relative=path.relative(ROOT,file)
-  if(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..'))
+  if(!path.isAbsolute(relative)&&(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..')))
     throw Error('QA credentials inside source repository denied')
   if(base!==null && path.dirname(file)!==base)
     throw Error('Untrusted QA configuration file location')

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guiaia.dev/schemas/v1/web_telemetry_event.json",
+  "title": "GuiaIA Web Telemetry Event Specification",
+  "description": "Defines canonical telemetry events broadcast via Server-Sent Events to the GuiaIA local dashboard",
+  "type": "object",
+  "required": ["timestamp", "botStatus", "operator", "witnessStatus"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "default": 1
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "botStatus": {
+      "type": "object",
+      "required": ["connected", "health", "food", "position"],
+      "properties": {
+        "connected": { "type": "boolean" },
+        "health": { "type": "number", "minimum": 0, "maximum": 20 },
+        "food": { "type": "number", "minimum": 0, "maximum": 20 },
+        "position": {
+          "type": "object",
+          "required": ["x", "y", "z"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number" },
+            "yaw": { "type": "number" },
+            "pitch": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "dimension": { "type": "string", "default": "overworld" },
+        "serverBrand": { "type": "string", "default": "vanilla" },
+        "cobblemonDetected": { "type": "boolean", "default": false },
+        "p0Triggered": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+    "operator": {
+      "type": "object",
+      "required": ["paired"],
+      "properties": {
+        "paired": { "type": "boolean" },
+        "name": { "type": "string" },
+        "mode": { "type": "string", "enum": ["offline_pin", "microsoft_online", "fabric_bridge"] }
+      },
+      "additionalProperties": false
+    },
+    "activeMission": {
+      "type": ["object", "null"],
+      "properties": {
+        "kind": { "type": "string" },
+        "phase": { "type": "string" },
+        "currentStep": { "type": "integer" },
+        "totalSteps": { "type": "integer" },
+        "progressPercent": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "witnessStatus": {
+      "type": "object",
+      "required": ["mode", "currentSequence"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["local", "distributed_multihost"] },
+        "currentSequence": { "type": "integer", "minimum": -1 },
+        "failClosed": { "type": "boolean", "default": true },
+        "remoteHealthy": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "inventory": {
+      "type": "array",
+      "maxItems": 45,
+      "items": {
+        "type": "object",
+        "required": ["slot", "name", "count"],
+        "properties": {
+          "slot": { "type": "integer", "minimum": 0, "maximum": 45 },
+          "name": { "type": "string" },
+          "count": { "type": "integer", "minimum": 1, "maximum": 64 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
