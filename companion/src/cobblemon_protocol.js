@@ -13,6 +13,10 @@
  */
 
 const CANONICAL_CHANNELS = Object.freeze({
+  // Entity Spawn & World Packets (Server -> Client)
+  SPAWN_POKEMON_ENTITY: 'cobblemon:spawn_pokemon_entity',
+  SPAWN_EMPTY_POKEBALL: 'cobblemon:spawn_empty_pokeball_entity',
+
   // Capture Packets (Server -> Client)
   CAPTURE_START: 'cobblemon:battle_capture_start',
   CAPTURE_SHAKE: 'cobblemon:battle_capture_shake',
@@ -22,6 +26,7 @@ const CANONICAL_CHANNELS = Object.freeze({
   BATTLE_CHALLENGE: 'cobblemon:battle_challenge',
   BATTLE_CHALLENGE_RESPONSE: 'cobblemon:battle_challenge_response',
   BATTLE_SELECT_ACTIONS: 'cobblemon:battle_select_actions',
+  SEND_OUT_POKEMON: 'cobblemon:send_out_pokemon',
 
   // Battle Packets (Server -> Client)
   BATTLE_INITIALIZE: 'cobblemon:battle_initialize',
@@ -32,12 +37,16 @@ const CANONICAL_CHANNELS = Object.freeze({
   OPEN_PC: 'cobblemon:open_pc',
   INITIALIZE_PC: 'cobblemon:initialize_pc',
   SET_PC_BOX: 'cobblemon:set_pc_box',
+  SET_PARTY_POKEMON: 'cobblemon:set_party_pokemon',
   CLOSE_PC: 'cobblemon:close_pc',
 
   // PC & Storage Packets (Client -> Server)
   MOVE_PARTY_TO_PC: 'cobblemon:move_party_pokemon_to_pc',
   MOVE_PC_TO_PARTY: 'cobblemon:move_pc_pokemon_to_party',
-  SWAP_PC_POKEMON: 'cobblemon:swap_pc_pokemon'
+  SWAP_PC_POKEMON: 'cobblemon:swap_pc_pokemon',
+  SWAP_PC_PARTY_POKEMON: 'cobblemon:swap_pc_party_pokemon',
+  MOVE_PARTY_POKEMON: 'cobblemon:move_party_pokemon',
+  MOVE_PC_POKEMON: 'cobblemon:move_pc_pokemon'
 })
 
 const BRIDGE_CHANNELS = Object.freeze({
@@ -78,11 +87,15 @@ function classifyChannel(channel) {
     if (value === channel) {
       let category = 'unknown'
       if (key.startsWith('CAPTURE_')) category = 'capture'
-      else if (key.startsWith('BATTLE_')) category = 'battle'
-      else if (key.includes('PC')) category = 'pc'
+      else if (key.startsWith('BATTLE_') || key === 'SEND_OUT_POKEMON') category = 'battle'
+      else if (key.includes('PC') || key.includes('PARTY')) category = 'pc'
+      else if (key.startsWith('SPAWN_')) category = 'spawn'
 
       const direction = (key.startsWith('BATTLE_CHALLENGE') || key.startsWith('BATTLE_SELECT') ||
-                         key === 'MOVE_PARTY_TO_PC' || key === 'MOVE_PC_TO_PARTY' || key === 'SWAP_PC_POKEMON')
+                         key === 'SEND_OUT_POKEMON' ||
+                         key === 'MOVE_PARTY_TO_PC' || key === 'MOVE_PC_TO_PARTY' ||
+                         key === 'SWAP_PC_POKEMON' || key === 'SWAP_PC_PARTY_POKEMON' ||
+                         key === 'MOVE_PARTY_POKEMON' || key === 'MOVE_PC_POKEMON')
         ? 'C->S' : 'S->C'
 
       return {
@@ -254,10 +267,12 @@ function verifyServerStoragePacket(packet, expectedPlayerUuid) {
 
   // Canonical Cobblemon 1.8.2 SetPCBoxPacket
   if (packet.channel === CANONICAL_CHANNELS.SET_PC_BOX) {
-    if (packet.box === undefined || !Array.isArray(packet.pokemon)) {
+    const boxNum = packet.box !== undefined ? packet.box : packet.boxNumber
+    const pokemonList = Array.isArray(packet.pokemon) ? packet.pokemon : (Array.isArray(packet.slots) ? packet.slots : null)
+    if (boxNum === undefined || !pokemonList) {
       return { valid: false, reason: 'missing_box_or_pokemon_list' }
     }
-    const boxes = { [String(packet.box)]: packet.pokemon }
+    const boxes = { [String(boxNum)]: pokemonList }
     return {
       valid: true,
       provenance: channelInfo.provenance,

@@ -178,7 +178,24 @@ function createCobblemonPcController(options = {}) {
 
     let confirmedObservation = null
 
-    if (serverConfirmationPacket) {
+    if (depositOptions.sendServerCommand && depositOptions.playerName && partyPokemon.species) {
+      const serverCheck = await verifyPcStorageServerState(
+        depositOptions.playerName,
+        targetBox,
+        slot,
+        partyPokemon.species,
+        depositOptions.sendServerCommand
+      )
+      if (serverCheck.verified) {
+        confirmedObservation = {
+          species: partyPokemon.species,
+          ...partyPokemon,
+          serverVerified: true
+        }
+      }
+    }
+
+    if (!confirmedObservation && serverConfirmationPacket) {
       const verified = verifyServerStoragePacket(serverConfirmationPacket, playerUuid)
       if (verified.valid && verified.boxes[targetBox]?.[slot]) {
         confirmedObservation = verified.boxes[targetBox][slot]
@@ -187,7 +204,7 @@ function createCobblemonPcController(options = {}) {
           confirmedObservation = serverConfirmationPacket.storedPokemon || partyPokemon
         }
       }
-    } else if (hasServerChannel && depositOptions.awaitServerPacket) {
+    } else if (!confirmedObservation && hasServerChannel && depositOptions.awaitServerPacket) {
       const packet = await new Promise(resolve => {
         const timeout = setTimeout(() => resolve(null), depositOptions.packetTimeoutMs || 3000)
         timeout.unref?.()
@@ -302,7 +319,26 @@ function createCobblemonPcController(options = {}) {
 
     let confirmedObservation = false
 
-    if (serverConfirmationPacket) {
+    if (withdrawOptions.sendServerCommand && withdrawOptions.playerName && pokemon.species) {
+      const partyCheck = await verifyPartySlotServerState(
+        withdrawOptions.playerName,
+        partySlot + 1,
+        pokemon.species,
+        withdrawOptions.sendServerCommand
+      )
+      const pcCheck = await verifyPcStorageServerState(
+        withdrawOptions.playerName,
+        boxIndex,
+        boxSlot,
+        pokemon.species,
+        withdrawOptions.sendServerCommand
+      )
+      if (partyCheck.verified && !pcCheck.verified) {
+        confirmedObservation = true
+      }
+    }
+
+    if (!confirmedObservation && serverConfirmationPacket) {
       const verified = verifyServerStoragePacket(serverConfirmationPacket, playerUuid)
       // Post-transfer observation: box slot must now be empty
       if (verified.valid && (verified.boxes[boxIndex]?.[boxSlot] === null || verified.boxes[boxIndex]?.[boxSlot] === undefined)) {
@@ -312,7 +348,7 @@ function createCobblemonPcController(options = {}) {
           confirmedObservation = true
         }
       }
-    } else if (hasServerChannel && withdrawOptions.awaitServerPacket) {
+    } else if (!confirmedObservation && hasServerChannel && withdrawOptions.awaitServerPacket) {
       const packet = await new Promise(resolve => {
         const timeout = setTimeout(() => resolve(null), withdrawOptions.packetTimeoutMs || 3000)
         timeout.unref?.()
@@ -377,9 +413,121 @@ function createCobblemonPcController(options = {}) {
   }
 }
 
+/**
+ * Authoritative verification of stored Pokémon in PC box & slot via Minecraft scoreboard and testpcslot.
+ *
+ * @param {string} player Minecraft player username
+ * @param {number} box PC box index (0-31)
+ * @param {number} slot PC slot index (0-29)
+ * @param {string} species Expected Pokémon species
+ * @param {Function} sendServerCommand Bridge dispatcher
+ * @returns {Promise<Object>} Verification receipt
+ */
+async function verifyPcStorageServerState(player, box, slot, species, sendServerCommand) {
+  if (!player || box === undefined || slot === undefined || !species || typeof sendServerCommand !== 'function') {
+    return { ok: false, reason: 'invalid_arguments' }
+  }
+
+  await sendServerCommand('scoreboard objectives add qascore dummy')
+  const scoreName = `#pc_${box}_${slot}_${Date.now() % 10000}`
+  await sendServerCommand(`execute store result score ${scoreName} qascore run testpcslot ${player} ${box} ${slot} species=${species}`)
+
+  const scoreResp = await sendServerCommand(`scoreboard players get ${scoreName} qascore`)
+  const output = typeof scoreResp === 'string' ? scoreResp : (scoreResp.output || '')
+  const matched = output.includes('has 1 [qascore]')
+
+  return {
+    ok: matched,
+    verified: matched,
+    player,
+    box,
+    slot,
+    species,
+    rawOutput: output.trim()
+  }
+}
+
+/**
+ * Authoritative verification of party slot via Minecraft scoreboard and testpartyslot.
+ *
+ * @param {string} player Minecraft player username
+ * @param {number} slot Party slot index (1-6)
+ * @param {string} species Expected Pokémon species
+ * @param {Function} sendServerCommand Bridge dispatcher
+ * @returns {Promise<Object>} Verification receipt
+ */
+async function verifyPartySlotServerState(player, slot, species, sendServerCommand) {
+  if (!player || !slot || !species || typeof sendServerCommand !== 'function') {
+    return { ok: false, reason: 'invalid_arguments' }
+  }
+
+  await sendServerCommand('scoreboard objectives add qascore dummy')
+  const scoreName = `#party_${slot}_${Date.now() % 10000}`
+  await sendServerCommand(`execute store result score ${scoreName} qascore run testpartyslot ${player} ${slot} species=${species}`)
+
+  const scoreResp = await sendServerCommand(`scoreboard players get ${scoreName} qascore`)
+  const output = typeof scoreResp === 'string' ? scoreResp : (scoreResp.output || '')
+  const matched = output.includes('has 1 [qascore]')
+
+  return {
+    ok: matched,
+    verified: matched,
+    player,
+    slot,
+    species,
+    rawOutput: output.trim()
+  }
+}
+
+/**
+ * Contrasts in-memory PC state against persisted JSON player data in world/cobblemonplayerdata/.
+ *
+ * @param {Function} getPlayerData Async function returning player data files map
+ * @param {Object} options Inspection filters
+ * @returns {Promise<Object>} Persistence verification receipt
+ */
+async function verifyCobblemonDiskPersistence(getPlayerData, options = {}) {
+  if (typeof getPlayerData !== 'function') {
+    return { ok: false, reason: 'invalid_getPlayerData_function' }
+  }
+
+  const data = await getPlayerData()
+  if (!data || !data.files) {
+    return { ok: false, reason: 'no_player_data_files' }
+  }
+
+  const files = Object.entries(data.files)
+  if (files.length === 0) {
+    return { ok: false, reason: 'empty_player_data' }
+  }
+
+  let foundSpecies = null
+  let totalSaved = 0
+
+  for (const [filePath, content] of files) {
+    if (content && typeof content === 'object') {
+      const rawStr = JSON.stringify(content).toLowerCase()
+      if (options.species && rawStr.includes(options.species.toLowerCase())) {
+        foundSpecies = options.species
+      }
+      totalSaved++
+    }
+  }
+
+  return {
+    ok: true,
+    persistedFilesCount: files.length,
+    foundSpecies,
+    files: Object.keys(data.files)
+  }
+}
+
 module.exports = {
   createCobblemonPcController,
   verifyServerStoragePacket,
+  verifyPcStorageServerState,
+  verifyPartySlotServerState,
+  verifyCobblemonDiskPersistence,
   validateBoxBounds,
   validateSlotBounds,
   validatePartySlotBounds,

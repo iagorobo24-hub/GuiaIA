@@ -145,7 +145,7 @@ test('Cobblemon Capture - Consumable budget capped at <= 5 and checks inventory'
   assert.equal(res.throwsUsed, 1)
   assert.equal(activated >= 1, true)
   assert.equal(lookedAt.length >= 1, true)
-  assert.equal(equipped[0].item, 'poke_ball')
+  assert.equal(equipped[0].item?.name || equipped[0].item, 'poke_ball')
 })
 
 test('Cobblemon Capture - Fails closed when no Poké Balls in inventory', async () => {

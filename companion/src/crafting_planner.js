@@ -734,6 +734,13 @@ async function executeCraftPlan(plan, bot, options = {}) {
     writeDurableCraftJournal(journalPath, journal)
   }
 
+  if (bot.currentWindow && typeof bot.closeWindow === 'function') {
+    try {
+      bot.closeWindow(bot.currentWindow)
+    } catch {}
+    await new Promise(r => setTimeout(r, 150))
+  }
+
   journal.status = 'completed'
   writeDurableCraftJournal(journalPath, journal)
   return {

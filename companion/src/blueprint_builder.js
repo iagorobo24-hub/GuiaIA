@@ -547,7 +547,7 @@ function createBlueprintBuilder(options = {}) {
         }
         if (typeof bot.placeBlock === 'function' && supportBlock && placeFace) {
           await bot.placeBlock(supportBlock, placeFace)
-          await new Promise(r => setTimeout(r, 200))
+          await new Promise(r => setTimeout(r, 350))
         }
 
         // 6. Post-placement physical world state verification

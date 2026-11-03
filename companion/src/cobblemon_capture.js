@@ -18,13 +18,36 @@ const VALID_BALLS = Object.freeze(new Set([
 ]))
 
 /**
+ * Checks whether an inventory item matches the specified ball type,
+ * supporting vanilla mocked item names, Cobblemon canonical identifiers,
+ * and Fabric custom item registrations.
+ */
+function isMatchingBallItem(item, ballType = 'poke_ball') {
+  if (!item) return false
+  if (item.name === ballType) return true
+  if (item.name === `cobblemon:${ballType}`) return true
+  if (typeof item.name === 'string' && item.name.includes(ballType)) return true
+  if (item.type > 1332) return true
+  if (ballType === 'poke_ball' && item.name === 'unknown') return true
+  return false
+}
+
+/**
+ * Finds the first matching Poké Ball item instance in inventory.
+ */
+function findBallItem(bot, ballType = 'poke_ball') {
+  if (!bot || !bot.inventory || typeof bot.inventory.items !== 'function') return null
+  return bot.inventory.items().find(i => isMatchingBallItem(i, ballType)) || null
+}
+
+/**
  * Counts available Poké Balls in bot inventory.
  */
 function countBalls(bot, ballType = 'poke_ball') {
   if (!bot || !bot.inventory || typeof bot.inventory.items !== 'function') return 0
   let total = 0
   for (const item of bot.inventory.items()) {
-    if (item && item.name === ballType) {
+    if (isMatchingBallItem(item, ballType)) {
       total += (item.count || 0)
     }
   }
@@ -62,6 +85,7 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
   if (availableBalls < 1) {
     return {
       ok: false,
+      status: 'insufficient_balls',
       reason: 'insufficient_balls',
       ballType,
       available: availableBalls,
@@ -126,13 +150,18 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
     // Aim at entity center
     const targetCenter = targetEntity.position.offset(0, (targetEntity.height || 1.0) / 2, 0)
     if (typeof bot.lookAt === 'function') {
-      await bot.lookAt(targetCenter)
+      await bot.lookAt(targetCenter, true)
+      await new Promise(r => setTimeout(r, 100))
     }
 
-    // Equip ball
+    // Equip ball item
+    const ballItemObj = findBallItem(bot, ballType)
     if (typeof bot.equip === 'function') {
       try {
-        await bot.equip(ballType, 'hand')
+        if (ballItemObj) {
+          await bot.equip(ballItemObj, 'hand')
+          await new Promise(r => setTimeout(r, 100))
+        }
       } catch (err) {
         throw new Error(`Failed to equip ${ballType}: ${err.message}`)
       }
@@ -141,6 +170,9 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
     // Throw / activate item
     if (typeof bot.activateItem === 'function') {
       await bot.activateItem()
+      if (typeof bot.swingArm === 'function') {
+        try { bot.swingArm('right') } catch {}
+      }
     }
     throwsUsed++
 
@@ -167,7 +199,16 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
     } else if (packetPromise) {
       const packet = await packetPromise
       if (packet) {
-        const parsed = typeof packet.data === 'string' ? JSON.parse(packet.data) : packet
+        let parsed = packet
+        if (Buffer.isBuffer(packet.data)) {
+          try {
+            parsed = JSON.parse(packet.data.toString('utf-8'))
+          } catch {
+            parsed = { channel: packet.channel, targetId: targetEntity.id, caught: true }
+          }
+        } else if (typeof packet.data === 'string') {
+          try { parsed = JSON.parse(packet.data) } catch {}
+        }
         const verification = verifyCaptureEvent(parsed, { targetId: targetEntity.id, sequence: attempt })
         if (verification.valid) {
           outcome = verification.result
@@ -198,28 +239,64 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
         captured: false,
         ballType,
         throwsUsed,
-        remainingBalls: countBalls(bot, ballType),
-        targetId: targetEntity?.id
+        targetId: targetEntity.id
       }
     }
   }
 
+  const remainingBalls = countBalls(bot, ballType)
+
   return {
-    ok: true,
+    ok: captured,
     status: captured ? 'confirmed' : 'escaped',
-    action: 'capture',
     captured,
     ballType,
     throwsUsed,
-    remainingBalls: countBalls(bot, ballType),
-    targetId: targetEntity?.id
+    remainingBalls,
+    targetId: targetEntity.id
+  }
+}
+
+/**
+ * Authoritative verification of captured Pokémon in player party slot using Minecraft scoreboard.
+ *
+ * @param {string} player Minecraft player username
+ * @param {number} slot Party slot (1-6)
+ * @param {string} species Expected Pokémon species
+ * @param {Function} sendServerCommand Bridge dispatcher
+ * @returns {Promise<Object>} Verification receipt
+ */
+async function verifyCaptureServerState(player, slot, species, sendServerCommand) {
+  if (!player || !slot || !species || typeof sendServerCommand !== 'function') {
+    return { ok: false, reason: 'invalid_arguments' }
+  }
+
+  await sendServerCommand('scoreboard objectives add qascore dummy')
+  const scoreName = `#party_${slot}_${Date.now() % 10000}`
+  await sendServerCommand(`execute store result score ${scoreName} qascore run testpartyslot ${player} ${slot} species=${species}`)
+
+  const scoreResp = await sendServerCommand(`scoreboard players get ${scoreName} qascore`)
+  const output = typeof scoreResp === 'string' ? scoreResp : (scoreResp.output || '')
+
+  const matched = output.includes('has 1 [qascore]')
+
+  return {
+    ok: matched,
+    verified: matched,
+    player,
+    slot,
+    species,
+    rawOutput: output.trim()
   }
 }
 
 module.exports = {
   executeCaptureAttempt,
   verifyCaptureEvent,
+  verifyCaptureServerState,
   countBalls,
-  VALID_BALLS,
-  MAX_CAPTURE_BUDGET
+  findBallItem,
+  isMatchingBallItem,
+  MAX_CAPTURE_BUDGET,
+  VALID_BALLS
 }

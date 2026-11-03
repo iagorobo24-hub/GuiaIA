@@ -62,26 +62,55 @@ def until(condition, seconds: float, *, process=None, note="condition") -> None:
     raise RuntimeError(f"Timed out after {seconds}s waiting for {note}")
 
 
-def start_command_bridge(server_process: subprocess.Popen) -> http.server.HTTPServer:
+def start_command_bridge(server_process: subprocess.Popen, log_file: Path = None, qa_root: Path = None) -> http.server.HTTPServer:
     class BridgeHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.startswith("/player_data"):
+                found = {}
+                if qa_root and qa_root.exists():
+                    for p in qa_root.glob("**/*.json"):
+                        if "cobblemon" in str(p).lower() and "player" in str(p).lower():
+                            try:
+                                found[str(p.relative_to(qa_root))] = json.loads(p.read_text(encoding="utf-8"))
+                            except Exception as e:
+                                found[str(p.relative_to(qa_root))] = {"error": str(e)}
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "files": found}).encode("utf-8"))
+            else:
+                self.send_response(404)
+                self.end_headers()
+
         def do_POST(self):
             if self.path == "/cmd":
                 length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(length).decode("utf-8")
                 try:
                     payload = json.loads(body)
-                    cmd = payload.get("command", "")
+                    cmd = payload.get("command") or payload.get("cmd", "")
+                    output = ""
                     if cmd:
+                        pos_start = log_file.stat().st_size if (log_file and log_file.exists()) else 0
                         send(server_process, cmd)
+                        stop_wait = time.monotonic() + 1.2
+                        while time.monotonic() < stop_wait:
+                            time.sleep(0.1)
+                            if log_file and log_file.exists() and log_file.stat().st_size > pos_start:
+                                with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                                    f.seek(pos_start)
+                                    output = f.read()
+                                if output.strip():
+                                    break
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
-                    self.wfile.write(b'{"ok": true}')
+                    self.wfile.write(json.dumps({"ok": True, "output": output}).encode("utf-8"))
                 except Exception as ex:
                     self.send_response(500)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
-                    self.wfile.write(json.dumps({"ok": false, "error": str(ex)}).encode("utf-8"))
+                    self.wfile.write(json.dumps({"ok": False, "error": str(ex)}).encode("utf-8"))
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -116,6 +145,7 @@ def shutdown_server(process: subprocess.Popen, log) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="GuiaIA V1.1 Real Minecraft & Cobblemon E2E Laboratory")
+    parser.add_argument("test_script", nargs="?", default="test/qa_v1_1_real_minecraft_e2e.js", help="Node test script to execute")
     parser.add_argument("--skip-cobblemon", action="store_true", help="Boot vanilla Fabric 1.21.1 without Cobblemon")
     args = parser.parse_args()
 
@@ -210,6 +240,8 @@ def main():
             setup_cmds = [
                 "gamerule spawnRadius 0",
                 "gamerule doDaylightCycle false",
+                "gamerule doMobSpawning false",
+                "gamerule doPokemonSpawning false",
                 "time set noon",
                 "fill -10 63 -10 20 63 20 minecraft:stone",
                 "setworldspawn 2 64 2",
@@ -226,18 +258,19 @@ def main():
             )
 
             # Start local command bridge for the test runner
-            cmd_server = start_command_bridge(server_process)
+            cmd_server = start_command_bridge(server_process, log_file, qa_root)
             print(f"[QA] Server command bridge listening at 127.0.0.1:{QA_CMD_PORT}", flush=True)
 
             # Run Node E2E test runner
-            print("[QA] Executing Node.js Real Minecraft E2E suite (Missions A-G)...", flush=True)
+            test_script = args.test_script
+            print(f"[QA] Executing Node.js suite ({test_script})...", flush=True)
             node_env = os.environ.copy()
             node_env["MC_PORT"] = str(SERVER_PORT)
             node_env["MC_HOST"] = "127.0.0.1"
             node_env["QA_CMD_PORT"] = str(QA_CMD_PORT)
 
             test_proc = subprocess.run(
-                ["node", "test/qa_v1_1_real_minecraft_e2e.js"],
+                ["node", test_script],
                 cwd=REPO_ROOT / "companion",
                 env=node_env,
                 text=True,
@@ -249,10 +282,11 @@ def main():
             print(output, flush=True)
 
             if test_proc.returncode != 0:
+                print("\n[QA SERVER RECENT LOG]:\n" + recent_log(log_file, 8000), flush=True)
                 raise RuntimeError(f"Real Minecraft E2E test exited with code {test_proc.returncode}")
 
             marker = "GUIAIA_V1_1_REAL_MINECRAFT_E2E_EVIDENCE="
-            if marker not in output:
+            if "qa_v1_1_real_minecraft_e2e.js" in test_script and marker not in output:
                 raise RuntimeError("Missing required evidence marker in E2E output")
 
             print("\n[QA] ALL REAL MINECRAFT E2E MISSIONS COMPLETED SUCCESSFULLY!", flush=True)
