@@ -38,12 +38,23 @@ function createRemoteWitnessServer(options = {}) {
   // Load state from disk if exists
   if (statePath && fs.existsSync(statePath)) {
     try {
-      const data = JSON.parse(fs.readFileSync(statePath, 'utf8'))
-      if (data && typeof data.sequence === 'number') {
+      const content = fs.readFileSync(statePath, 'utf8')
+      const data = JSON.parse(content)
+      if (
+        data &&
+        Number.isSafeInteger(data.sequence) &&
+        data.sequence >= 0 &&
+        typeof data.registrySha256 === 'string' &&
+        /^[0-9a-f]{64}$/.test(data.registrySha256)
+      ) {
         state.sequence = data.sequence
         state.registrySha256 = data.registrySha256
+      } else {
+        throw new Error('sequence and registrySha256 must be valid safe integer >= 0 and 64-char hex')
       }
-    } catch {}
+    } catch (err) {
+      throw new Error(`Corrupt remote witness state file at ${statePath}: ${err.message}`)
+    }
   }
 
   function saveState() {
@@ -59,6 +70,14 @@ function createRemoteWitnessServer(options = {}) {
       fs.closeSync(fd)
     }
     fs.renameSync(tmp, statePath)
+    try {
+      const dirFd = fs.openSync(dir, 'r')
+      try {
+        fs.fsyncSync(dirFd)
+      } finally {
+        fs.closeSync(dirFd)
+      }
+    } catch {}
   }
 
   const seenNonces = new Set()

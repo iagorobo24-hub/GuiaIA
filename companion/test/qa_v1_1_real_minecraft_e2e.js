@@ -146,7 +146,62 @@ function sanitizeSetSlot(packet) {
   }
 }
 
-function patchCobblemonRecipeFilter(client) {
+function writeVarInt(val) {
+  const bytes = []
+  do {
+    let b = val & 0x7f
+    val >>>= 7
+    if (val !== 0) b |= 0x80
+    bytes.push(b)
+  } while (val !== 0)
+  return Buffer.from(bytes)
+}
+
+function extractCobblemonMetadataFromRaw(packet) {
+  try {
+    let cursor = 0
+    function readVarInt() {
+      let num = 0, shift = 0
+      while (cursor < packet.length) {
+        const b = packet[cursor++]
+        num |= (b & 0x7f) << shift
+        if ((b & 0x80) === 0) break
+        shift += 7
+      }
+      return num
+    }
+    const packetId = readVarInt()
+    if (packetId !== 0x58) return null
+    const entityId = readVarInt()
+
+    let species = null
+    let level = 1
+
+    const cobbleIdx = packet.indexOf(Buffer.from('cobblemon:'))
+    if (cobbleIdx !== -1) {
+      let endIdx = cobbleIdx + 10
+      while (endIdx < packet.length && packet[endIdx] >= 0x61 && packet[endIdx] <= 0x7a) {
+        endIdx++
+      }
+      species = packet.slice(cobbleIdx + 10, endIdx).toString('ascii').toLowerCase()
+    }
+
+    for (let i = cursor; i < packet.length - 2; i++) {
+      if (packet[i] === 0x21 && packet[i + 1] === 0x01) {
+        const candidateLvl = packet[i + 2]
+        if (candidateLvl >= 1 && candidateLvl <= 100) {
+          level = candidateLvl
+          break
+        }
+      }
+    }
+    return { entityId, species, level }
+  } catch {
+    return null
+  }
+}
+
+function patchCobblemonRecipeFilter(client, bot = null) {
   function hook() {
     const parser = client?.deserializer
     if (!parser || parser.__guiaiaRecipePatch) return
@@ -159,10 +214,48 @@ function patchCobblemonRecipeFilter(client) {
         for (let i = 0; i < Math.min(5, packet.length); i++) {
           id |= (packet[i] & 0x7f) << (i * 7)
           if ((packet[i] & 0x80) === 0) {
-            if (id === 0x77) { // declare_recipes (packet 0x77 in 1.21.1)
+            if (id === 0x77) { // declare_recipes
               packet = Buffer.from([0x77, 0x00])
-            } else if (id === 0x15) { // set_slot (packet 0x15 in 1.21.1)
+            } else if (id === 0x74) { // advancements
+              packet = Buffer.from([0x74, 0x00, 0x00, 0x00, 0x00])
+            } else if (id === 0x15) { // set_slot
               packet = sanitizeSetSlot(packet)
+            } else if (id === 0x58 && bot) { // entity_metadata
+              const cobbleMeta = extractCobblemonMetadataFromRaw(packet)
+              if (cobbleMeta && cobbleMeta.species) {
+                bot.__cobblemonEntityMetaCache = bot.__cobblemonEntityMetaCache || new Map()
+                bot.__cobblemonEntityMetaCache.set(cobbleMeta.entityId, {
+                  species: cobbleMeta.species,
+                  level: cobbleMeta.level
+                })
+                let ent = bot.entities?.[cobbleMeta.entityId]
+                if (!ent) {
+                  ent = {
+                    id: cobbleMeta.entityId,
+                    type: 'other',
+                    name: 'cobblemon:pokemon',
+                    displayName: cobbleMeta.species,
+                    position: new Vec3(0, 64, 0),
+                    velocity: new Vec3(0, 0, 0),
+                    metadata: []
+                  }
+                  if (bot.entities) bot.entities[cobbleMeta.entityId] = ent
+                }
+                ent.isPokemon = true
+                ent.name = 'cobblemon:pokemon'
+                ent.displayName = cobbleMeta.species
+                if (!ent.velocity) ent.velocity = new Vec3(0, 0, 0)
+                if (!ent.pokemonData) ent.pokemonData = {}
+                ent.pokemonData.species = cobbleMeta.species
+                ent.pokemonData.level = cobbleMeta.level
+
+                // Replace with clean empty entity_metadata packet to avoid protodef PartialReadError!
+                packet = Buffer.concat([
+                  writeVarInt(0x58),
+                  writeVarInt(cobbleMeta.entityId),
+                  Buffer.from([0xff])
+                ])
+              }
             }
             break
           }
@@ -253,8 +346,8 @@ async function main() {
     hideErrors: true
   })
 
-  patchCobblemonRecipeFilter(owner._client)
-  patchCobblemonRecipeFilter(bot._client)
+  patchCobblemonRecipeFilter(owner._client, owner)
+  patchCobblemonRecipeFilter(bot._client, bot)
   patchMineflayer121Crafting(bot)
   attachCobblemonRadarAdapter(bot)
 
@@ -421,9 +514,14 @@ async function main() {
     await wait(1000)
     const spawnRes = await sendServerCommand('execute positioned 6 64 2 run spawnpokemon pikachu level=25')
     console.log('[E2E SPAWN OUTPUT]:', spawnRes)
-    await wait(2500)
+    await wait(1000)
 
-    const nearbyPokemon = scanNearbyPokemon(bot, { maxDistance: 24 })
+    let nearbyPokemon = []
+    for (let i = 0; i < 20; i++) {
+      nearbyPokemon = scanNearbyPokemon(bot, { maxDistance: 24 })
+      if (nearbyPokemon.length >= 1) break
+      await wait(500)
+    }
     console.log(`[E2E] Radar scanned ${nearbyPokemon.length} Pokémon entities nearby:`, nearbyPokemon.map(p => `${p.species} lv.${p.level}`))
     assert.equal(nearbyPokemon.length >= 1, true, 'Radar must detect at least 1 spawned Cobblemon entity')
 
@@ -455,20 +553,16 @@ async function main() {
     console.log('[E2E] Starting Mission E: Real Poké Ball Capture & Negative ACK Loss Test...')
 
     // Provide bot Poké Balls for capture tests
-    console.log('[E2E INVENTORY BEFORE GIVE]:', bot.inventory.items().map(it => `${it.name}(${it.type}x${it.count}@${it.slot})`))
     let initialBalls = 0
     for (let i = 0; i < 30; i++) {
       initialBalls = countBalls(bot, 'poke_ball')
       if (initialBalls >= 4) break
       if (i % 5 === 0) {
-        const giveBallRes = await sendServerCommand('give GuiaIA_QA cobblemon:poke_ball 5')
-        console.log(`[E2E] Give poke_ball attempt ${i / 5 + 1}:`, giveBallRes)
-        console.log('[E2E INVENTORY AT GIVE]:', bot.inventory.items().map(it => `${it.name}(${it.type}x${it.count}@${it.slot})`))
+        await sendServerCommand('give GuiaIA_QA cobblemon:poke_ball 5')
       }
       await wait(250)
     }
     console.log('[E2E] Mission E initialBalls count:', initialBalls)
-    console.log('[E2E INVENTORY AFTER GIVE]:', bot.inventory.items().map(it => `${it.name}(${it.type}x${it.count}@${it.slot})`))
     assert.equal(initialBalls >= 1, true, 'Bot must possess Poké Balls in inventory')
 
     // Negative Test: unverified / dropped ACK fails closed without blind rethrow

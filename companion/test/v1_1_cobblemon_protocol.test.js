@@ -40,6 +40,10 @@ test('Cobblemon 1.8.2 Protocol - Canonical channel classification and provenance
   assert.equal(bChal.isCanonical, true)
   assert.equal(bChal.direction, 'C->S')
 
+  const bResp = classifyChannel(CANONICAL_CHANNELS.BATTLE_CHALLENGE_RESPONSE)
+  assert.equal(bResp.isCanonical, true)
+  assert.equal(bResp.direction, 'S->C')
+
   const bInit = classifyChannel(CANONICAL_CHANNELS.BATTLE_INITIALIZE)
   assert.equal(bInit.isCanonical, true)
   assert.equal(bInit.direction, 'S->C')

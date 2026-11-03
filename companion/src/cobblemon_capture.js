@@ -133,17 +133,28 @@ async function executeCaptureAttempt(bot, targetEntity, options = {}) {
     let packetPromise = null
     if (hasLivePacketChannel && options.awaitServerPacket) {
       packetPromise = new Promise(resolve => {
-        const timeout = setTimeout(() => resolve(null), options.packetTimeoutMs || 3000)
+        let handler = null
+        const cleanup = () => {
+          if (handler && bot._client && typeof bot._client.removeListener === 'function') {
+            bot._client.removeListener('custom_payload', handler)
+          }
+        }
+        const timeout = setTimeout(() => {
+          cleanup()
+          resolve(null)
+        }, options.packetTimeoutMs || 3000)
         timeout.unref?.()
-        const handler = (packet) => {
+
+        handler = (packet) => {
           if (packet?.channel === CANONICAL_CHANNELS.CAPTURE_END ||
               packet?.channel === LEGACY_CHANNELS.CAPTURE_RESULT ||
               packet?.channel === BRIDGE_CHANNELS.RESULT) {
             clearTimeout(timeout)
+            cleanup()
             resolve(packet)
           }
         }
-        bot._client.once('custom_payload', handler)
+        bot._client.on('custom_payload', handler)
       })
     }
 

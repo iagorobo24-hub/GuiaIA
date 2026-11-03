@@ -534,7 +534,13 @@ function createBlueprintBuilder(options = {}) {
             journal.status = 'failed'
             journal.error = `gravity_unsupported: ${b.block} at (${worldTarget.x}, ${worldTarget.y}, ${worldTarget.z})`
             writeDurableJournal(journalPath, journal)
-            throw new Error(`Cannot place gravity block ${b.block} without solid support below at ${belowPos}`)
+            return {
+              ok: false,
+              reason: 'gravity_unsupported',
+              position: { x: worldTarget.x, y: worldTarget.y, z: worldTarget.z },
+              message: `Cannot place gravity block ${b.block} without solid support below at ${belowPos}`,
+              journal
+            }
           }
         }
 

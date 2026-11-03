@@ -304,7 +304,7 @@ async function startInteractiveCli(options) {
         console.log(`\n${C.cyan}╔════════════════════════════════════════════════════════════════════════════╗`)
         console.log(`║ ${C.bold}PANEL DE CONTROL WEB ACTIVO (DASHBOARD LOCAL V1.1)${C.reset}${C.cyan}                        ║`)
         console.log(`║ URL:   ${C.bold}http://127.0.0.1:${options.dashboardPort || 8080}${C.reset}${C.cyan}                                           ║`)
-        console.log(`║ Token: ${C.yellow}${webServer.token}${C.reset}${C.cyan}  ║`)
+        console.log(`║ PIN:   ${C.bold}${C.yellow}${webServer.pairingPin || 'N/A'}${C.reset}${C.cyan} (PIN de 6 dígitos para emparejar en el navegador)     ║`)
         console.log(`╚════════════════════════════════════════════════════════════════════════════╝${C.reset}\n`)
       } catch (err) {
         console.error(`${C.red}[DASHBOARD] Fallo iniciando servidor web: ${err.message}${C.reset}`)

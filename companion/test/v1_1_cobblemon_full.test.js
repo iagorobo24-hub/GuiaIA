@@ -8,6 +8,7 @@ const {
   scanNearbyPokemon,
   isPokemonEntity,
   extractPokemonMetadata,
+  attachCobblemonRadarAdapter,
   MAX_RADAR_DISTANCE
 } = require('../src/cobblemon_radar')
 
@@ -421,3 +422,55 @@ test('Cobblemon Unified Adapter - Dispatches inspect, capture, battle and PC act
   assert.equal(pcDepRes.observedServerState, true)
   assert.equal(pcDepRes.pokemon.species, 'snorlax')
 })
+
+test('Cobblemon Battle FSM - chooseAction accepts object action and startTurn accepts numeric turn', async () => {
+  const writtenPackets = []
+  const mockBot = {
+    _client: {
+      write: (name, data) => { writtenPackets.push({ name, data }) },
+      on: () => {},
+      listenerCount: () => 0
+    }
+  }
+  const controller = createCobblemonBattleController({ bot: mockBot })
+  await controller.challengeWild({ id: 99 }, { serverBattlePacket: { channel: 'cobblemon:battle_start', opponentId: 99 } })
+  controller.startTurn(5)
+  assert.equal(controller.getStatus().currentTurn, 5)
+  assert.equal(controller.getStatus().state, 'turn_active')
+
+  await controller.chooseAction({ type: 'move', moveIndex: 2, sendModPackets: true })
+  assert.equal(controller.getStatus().state, 'in_battle')
+  assert.equal(writtenPackets.length, 1)
+})
+
+test('Cobblemon Radar - attachCobblemonRadarAdapter does not clobber vanilla entities', () => {
+  const listeners = {}
+  const mockBot = {
+    entities: {
+      '50': { id: 50, name: 'zombie', position: new Vec3(1, 64, 1) },
+      '51': { id: 51, name: 'villager', position: new Vec3(2, 64, 2) }
+    },
+    _client: {
+      on: (event, handler) => { listeners[event] = handler }
+    }
+  }
+
+  attachCobblemonRadarAdapter(mockBot)
+
+  // Simulate spawn packet for entity 100 (Pikachu)
+  listeners['custom_payload']({
+    channel: 'cobblemon:spawn_pokemon_entity',
+    data: Buffer.from(JSON.stringify({ entityId: 100, species: 'pikachu', level: 5 }))
+  })
+
+  // Verify zombie and villager were NOT clobbered
+  assert.equal(mockBot.entities['50'].name, 'zombie')
+  assert.equal(mockBot.entities['50'].isPokemon, undefined)
+  assert.equal(mockBot.entities['51'].name, 'villager')
+  assert.equal(mockBot.entities['51'].isPokemon, undefined)
+
+  // Verify entity 100 was registered as pokemon
+  assert.equal(mockBot.entities['100'].isPokemon, true)
+  assert.equal(mockBot.entities['100'].displayName, 'pikachu')
+})
+

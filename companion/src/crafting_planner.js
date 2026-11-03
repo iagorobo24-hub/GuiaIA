@@ -465,8 +465,29 @@ function planCraft(mcData, targetItemName, targetCount = 1, currentInventory = {
     if (!hasTable && !steps.some(s => s.target_item === 'crafting_table')) {
       const tableItem = mcData.itemsByName.crafting_table
       if (tableItem) {
-        decompose(tableItem.id, 1)
+        const tableSuccess = decompose(tableItem.id, 1)
+        if (!tableSuccess || missingBase.size > 0) {
+          const missingObj = {}
+          for (const [k, v] of missingBase) {
+            missingObj[k] = v
+          }
+          return {
+            ok: false,
+            reason: 'insufficient_materials',
+            missing: missingObj,
+            partialSteps: steps
+          }
+        }
       }
+    }
+  }
+
+  if (steps.length > maxSteps) {
+    return {
+      ok: false,
+      reason: 'exceeded_max_steps',
+      stepsCount: steps.length,
+      maxSteps
     }
   }
 

@@ -24,11 +24,11 @@ const CANONICAL_CHANNELS = Object.freeze({
 
   // Battle Packets (Client -> Server)
   BATTLE_CHALLENGE: 'cobblemon:battle_challenge',
-  BATTLE_CHALLENGE_RESPONSE: 'cobblemon:battle_challenge_response',
   BATTLE_SELECT_ACTIONS: 'cobblemon:battle_select_actions',
   SEND_OUT_POKEMON: 'cobblemon:send_out_pokemon',
 
   // Battle Packets (Server -> Client)
+  BATTLE_CHALLENGE_RESPONSE: 'cobblemon:battle_challenge_response',
   BATTLE_INITIALIZE: 'cobblemon:battle_initialize',
   BATTLE_QUEUE_ACTION: 'cobblemon:battle_queue_action',
   BATTLE_END: 'cobblemon:battle_end',
@@ -91,7 +91,7 @@ function classifyChannel(channel) {
       else if (key.includes('PC') || key.includes('PARTY')) category = 'pc'
       else if (key.startsWith('SPAWN_')) category = 'spawn'
 
-      const direction = (key.startsWith('BATTLE_CHALLENGE') || key.startsWith('BATTLE_SELECT') ||
+      const direction = (key === 'BATTLE_CHALLENGE' || key.startsWith('BATTLE_SELECT') ||
                          key === 'SEND_OUT_POKEMON' ||
                          key === 'MOVE_PARTY_TO_PC' || key === 'MOVE_PC_TO_PARTY' ||
                          key === 'SWAP_PC_POKEMON' || key === 'SWAP_PC_PARTY_POKEMON' ||

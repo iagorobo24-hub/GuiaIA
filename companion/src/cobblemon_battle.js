@@ -165,12 +165,16 @@ function createCobblemonBattleController(options = {}) {
     return { ok: true, state: 'in_battle', battleId, opponentId: targetEntity?.id }
   }
 
-  function startTurn(turnData = {}) {
+  function startTurn(turnNumberOrData = {}, maybeData = {}) {
     if (state !== 'in_battle' && state !== 'turn_active') {
       return { ok: false, reason: `Invalid state for startTurn: ${state}` }
     }
 
-    currentTurn++
+    if (typeof turnNumberOrData === 'number') {
+      currentTurn = turnNumberOrData
+    } else {
+      currentTurn++
+    }
     state = 'turn_active'
 
     if (turnTimer) clearTimeout(turnTimer)
@@ -188,6 +192,11 @@ function createCobblemonBattleController(options = {}) {
   }
 
   async function chooseAction(action = 'attack', actionParams = {}) {
+    if (typeof action === 'object' && action !== null) {
+      actionParams = { ...action, ...actionParams }
+      action = action.action || action.type || 'attack'
+    }
+
     if (state !== 'turn_active') {
       throw new Error(`Cannot choose action while in state ${state}`)
     }

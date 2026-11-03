@@ -32,3 +32,5 @@ dist/
 .guiaia/
 .qa-cache/
 *.tmp
+
+.agents/

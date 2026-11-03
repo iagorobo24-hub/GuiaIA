@@ -19,6 +19,7 @@ const {
   RemoteWitnessAdvanceError,
   computeOperatorFingerprint
 } = require('../src/remote_witness_client')
+const { createRemoteWitnessServer } = require('../src/remote_witness_server')
 
 function createKeys() {
   const operator = crypto.generateKeyPairSync('ed25519')
@@ -793,3 +794,25 @@ test('Remote Witness - Multi-process deployment: OS child process, fail-closed o
     try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
   }
 })
+
+test('Remote Witness Server - Corrupt state file fails closed and rejects startup', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'guiaia_corrupt_witness_test_'))
+  const corruptStatePath = path.join(tempDir, 'corrupt_state.json')
+  fs.writeFileSync(corruptStatePath, '{"sequence": 42, corrupt_incomplete...', 'utf8')
+
+  const keys = createKeys()
+  try {
+    assert.throws(() => {
+      createRemoteWitnessServer({
+        port: 0,
+        worldId: 'corrupt_test_world',
+        statePath: corruptStatePath,
+        witnessKey: keys.witness.privateKey,
+        operatorPublicKey: keys.operatorPem
+      })
+    }, /Corrupt remote witness state file/)
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch {}
+  }
+})
+

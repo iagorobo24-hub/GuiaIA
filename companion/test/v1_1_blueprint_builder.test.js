@@ -323,10 +323,14 @@ test('Blueprint Builder - Gravity check blocks sand placement in mid-air', async
   }
 
   const builder = createBlueprintBuilder()
-  await assert.rejects(
-    async () => builder.execute({ blueprintId: 'sand_pillar', origin: { x: 0, y: 64, z: 0 }, previewConfirmed: true }, bp, { bot: mockBot, previewAuthorized: true }),
-    /Cannot place gravity block sand without solid support below/i
+  const res = await builder.execute(
+    { blueprintId: 'sand_pillar', origin: { x: 0, y: 64, z: 0 }, previewConfirmed: true },
+    bp,
+    { bot: mockBot, previewAuthorized: true }
   )
+  assert.equal(res.ok, false)
+  assert.equal(res.reason, 'gravity_unsupported')
+  assert.deepEqual(res.position, { x: 0, y: 64, z: 0 })
 })
 
 test('Blueprint Builder - Persists durable build journal and recovers after process restart', async () => {

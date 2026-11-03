@@ -79,6 +79,16 @@ test('Crafting Planner - Missing base materials fails closed with detailed repor
   assert.ok(res.missing.oak_log > 0 || Object.keys(res.missing).length > 0)
 })
 
+test('Crafting Planner - Missing materials to auto-craft station fails closed', () => {
+  // Inventory has exact ingredients for wooden_pickaxe, but no crafting table and no wood to craft table
+  const inv = { oak_planks: 3, stick: 2 }
+  const res = planCraft(mcData, 'wooden_pickaxe', 1, inv, { autoCraftStation: true })
+
+  assert.equal(res.ok, false)
+  assert.equal(res.reason, 'insufficient_materials')
+  assert.ok(res.missing.oak_planks > 0 || Object.keys(res.missing).length > 0)
+})
+
 test('Crafting Planner - Exceeded max steps boundary protection', () => {
   const inv = { oak_log: 5 }
   // Force strict limit of 1 step: pickaxe requires at least 3 steps so it must fail

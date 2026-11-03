@@ -13,6 +13,14 @@ function generatePin() {
   return num.toString()
 }
 
+function timingSafeEqualStr(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  if (bufA.length !== bufB.length) return false
+  return crypto.timingSafeEqual(bufA, bufB)
+}
+
 /**
  * Creates an ephemeral PIN pairing manager for LAN / offline Minecraft sessions.
  */
@@ -69,7 +77,7 @@ function createOwnerPinPairing(options = {}) {
     }
 
     const cleanInput = String(inputPin || '').trim()
-    if (cleanInput.length !== 6 || cleanInput !== activePin) {
+    if (cleanInput.length !== 6 || !activePin || !timingSafeEqualStr(cleanInput, activePin)) {
       attempts++
       const remainingAttempts = Math.max(0, maxAttempts - attempts)
       if (remainingAttempts === 0) {

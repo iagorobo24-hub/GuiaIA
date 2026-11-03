@@ -8,12 +8,21 @@ const MAX_RADAR_DISTANCE = 24.0
  * Normalizes entity name or type string to determine if it is a Pokémon.
  * Uses genuine protocol tags, entity attributes, and custom tracked metadata.
  */
-function isPokemonEntity(entity) {
+function isPokemonEntity(entity, bot = null) {
   if (!entity) return false
 
   // 1. Check if adapter already identified Pokémon
-  if (entity.isPokemon === true || (entity.pokemonData && entity.pokemonData.species)) {
+  if (entity.isPokemon === true || (entity.pokemonData && entity.pokemonData.species && entity.pokemonData.species !== 'unknown')) {
     return true
+  }
+
+  // 2. Check if present in bot Cobblemon metadata cache
+  const entId = entity.id !== undefined ? entity.id : null
+  if (bot?.__cobblemonEntityMetaCache && entId !== null) {
+    const cached = bot.__cobblemonEntityMetaCache.get(entId)
+    if (cached && cached.species && cached.species !== 'unknown') {
+      return true
+    }
   }
 
   const name = (entity.name || '').toLowerCase()
@@ -27,7 +36,7 @@ function isPokemonEntity(entity) {
     return true
   }
 
-  // 2. Check metadata (direct index 19 or array iteration)
+  // 3. Check metadata (direct index 19 or array iteration)
   if (entity.metadata) {
     const val19 = entity.metadata[19]
     if (typeof val19 === 'string' && val19.includes('cobblemon:')) return true
@@ -159,7 +168,29 @@ function extractPokemonMetadata(entity, bot = null) {
  * @returns {Object|null} Decoded entity and Pokémon properties
  */
 function decodeSpawnPokemonBuffer(buf) {
-  if (!Buffer.isBuffer(buf) || buf.length < 50) return null
+  if (!Buffer.isBuffer(buf)) return null
+
+  // Support JSON payload for synthetic bridge / unit testing
+  if (buf.length >= 2 && buf[0] === 0x7b) {
+    try {
+      const parsed = JSON.parse(buf.toString('utf8'))
+      if (parsed && typeof parsed === 'object') {
+        return {
+          pokemonUUID: parsed.pokemonUUID || parsed.uuid || '0'.repeat(32),
+          species: parsed.species || 'unknown',
+          level: parsed.level || 1,
+          scale: parsed.scale || 1.0,
+          gender: parsed.gender || 0,
+          isShiny: Boolean(parsed.isShiny),
+          entityId: parsed.entityId !== undefined ? parsed.entityId : null,
+          entityUuid: parsed.entityUuid || null,
+          position: parsed.position || null
+        }
+      }
+    } catch {}
+  }
+
+  if (buf.length < 50) return null
 
   try {
     let pos = 0
@@ -287,9 +318,10 @@ function attachCobblemonRadarAdapter(bot) {
         Object.assign(ent.pokemonData, decoded)
         if (decoded.level) ent.pokemonData.level = decoded.level
 
-        // Also check if any other matching entity in bot.entities needs updating
+        // Also check if any matching Cobblemon entity in bot.entities needs updating (do not clobber vanilla entities)
+        const targetEntityId = decoded.entityId !== null && decoded.entityId !== undefined ? decoded.entityId : entId
         for (const [id, e] of Object.entries(bot.entities || {})) {
-          if (e && e.position && (!e.pokemonData || e.pokemonData.species === 'unknown')) {
+          if (e && (Number(id) === targetEntityId || e.id === targetEntityId || (e.isPokemon && e.name === 'cobblemon:pokemon' && (!e.pokemonData || e.pokemonData.species === 'unknown')))) {
             e.isPokemon = true
             e.name = 'cobblemon:pokemon'
             e.displayName = decoded.species
@@ -341,7 +373,7 @@ function attachCobblemonRadarAdapter(bot) {
         }
         if (bot.entities) bot.entities[entityId] = ent
       }
-      if (ent) {
+      if (ent && (spec !== null || lvl !== null)) {
         ent.isPokemon = true
         ent.name = 'cobblemon:pokemon'
         if (spec) {
@@ -358,22 +390,24 @@ function attachCobblemonRadarAdapter(bot) {
   })
 
   // 3. Hook entitySpawn event to apply cached metadata
-  bot.on('entitySpawn', (entity) => {
-    const cached = bot.__cobblemonEntityMetaCache.get(entity.id)
-    if (cached) {
-      if (cached.species) {
-        entity.isPokemon = true
-        entity.name = 'cobblemon:pokemon'
-        entity.displayName = cached.species
-        if (!entity.pokemonData) entity.pokemonData = {}
-        entity.pokemonData.species = cached.species
+  if (typeof bot.on === 'function') {
+    bot.on('entitySpawn', (entity) => {
+      const cached = bot.__cobblemonEntityMetaCache.get(entity.id)
+      if (cached) {
+        if (cached.species) {
+          entity.isPokemon = true
+          entity.name = 'cobblemon:pokemon'
+          entity.displayName = cached.species
+          if (!entity.pokemonData) entity.pokemonData = {}
+          entity.pokemonData.species = cached.species
+        }
+        if (cached.level !== undefined && cached.level !== null && cached.level > 0) {
+          if (!entity.pokemonData) entity.pokemonData = {}
+          entity.pokemonData.level = cached.level
+        }
       }
-      if (cached.level !== undefined && cached.level !== null && cached.level > 0) {
-        if (!entity.pokemonData) entity.pokemonData = {}
-        entity.pokemonData.level = cached.level
-      }
-    }
-  })
+    })
+  }
 }
 
 /**
@@ -395,7 +429,23 @@ function scanNearbyPokemon(bot, options = {}) {
   for (const [id, entity] of Object.entries(entities)) {
     if (!entity || entity === bot.entity || !entity.position) continue
 
-    if (isPokemonEntity(entity)) {
+    const entId = entity.id !== undefined ? entity.id : parseInt(id, 10)
+    if (!entity.velocity) entity.velocity = new Vec3(0, 0, 0)
+
+    // Synchronize from metadata cache if present
+    if (bot.__cobblemonEntityMetaCache && entId !== null) {
+      const cached = bot.__cobblemonEntityMetaCache.get(entId)
+      if (cached && cached.species) {
+        entity.isPokemon = true
+        entity.name = 'cobblemon:pokemon'
+        entity.displayName = cached.species
+        if (!entity.pokemonData) entity.pokemonData = {}
+        entity.pokemonData.species = cached.species
+        if (cached.level) entity.pokemonData.level = cached.level
+      }
+    }
+
+    if (isPokemonEntity(entity, bot)) {
       const distance = botPos.distanceTo(entity.position)
       if (distance <= maxDistance) {
         const meta = extractPokemonMetadata(entity, bot)

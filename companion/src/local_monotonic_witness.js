@@ -128,8 +128,32 @@ function createLocalMonotonicWitness({
       registrySha256: genesisHash
     }
     const env = signEnvelope(currentHead)
-    fs.writeFileSync(headFile, JSON.stringify(env, null, 2) + '\n', { mode: 0o600 })
-    fs.appendFileSync(logFile, JSON.stringify({ type: 'genesis', ...currentHead, timestamp: Date.now() }) + '\n', { mode: 0o600 })
+    // 1. Initial append to durable witness log with fsync
+    const logFd = fs.openSync(logFile, 'a', 0o600)
+    try {
+      fs.writeSync(logFd, JSON.stringify({ type: 'genesis', ...currentHead, timestamp: Date.now() }) + '\n')
+      fs.fsyncSync(logFd)
+    } finally {
+      fs.closeSync(logFd)
+    }
+
+    // 2. Initial atomic head write with tmp file + rename + fsync
+    const tmpGenesisHead = path.join(witnessDir, '.head-' + crypto.randomUUID() + '.tmp')
+    const headFd = fs.openSync(tmpGenesisHead, 'wx', 0o600)
+    try {
+      fs.writeSync(headFd, JSON.stringify(env, null, 2) + '\n')
+      fs.fsyncSync(headFd)
+      fs.closeSync(headFd)
+      fs.renameSync(tmpGenesisHead, headFile)
+      try {
+        const dirFd = fs.openSync(witnessDir, 'r')
+        try { fs.fsyncSync(dirFd) } finally { fs.closeSync(dirFd) }
+      } catch {}
+    } finally {
+      if (fs.existsSync(tmpGenesisHead)) {
+        try { fs.unlinkSync(tmpGenesisHead) } catch {}
+      }
+    }
   }
 
   function advance(ticket) {
@@ -201,6 +225,10 @@ function createLocalMonotonicWitness({
       fs.fsyncSync(headFd)
       fs.closeSync(headFd)
       fs.renameSync(tmpHead, headFile)
+      try {
+        const dirFd = fs.openSync(witnessDir, 'r')
+        try { fs.fsyncSync(dirFd) } finally { fs.closeSync(dirFd) }
+      } catch {}
     } finally {
       if (fs.existsSync(tmpHead)) {
         try { fs.unlinkSync(tmpHead) } catch {}
